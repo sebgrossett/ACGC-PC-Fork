@@ -240,10 +240,25 @@ Verification (checkpoint 2 code is written and builds clean; playtests pending):
 
 Risks: `pc_graph_flush_world` three times per frame instead of one (buffer and timing; the menu path already does two), collision per guest while a menu is open, and per-guest face/cloth reload each frame (texture churn).
 
+**Next slice: field window per view** (approved 2026-10-25, branch `feature/field-window-per-view` off `feature/multi-player-actors`). Each split view draws the world around its own player instead of the selected resident. Two checkpoints.
+
+Checkpoint 1, terrain (built and playtested 2026-10-25):
+- Ground geometry is not streamed: `aFD_DrawBlock` fetches each block's display list straight from ROM (`mFI_GetBGDisplayListRom`), and `mFI_BlockCheck` only gates field bounds. The only per-frame window is the draw-side 3x3 table in `FIELD_DRAW_ACTOR.block` (`src/actor/ac_field_draw.c`), which `aFD_PrepareFieldDraw` filled once from the selected resident in ct/move.
+- `aFD_PrepareFieldDraw` is split: `aFD_SetBlockTable(field_draw, player)` fills the 9 blocks, and the caller keeps the non-draw parts (`aFD_SetActorPosition`, `aFD_MakeMarinScrollInfo`). Move/ct keep the selected resident so water sounds, `mCoBG_WaveCos2BgCheck` and the Marin animation advance once per frame; `Bg_Draw_Actor_draw` rebuilds only the table.
+- View-player hook: `mPlib_set_view_player_actor` / `mPlib_view_player_actor` (`src/game/m_player_lib.c`, `include/m_player_lib.h`). `play_draw_split_side` (`src/game/m_play.c`) sets it per view (view 0 = selected resident, view i = `mPlib_extra_player_at(i - 1)`) and clears it right after `Actor_info_draw_actor`. NULL falls back to the selected resident, so single player is unchanged.
+- Safety of one 3x3 table for every view: each earlier view is flushed by `pc_graph_flush_world` before the next view is built (`play_restart_disp`), the same ordering the split HUD relies on.
+- Playtest: with P1 at the plaza and P2 across town, P2's half keeps floor tiles, boundary walls, rivers and cliffs, with no void and no flicker; P1's half is unchanged. Props still pop until checkpoint 2. Collision near doors needing both players close is a separate issue (world actors still target the selected resident).
+
+Checkpoint 2, props (next):
+- Trees, weeds, flowers, fruit and signs use the 4-block window `mFM_VISIBLE_BLOCK_NUM` (4): `mFI_BGDisplayListRefresh` + `mFI_DmaBg` pick the blocks near the selected resident once per frame, `mBI_move` builds bg-item draw tables from the host position, and `aFD_DrawBlock` feeds the bg display lists. The macro is baked into `mFM_fdinfo_c`, `mFI_block_tbl_c`, the `bg_item` tables, `ac_sign`, `ac_birth_control` and `l_register_bg_info`, so growing it to 16 is the main risk (`common_info->_30 = 4` in `bg_item.c`, and `mFI_SearchNullDisp` can write index `bg_num` when the window is full).
+- Approach: rebuild the per-block prop draw tables per view from the view player (state vs table split in `mBI_move`), or, if the split is not clean, refresh the 4-block window per view before each view's draw. Decide with evidence from the code, not by growing the macro first.
+- Verification: trees, weeds, fruit and signs appear in a distant view; cut or removed props stay gone; no duplicated props when the players are close; single player unchanged.
+
+Scope out: collision/data (already per block, no window), actor spawn, shells/mushrooms/block-kind frame state (stay on the selected resident), 3-4 player validation.
+
 Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
-- Field data follows the selected resident, so the right half can show unloaded acres when Player 2 is far
 - Join/leave queue, including joins waited out through a host event
 
 Open after the 2026-10-25 playtest of `feature/per-player-hud`. Paths are in section 4. Do not re-search them.

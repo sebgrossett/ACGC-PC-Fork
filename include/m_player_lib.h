@@ -56,6 +56,9 @@ extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
 extern Private_c* mPlib_private_for_slot(int slot);
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);
+/* Player whose split view is being drawn. NULL falls back to the selected resident. */
+extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
+extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);
 extern int mPlib_get_player_actor_main_index(GAME* game);

@@ -194,7 +194,7 @@ static void aFD_SetActorPosition(ACTOR* actorx, GAME_PLAY* play) {
     actorx->world.position.y += aFD_position_offset;
 }
 
-static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
+static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player) {
     /*
       6 7 8
       3 4 5
@@ -212,17 +212,12 @@ static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
         { 1, -1 },  // top-right
     };
 
-    GAME_PLAY* play = (GAME_PLAY*)game;
-    FIELD_DRAW_ACTOR* field_draw = (FIELD_DRAW_ACTOR*)actorx;
     aFD_block_c* block = field_draw->block;
-    mFM_field_draw_info_c* draw_info = mFI_BGDisplayListTop();
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-    int bx;
-    int bz;
+    int bx = 0;
+    int bz = 0;
     int i;
 
     mFI_Wpos2BlockNum(&bx, &bz, player->actor_class.world.position);
-    aFD_SetActorPosition(actorx, play);
 
     for (i = 0; i < aFD_BLOCK_DRAW_NUM; i++) {
         block->bx = bx + draw_block_offset_table[i].offset_x;
@@ -232,6 +227,15 @@ static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
         block->exist = TRUE;
         block++;
     }
+}
+
+static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    FIELD_DRAW_ACTOR* field_draw = (FIELD_DRAW_ACTOR*)actorx;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+
+    aFD_SetBlockTable(field_draw, player);
+    aFD_SetActorPosition(actorx, play);
 
     aFD_MakeMarinScrollInfo(actorx, game);
 }
@@ -528,9 +532,19 @@ static void aFD_MakeMarinScrollInfo(ACTOR* actorx, GAME* game) {
 }
 
 static void Bg_Draw_Actor_draw(ACTOR* actorx, GAME* game) {
+    GAME_PLAY* play = (GAME_PLAY*)game;
     FIELD_DRAW_ACTOR* field_draw = (FIELD_DRAW_ACTOR*)actorx;
-    aFD_block_c* block = field_draw->block;
+    PLAYER_ACTOR* player = mPlib_view_player_actor(play);
+    aFD_block_c* block;
     int i;
+
+    /* Rebuild the window around this view's player. Each earlier view is
+     * flushed before the next one is built, so one table serves every view. */
+    if (player != NULL) {
+        aFD_SetBlockTable(field_draw, player);
+    }
+
+    block = field_draw->block;
 
     OPEN_DISP(game->graph);
 
