@@ -255,7 +255,7 @@ Checkpoint 2, props (built and playtested 2026-10-25):
 - `bg_item_common_draw_blocks_for_view` (`src/bg_item/bg_item_common.c_inc`) builds 4 static draw tables from `mFI_GetViewItemTable` when the view player is not the selected resident, cull-checks them with the current view's projection (`bg_item_common_draw_check`) and draws those. Drops, holes, pits, ten-coins and fades still draw once per view from actor state. Host tables and move state are untouched, so the next move reads what it wrote.
 - Host-half fix in the same checkpoint: `bg_item_common_move` cull-checks the host tables before any view is set, i.e. against the last view of the previous frame (the guest's). The host view now re-runs `bg_item_common_draw_check` per table in draw with its own projection. That was also the old "props pop in and out" complaint.
 - Playtest: with either player far away both halves keep trees, weeds, flowers and fruit; no duplicates at close range; shaking a tree empties it in both views; dropped items show in both. Single player unchanged. Stump/cut-tree untested (no axe in the save); the tables are rebuilt from fg data, so a cut tree cannot come back.
-- Not covered: signs (`ac_sign` builds 2x2 tables from the camera centre and the selected resident) and field actors (checkpoint 3).
+- Not covered: signs (checkpoint 4) and field actors (checkpoint 3).
 
 Checkpoint 3, field actors (built and playtested 2026-10-25):
 - House popping came from actor birth control, not from draw: `aBC_deleteActor_part` (`src/actor/ac_birth_control.c`) runs on every block crossing and deletes item/NPC actors outside `play->last_block_table` / `play->block_table`. Those are one global pair set by whoever crossed last (`mFI_SetBearActor` from the player block-crossing path), so P1's crossing deleted the houses around a stationary P2 and P2's next crossing re-created them from fg items.
@@ -263,10 +263,15 @@ Checkpoint 3, field actors (built and playtested 2026-10-25):
 - Playtest: houses stay in either half while the other player walks away, no duplicates, no popping at block edges, single player unchanged.
 - Known: occasional hitches after a player crosses a long distance (block streaming), not in one spot; `util`/frame pacing, not a logic stall.
 
-Scope out: signs (next), collision/data (already per block, no window), actor spawn, shells/mushrooms/block-kind frame state (stay on the selected resident), 3-4 player validation.
+Checkpoint 4, signs (built and playtested 2026-10-25):
+- `aSIGN_actor_set_draw` (`src/actor/ac_sign.c`) is split into `aSIGN_actor_set_draw_tables(sign, play, center, table)` plus a host wrapper that keeps retail's `Camera2_getCenterPos_p()` centre, the `mPlayer_INDEX_DOOR` z offset and the `NMREG` bias.
+- `aSIGN_actor_draw` builds a static 4-entry table from `play->view.center` (the current view's look-at centre, the same value view 0 gets from Camera2) when the view player is a guest, with the same 2-unit z bias but no door/NMREG tweaks, and draws that table. The host view, move-side `sign->draw` and `aSIGN_actor_set_target` (P1 talk prompt) are untouched.
+- `aSIGN_draw_set`'s cull test uses `play->projection_matrix`, so at draw time it follows the current view. The talk-area cull (`Camera2_CheckCullingMode` / `Camera2_CheckEnterCullingArea`) still uses the host camera; it only activates during P1's talk camera, and that is acceptable.
+- Playtest: notice board unchanged, P2 sees signs and the notice board in their own half with P1 across town, P1 can still read a sign while P2 is away, single player unchanged. Door zoom not applicable yet (P2's half is not kept during P1's door).
+
+Scope out: collision/data (already per block, no window), actor spawn, shells/mushrooms/block-kind frame state (stay on the selected resident), 3-4 player validation.
 
 Also open after this slice (paths in section 4):
-- Signs: `ac_sign` builds its 2x2 draw tables from the camera centre (`aSIGN_actor_move`), so a distant view loses signposts, the notice board and the melody board. Same per-view-table approach as bg items.
 - Guest camera follows the host's live offset: `play_guest_camera` (`src/game/m_play.c`) shifts the host's current eye/centre by (guest − host) every normal frame, so the host's spring and follow changes move the guest's view while the guest stands still. Proper fix is camera state per player (`Camera2` per resident view), not a small change.
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
