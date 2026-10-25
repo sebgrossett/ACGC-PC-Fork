@@ -1019,7 +1019,9 @@ static void Game_play_draw(GAME_PLAY* play) {
                 for (side = 0; side < 2; side++) {
                     play_set_view_half(play, side);
                     showSplitHudView(&play->view);
+                    pc_gx_hud_half = TRUE;
                     banti_draw(play);
+                    pc_gx_hud_half = FALSE;
                 }
 
                 /* The player who opened the menu is the left half (pads[0]).

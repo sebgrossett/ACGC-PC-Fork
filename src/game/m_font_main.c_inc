@@ -607,6 +607,22 @@ extern void mFont_CulcOrthoMatrix(Mtx* m) {
   );
 }
 
+#ifdef TARGET_PC
+/* Split-screen HUD: the retail 4:3 layout with only its right half visible, at
+ * 2x. A half is 320x480 EFB, so mapping content x 0..160 onto the whole half
+ * keeps the clock at its single-player pixel size and aspect instead of
+ * squashing it 2:1 horizontally. */
+extern void mFont_CulcHudHalfOrthoMatrix(Mtx* m) {
+  guOrtho(
+    m,
+    0.0f, HALF_SCR_WIDTH * mFont_SCALE_F,
+    NHALF_SCR_HEIGHT * mFont_SCALE_F, HALF_SCR_HEIGHT * mFont_SCALE_F,
+    -800.0f, 800.0f,
+    1.0f
+  );
+}
+#endif
+
 extern void mFont_SetMatrix(GRAPH* graph, int mode) {
   static Mtx mtx_projection;
   static int first = TRUE;
