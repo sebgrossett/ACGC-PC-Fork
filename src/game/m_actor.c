@@ -394,10 +394,14 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
     }
 
     mPlib_queue_guest_slot(guest);
+    /* arg 0 means "no door transition": the low three bits of actor_specific
+     * select the spawn state in Player_actor_request_proc_index_fromDma, and
+     * 1-3 replay the host's own door-exit animation. The guest has no door of
+     * its own until scene instancing, so it stands (INTRO -> WAIT) instead. */
     actor = Actor_info_make_actor(actor_info, game, player_data->profile, player_data->position.x + 80.0f,
                                   player_data->position.y, player_data->position.z, player_data->rotation.x,
-                                  player_data->rotation.y, player_data->rotation.z, -1, -1, -1, EMPTY_NO,
-                                  player_data->arg, -1, -1);
+                                  player_data->rotation.y, player_data->rotation.z, -1, -1, -1, EMPTY_NO, 0, -1,
+                                  -1);
     if (actor != NULL) {
         actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
     } else {
