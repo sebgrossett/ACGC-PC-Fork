@@ -126,21 +126,28 @@ static void mSM_change_view(GRAPH* graph, f32 eye_dist, f32 y_lookAt, f32 vp_x, 
 
 #ifdef TARGET_PC
     /* Callers place this viewport in retail 320x240 screen coordinates, which
-     * are drawn at 2x. The co-op menu is a 4:3 band at 1x in the opener's half,
-     * so the panel and the hand have to share that space or the hand walks off
-     * the half while the panel stays put. Halve the box as well, or 3D items
-     * keep their full-screen size against a half-size panel. */
-    if (pc_gx_menu_half) {
+     * are drawn at 2x. In co-op the menu is a 1x rect in the opener's view (a
+     * 4:3 band in the left half at two players, the 4:3 top-left quadrant at
+     * three or four), so the panel and the hand have to share that space or the
+     * hand walks off the rect while the panel stays put. Halve the box as well,
+     * or 3D items keep their full-screen size against a half-size panel. */
+    if (pc_gx_menu_mode) {
         f32 centre_x;
 
         vp_x *= 0.5f;
-        vp_y = 240.0f + vp_y * 0.5f;
+        if (pc_gx_menu_mode == 1) {
+            /* Left half: the band starts 60 content units down. */
+            vp_y = 240.0f + vp_y * 0.5f;
+        } else {
+            /* Top-left quadrant: the view starts at the window's top-left. */
+            vp_y *= 0.5f;
+        }
         width /= 2;
         height /= 2;
         /* The 2D panel goes through the GX layer's aspect correction, which
          * squeezes 4:3 content horizontally on a wide window. A 3D item carries
          * its position in the viewport box, so it needs the same squeeze about
-         * the band centre or the hand and the player model drift sideways when
+         * the rect centre or the hand and the player model drift sideways when
          * the window is resized. `vp_x` is twice the box's left edge, so the
          * centre (twice left + width) is what follows the panel; the box width
          * stays as it is because the squeezed projection already scales the

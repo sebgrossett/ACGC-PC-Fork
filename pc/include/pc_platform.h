@@ -99,9 +99,9 @@ void pc_platform_update_window_size(void);
 #define PC_NOOP_MENU_DEPTH_ON          0xAC5704u
 extern int g_pc_widescreen_stretch;
 extern int pc_gx_menu_no_depth;
-/* Host flag, set while the co-op menu is drawn into the opener's half.
- * Menus lay out for 320x240 and the half is 160x240. */
-extern int pc_gx_menu_half;
+/* Menu layout mode while the co-op menu is drawn: 0 none, 1 half, 2 quadrant.
+ * Menus lay out for 320x240 and both co-op rects are 1x. */
+extern int pc_gx_menu_mode;
 /* Host flag, set while the per-half HUD (clock) is drawn. The half is 320x480
  * EFB, so the HUD needs its retail layout drawn at 2x to keep its aspect. */
 extern int pc_gx_hud_half;

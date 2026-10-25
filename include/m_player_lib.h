@@ -50,7 +50,9 @@ extern int mPlib_guest_slot_ready(void);
 extern int mPlib_take_guest_slot(void);
 extern int mPlib_player_slot_of(PLAYER_ACTOR* player);
 extern int mPlib_any_player_actor(void);
-extern PLAYER_ACTOR* mPlib_other_player_actor(void);
+/* Extra players in pad order (Controls rows 1-3), excluding the selected resident. */
+extern int mPlib_extra_player_count(void);
+extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
 extern Private_c* mPlib_private_for_slot(int slot);
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);

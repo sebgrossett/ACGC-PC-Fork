@@ -544,20 +544,29 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     } else {
         mVibctl_set_force_stop(2);
 #ifdef TARGET_PC
-        /* The selected resident stays in the menu. The other resident keeps
+        /* The selected resident stays in the menu. Every other resident keeps
          * walking, including the same collision pass as a normal frame. */
         {
-            PLAYER_ACTOR* guest = mPlib_other_player_actor();
+            int extras = mPlib_extra_player_count();
+            int i;
 
-            if (guest != NULL) {
+            if (extras > 0) {
                 CollisionCheck_OC(game, &play->collision_check);
                 CollisionCheck_clear(game, &play->collision_check);
 
-                if (guest->actor_class.mv_proc != NULL) {
-                    guest->actor_class.mv_proc((ACTOR*)guest, game);
-                }
+                for (i = 0; i < extras; i++) {
+                    PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
 
-                CollisionCheck_Status_Clear(&guest->actor_class.status_data);
+                    if (guest == NULL) {
+                        continue;
+                    }
+
+                    if (guest->actor_class.mv_proc != NULL) {
+                        guest->actor_class.mv_proc((ACTOR*)guest, game);
+                    }
+
+                    CollisionCheck_Status_Clear(&guest->actor_class.status_data);
+                }
             }
         }
 #endif
@@ -692,32 +701,68 @@ static void copy_efb_to_texture(Gfx** graph, void* buf) {
 }
 
 #ifdef TARGET_PC
-/* Left half follows the selected resident. Right half uses that camera's
- * offset, moved onto the other resident. One actor keeps the full window. */
-static void play_set_view_half(GAME_PLAY* play, int right) {
-    rect half;
+/* One view per player. One player fills the window, two are halves, and three
+ * or four are quadrants in view order: P1 top-left, guests left to right then
+ * down. With three players the bottom-right quadrant stays empty. */
+static void play_view_rect(int index, int count, rect* out) {
+    out->top = 0;
+    out->bottom = SCREEN_HEIGHT;
+    out->l = 0;
+    out->r = SCREEN_WIDTH;
 
-    half.top = 0;
-    half.bottom = SCREEN_HEIGHT;
-    half.l = right ? (SCREEN_WIDTH / 2) : 0;
-    half.r = right ? SCREEN_WIDTH : (SCREEN_WIDTH / 2);
-    setScissorView(&play->view, &half);
+    if (count <= 1) {
+        return;
+    }
+
+    if (count == 2) {
+        if (index <= 0) {
+            out->r = SCREEN_WIDTH / 2;
+        } else {
+            out->l = SCREEN_WIDTH / 2;
+        }
+        return;
+    }
+
+    out->l = (index & 1) ? (SCREEN_WIDTH / 2) : 0;
+    out->r = out->l + (SCREEN_WIDTH / 2);
+    out->top = (index >= 2) ? (SCREEN_HEIGHT / 2) : 0;
+    out->bottom = out->top + (SCREEN_HEIGHT / 2);
 }
 
-/* Menus are laid out for 320x240. The opener's half is 160x240, so a 4:3 band
- * keeps the panel and its 3D hand cursor in one undistorted space. */
-static void play_set_view_menu_half(GAME_PLAY* play) {
+static void play_set_view_player(GAME_PLAY* play, int index, int count) {
+    rect view_rect;
+
+    play_view_rect(index, count, &view_rect);
+    setScissorView(&play->view, &view_rect);
+}
+
+/* The opener is Player 1, so the menu rect is the left half (2 players) or the
+ * top-left quadrant (3-4). The half is 160x240, so a 4:3 band keeps the panel
+ * and its 3D hand cursor in one undistorted space; a quadrant is already 4:3. */
+static void play_set_view_menu(GAME_PLAY* play, int count) {
     rect band;
 
     band.l = 0;
     band.r = SCREEN_WIDTH / 2;
-    band.top = (SCREEN_HEIGHT - (SCREEN_HEIGHT / 2)) / 2;
-    band.bottom = band.top + (SCREEN_HEIGHT / 2);
+
+    if (count <= 2) {
+        band.top = (SCREEN_HEIGHT - (SCREEN_HEIGHT / 2)) / 2;
+        band.bottom = band.top + (SCREEN_HEIGHT / 2);
+    } else {
+        band.top = 0;
+        band.bottom = SCREEN_HEIGHT / 2;
+    }
+
     setScissorView(&play->view, &band);
 }
 
-static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int right, xyz_t* eye, xyz_t* center) {
-    play_set_view_half(play, right);
+/* One player, or the selected resident plus one per extra pad. */
+static int play_player_count(void) {
+    return 1 + mPlib_extra_player_count();
+}
+
+static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int count, xyz_t* eye, xyz_t* center) {
+    play_set_view_player(play, index, count);
     if ((eye != NULL) && (center != NULL)) {
         setLookAtView(&play->view, eye, center, &play->view.up);
     }
@@ -772,10 +817,33 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* host, PLAYER_ACTOR*
     }
 }
 
+/* Retail follow offset is per pad. View 0 is the selected resident, whose
+ * camera is already in play->view, so only guests need this. */
+static void play_view_camera(GAME_PLAY* play, PLAYER_ACTOR* host, int index, xyz_t* eye, xyz_t* center) {
+    PLAYER_ACTOR* guest;
+    int pad;
+
+    if ((index <= 0) || (host == NULL)) {
+        return;
+    }
+
+    guest = mPlib_extra_player_at(index - 1);
+    if (guest == NULL) {
+        return;
+    }
+
+    pad = mPlib_pad_for_player_slot(mPlib_player_slot_of(guest));
+    if ((pad < 0) || (pad >= PLAYER_NUM)) {
+        pad = index;
+    }
+
+    play_guest_camera(play, host, guest, pad, eye, center);
+}
+
 extern void pc_graph_flush_world(GRAPH* graph);
 
-/* The left half has already been shown. Start a new list for the right half
- * and the HUD without changing the clear color. */
+/* Each earlier view has already been shown. Start a new list for the next
+ * view and the HUD without changing the clear color. */
 static void play_restart_disp(GAME_PLAY* play, GRAPH* graph) {
     u8 fill_r = 0;
     u8 fill_g = 0;
@@ -792,10 +860,9 @@ static void play_restart_disp(GAME_PLAY* play, GRAPH* graph) {
 
 /* A door wipe uses one full-screen list. A second town during that wipe is what froze the zoom. */
 static int play_split_live(GAME_PLAY* play) {
-    PLAYER_ACTOR* guest = mPlib_other_player_actor();
     PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
 
-    if ((guest == NULL) || (host == NULL) || (host == guest)) {
+    if ((host == NULL) || (mPlib_extra_player_count() == 0)) {
         return FALSE;
     }
 
@@ -821,12 +888,30 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     OPEN_DISP(graph1);
 
 #ifdef TARGET_PC
-    /* One world fills the display-list buffers. Draw the left half, show it,
-     * then build the right half in a fresh list. A wipe stays one full list. */
+    /* One world fills the display-list buffers. Draw every view but the last,
+     * showing each and restarting the lists, then build the last view where
+     * the right half used to go. A wipe stays one full list. */
     if (play_split_live(play)) {
-        play_draw_split_side(play, graph1, 0, NULL, NULL);
-        pc_graph_flush_world(graph1);
-        play_restart_disp(play, graph1);
+        int count = play_player_count();
+        PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+        xyz_t host_eye = play->view.eye;
+        xyz_t host_center = play->view.center;
+        xyz_t host_up = play->view.up;
+        int i;
+
+        for (i = 0; i < count - 1; i++) {
+            xyz_t eye = host_eye;
+            xyz_t center = host_center;
+
+            play_view_camera(play, host, i, &eye, &center);
+            play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
+            pc_graph_flush_world(graph1);
+            play_restart_disp(play, graph1);
+        }
+
+        /* Guest views write play->view. Put the host camera back: the last view
+         * offsets from it, and the rest of the frame expects it. */
+        setLookAtView(&play->view, &host_eye, &host_center, &host_up);
     }
 #endif
 
@@ -883,9 +968,9 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     }
 
 #ifdef TARGET_PC
-    /* With a second resident, keep drawing both halves. The fullscreen prerender
-     * blit is what blacked out the right half and hid the menu. */
-    if (play->submenu.mode == mSM_MODE_PRERENDER_DONE && mPlib_other_player_actor() == NULL) {
+    /* With extra players, keep drawing every view. The fullscreen prerender
+     * blit is what blacked out the other view and hid the menu. */
+    if (play->submenu.mode == mSM_MODE_PRERENDER_DONE && mPlib_extra_player_count() == 0) {
 #else
     if (play->submenu.mode == mSM_MODE_PRERENDER_DONE) {
 #endif
@@ -920,7 +1005,8 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #ifdef TARGET_PC
         {
             if (play_split_live(play)) {
-                PLAYER_ACTOR* guest = mPlib_other_player_actor();
+                int count = play_player_count();
+                int last = count - 1;
                 PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
                 xyz_t eye = play->view.eye;
                 xyz_t center = play->view.center;
@@ -928,19 +1014,14 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 xyz_t guest_center = center;
                 xyz_t up = play->view.up;
                 rect full;
-                int guest_pad = mPlib_pad_for_player_slot(mPlib_player_slot_of(guest));
-
-                if ((guest_pad < 0) || (guest_pad >= PLAYER_NUM)) {
-                    guest_pad = 1;
-                }
 
                 full.top = 0;
                 full.bottom = SCREEN_HEIGHT;
                 full.l = 0;
                 full.r = SCREEN_WIDTH;
-                play_guest_camera(play, host, guest, guest_pad, &guest_eye, &guest_center);
+                play_view_camera(play, host, last, &guest_eye, &guest_center);
 
-                play_draw_split_side(play, graph1, 1, &guest_eye, &guest_center);
+                play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
                 setLookAtView(&play->view, &eye, &center, &up);
                 setScissorView(&play->view, &full);
                 setupViewer(play);
@@ -1023,21 +1104,24 @@ static void Game_play_draw(GAME_PLAY* play) {
             PC_DIAG(3, "Game_play_draw: bump done, drawing\n");
             watch_my_step_draw(play);
 #ifdef TARGET_PC
-            if (mPlib_other_player_actor() != NULL) {
+            if (mPlib_extra_player_count() != 0) {
                 rect saved = play->view.screen;
-                int side;
+                int count = play_player_count();
+                int i;
 
-                for (side = 0; side < 2; side++) {
-                    play_set_view_half(play, side);
+                for (i = 0; i < count; i++) {
+                    play_set_view_player(play, i, count);
                     showSplitHudView(&play->view);
-                    pc_gx_hud_half = TRUE;
+                    /* A half is 320x480 EFB for content x 0..160, so it needs the
+                     * half ortho. A quadrant is 320x240 EFB, the retail mapping. */
+                    pc_gx_hud_half = (count == 2);
                     banti_draw(play);
                     pc_gx_hud_half = FALSE;
                 }
 
-                /* The player who opened the menu is the left half (pads[0]).
-                 * Show the town first. The panel then gets its own list.
-                 * One list cannot hold a town and this UI. */
+                /* The player who opened the menu is view 0 (pads[0]). Show the
+                 * town first. The panel then gets its own list. One list cannot
+                 * hold a town and this UI. */
                 if (play->submenu.process_status != mSM_PROCESS_WAIT &&
                     play->submenu.mode >= mSM_MODE_PRERENDER_DONE) {
                     pc_graph_flush_world(graph);
@@ -1047,15 +1131,15 @@ static void Game_play_draw(GAME_PLAY* play) {
                     emu64_refresh();
                     /* Menu geometry and its 3D hand both read this flag while
                      * the lists are built, so it is a host flag, not a noop. */
-                    play_set_view_menu_half(play);
+                    play_set_view_menu(play, count);
                     showSplitHudView(&play->view);
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
                     CLOSE_DISP(graph);
-                    pc_gx_menu_half = TRUE;
+                    pc_gx_menu_mode = (count == 2) ? 1 : 2;
                     mSM_submenu_draw(&play->submenu, (GAME*)play);
-                    pc_gx_menu_half = FALSE;
+                    pc_gx_menu_mode = 0;
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
                     CLOSE_DISP(graph);

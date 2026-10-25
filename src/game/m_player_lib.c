@@ -1409,17 +1409,43 @@ extern int mPlib_player_slot_of(PLAYER_ACTOR* player) {
     return -1;
 }
 
-extern PLAYER_ACTOR* mPlib_other_player_actor(void) {
-    int session = (int)Common_Get(player_no);
-    int i;
+/* Extra players in pad order (Controls rows 1, 2, 3). Index 0 is the first guest. */
+extern int mPlib_extra_player_count(void) {
+    int pad;
+    int slot;
+    int count = 0;
 
-    for (i = 0; i < PLAYER_NUM; i++) {
-        if (i == session) {
-            continue;
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        for (slot = 0; slot < PLAYER_NUM; slot++) {
+            if ((s_player_by_slot[slot] != NULL) && (s_pad_by_slot[slot] == pad)) {
+                count++;
+                break;
+            }
         }
+    }
 
-        if (s_player_by_slot[i] != NULL) {
-            return s_player_by_slot[i];
+    return count;
+}
+
+extern PLAYER_ACTOR* mPlib_extra_player_at(int index) {
+    int pad;
+    int slot;
+    int seen = 0;
+
+    if (index < 0) {
+        return NULL;
+    }
+
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        for (slot = 0; slot < PLAYER_NUM; slot++) {
+            if ((s_player_by_slot[slot] != NULL) && (s_pad_by_slot[slot] == pad)) {
+                if (seen == index) {
+                    return s_player_by_slot[slot];
+                }
+
+                seen++;
+                break;
+            }
         }
     }
 
