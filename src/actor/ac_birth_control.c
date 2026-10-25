@@ -62,6 +62,15 @@ static void aBC_deleteActor_part(GAME_PLAY* play, int part) {
     check_bx = actor->block_x;
     check_bz = actor->block_z;
 
+#ifdef TARGET_PC
+    /* Split: keep actors around any active player, not only whoever crossed a
+     * block last, or the other half loses its houses and NPCs. */
+    if ((mPlib_extra_player_count() > 0) && (Actor_is_near_active_player(play, actor, 1) == TRUE)) {
+      actor = actor->next_actor;
+      continue;
+    }
+#endif
+
     if (g_mPlib_wade_disabled) {
       dx = ABS(check_bx - now_bx);
       dz = ABS(check_bz - now_bz);

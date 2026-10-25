@@ -1183,6 +1183,9 @@ extern void Shape_Info_init(ACTOR* actor, f32 ofs_y, mActor_shadow_proc shadow_p
 extern void Actor_delete(ACTOR* actor);
 extern int Actor_draw_actor_no_culling_check(ACTOR* actor);
 extern int Actor_draw_actor_no_culling_check2(ACTOR* actor, xyz_t* camera_pos, f32 camera_w);
+#ifdef TARGET_PC
+extern int Actor_is_near_active_player(GAME_PLAY* play, ACTOR* actor, int keep_range);
+#endif
 extern void Actor_info_ct(GAME* game, Actor_info* actor_info, Actor_data* player_data);
 extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play);
 extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info);
