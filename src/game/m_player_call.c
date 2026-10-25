@@ -50,11 +50,12 @@ static void initfunc(GAME_PLAY* play) {
 }
 
 #ifdef TARGET_PC
-static MCON s_guest_mcon;
+static MCON s_guest_mcon[MAXCONTROLLERS];
+static int s_guest_mcon_ready[MAXCONTROLLERS];
+static int s_guest_active_pad = -1;
 static MCON s_saved_mcon;
 static pad_t s_saved_pad;
 static Private_c* s_saved_priv;
-static int s_guest_mcon_ready;
 
 static void guest_load_look(GAME* game) {
     if (Now_Private == NULL) {
@@ -67,7 +68,15 @@ static void guest_load_look(GAME* game) {
 
 static void guest_begin(GAME* game, PLAYER_ACTOR* player, int slot) {
     Private_c* priv = mPlib_private_for_slot(slot);
-    pad_t* src = &game->pads[1];
+    int pad = mPlib_pad_for_player_slot(slot);
+    pad_t* src;
+
+    if ((pad < 0) || (pad >= MAXCONTROLLERS)) {
+        pad = 1;
+    }
+
+    s_guest_active_pad = pad;
+    src = &game->pads[pad];
 
     s_saved_priv = Now_Private;
     s_saved_mcon = game->mcon;
@@ -78,17 +87,23 @@ static void guest_begin(GAME* game, PLAYER_ACTOR* player, int slot) {
 
     mPlib_bind_player_actor(player);
     game->pads[0] = *src;
-    if (s_guest_mcon_ready == FALSE) {
-        mem_clear((u8*)&s_guest_mcon, sizeof(s_guest_mcon), 0);
-        s_guest_mcon_ready = TRUE;
+    if (s_guest_mcon_ready[pad] == FALSE) {
+        mem_clear((u8*)&s_guest_mcon[pad], sizeof(s_guest_mcon[pad]), 0);
+        s_guest_mcon_ready[pad] = TRUE;
     }
 
-    mCon_calc(&s_guest_mcon, (f32)src->now.stick_x, (f32)src->now.stick_y);
-    game->mcon = s_guest_mcon;
+    mCon_calc(&s_guest_mcon[pad], (f32)src->now.stick_x, (f32)src->now.stick_y);
+    game->mcon = s_guest_mcon[pad];
 }
 
 static void guest_end(GAME* game, int restore_look) {
-    s_guest_mcon = game->mcon;
+    int pad = s_guest_active_pad;
+
+    if ((pad >= 0) && (pad < MAXCONTROLLERS)) {
+        s_guest_mcon[pad] = game->mcon;
+    }
+
+    s_guest_active_pad = -1;
     game->mcon = s_saved_mcon;
     game->pads[0] = s_saved_pad;
     Common_Set(now_private, s_saved_priv);

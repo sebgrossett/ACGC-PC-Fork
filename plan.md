@@ -92,6 +92,7 @@ Session pointer and save record:
 Actor binding:
 - `Player_actor_ct` registers `s_player_by_slot[player_no]`. `Player_actor_dt` clears every slot holding that pointer. Profile wrappers are `Player_actor_*_call` in `src/game/m_player_call.c`.
 - Select scene still has the slot-0 actor when new-resident init changes `player_no`. The one-actor rebind in `get_player_actor_withoutCheck` is what keeps that frame from a null deref. A second registered actor must not use that rebind.
+- Pad row: `s_pad_by_slot[]` (`src/game/m_player_lib.c`) maps resident slot → Controls row (0 host, 1-3 guests). `mPlib_queue_guest_slot(slot, pad)` registers it at spawn, because `Player_actor_ct_call` runs `guest_begin` before `Player_actor_ct` registers the slot. The host registers row 0 in `Player_actor_ct`. `guest_begin` reads `pads[pad]`, and the per-pad `mcon` homes (`s_guest_mcon[]`) live in `src/game/m_player_call.c`. Camera follow offsets in `m_play.c` are `[PLAYER_NUM]` arrays indexed by that pad.
 
 New resident after the select NPC:
 - Train scene data: `src/data/scene/start_demo2.c`. One player, door to `SCENE_FG` at `{1979, 200, 760}`. First-town train is `start_demo1.c` and `ac_npc_guide_move.c_inc` (`aNGD_scene_change_wait_init`), which also inits island, shop, post office, and calendar.
@@ -214,8 +215,34 @@ Guest spawn trace (do not re-search):
 
 **Player 2 indoors is deferred behind dual/multi-world instancing** (decided 2026-10-25). Keeping Player 2's outdoor half live while Player 1 is inside their own house needs two simultaneous worlds: `play_cleanup` and `play_init` → `Gameplay_Scene_Read` tear the play down and re-point `current_scene_data`, and there is one field, one `Camera2`, one collision set, one actor list. Same rule applies to any resident's house. Smaller slices come first: per-player actors (guest singleton → 3-4 actors, 2x2 layout), per-player state, acre streaming, co-op menu and join/leave. Do not re-search the paths in section 4.
 
+**Next slice: per-player actors (up to 4) and 2x2 layout** (approved 2026-10-25, branch `feature/multi-player-actors`). Four residents walk at once, each on its own device, in a 2x2 layout for 3-4 players; the 2-player split stays as it is.
+
+Scope in:
+- Spawn up to 3 guests, not one: every other resident with valid `private_data`, each with its own private data, pad channel, look, and spawn offset.
+- Per-actor pad channel. `guest_begin` (`src/game/m_player_call.c`) hardcodes `game->pads[1]`, which only holds for one guest, and a resident slot cannot be the pad index because the host may be resident 2 or 3. Add `s_pad_by_slot[]` plus `mPlib_register_player_pad(slot, pad)` and `mPlib_pad_for_player_slot(slot)` (`src/game/m_player_lib.c`, `include/m_player_lib.h`); `mPlib_queue_guest_slot` takes the pad, `mPlib_take_guest_slot` returns it. `s_guest_mcon` becomes one per pad. The host registers pad 0. Pad index is the player row (0 = host, 1-3 = guests in spawn order), not the resident slot.
+- Accessors `mPlib_extra_player_count()` and `mPlib_extra_player_at(i)` in pad order. Replace the five `mPlib_other_player_actor()` call sites in `src/game/m_play.c`: menu-open guest move (line ~550), `play_split_live`, the prerender gate, the split draw, and the HUD gate.
+- Per-player camera offsets: `s_guest_eye_ofs`, `s_guest_center_ofs`, `s_guest_ofs_ready` become `[PLAYER_NUM]` arrays indexed by pad.
+- Layout: `play_set_view_player(play, pad, count)`. Two players keep left/right halves; 3-4 use quadrants (160x120 content each), and three players leave the bottom-right empty (decided 2026-10-25). P1 is top-left.
+- Draw loop: the first `count - 1` views are drawn early with `pc_graph_flush_world` and a list restart after each, the last view is drawn where the right half is drawn now. One town per list still holds; three flushes per frame is new (`src/graph.c`). The wipe path stays one full-screen list.
+- HUD per view: loop pads, set the view, `showSplitHudView`, `pc_gx_hud_half` only when `count == 2`, then `banti_draw`. In a quadrant the retail ortho maps 320x240 content onto 320x240 EFB, so the clock is 1x there and 2x in a half; no new matrix function.
+- Menu band in P1's quadrant when 3-4. `play_set_view_menu_half` becomes the opener's view rect, and the `pc_gx_menu_half` bool becomes a mode (0 none, 1 half, 2 quadrant; `pc/src/pc_gx.c`, `pc/include/pc_platform.h`, `src/game/m_submenu_ovl.c`). The quadrant branch changes three constants in `mSM_change_view`: x centre 160, y base 120, same half-width/half-height scaling. The half values stay byte-for-byte.
+
+Scope out: per-player state (actions, talk, menus stay P1's), save/join-leave, Player 2 indoors, per-player audio and vibration.
+
+Spawn detail (`Actor_info_spawn_guest` in `src/game/m_actor.c`): iterate other residents in slot order, take configured pads in order (rows 1-3 that are not `PC_PLAYER_INPUT_NONE`), queue slot+pad, then `make_actor` with spawn arg 0 and an offset table (+80 x, +80 z, -80 z), snap Y. Queue and spawn one at a time because `make_actor` runs `ct` synchronously and the queue is consumed by that call.
+
+Verification:
+- MINGW32 `./build_pc.sh`.
+- Two-player regression: halves, both walk, clock at single-player size, mailbox and notice band plus hand on the letter, window resize, door zoom.
+- 3-4 players: needs 3-4 residents in the save (currently 2; creating two more is part of the playtest). One resident per device with no input bleed, four quadrants, clock in each, menu in P1's top-left quadrant with the hand on the letter, resize.
+- Three players only: bottom-right empty, no black frame.
+- Frame time: four world passes and three flushes per frame; the menu-open branch runs collision once per guest.
+
+Risks: `pc_graph_flush_world` three times per frame instead of one (buffer and timing; the menu path already does two), collision per guest while a menu is open, and per-guest face/cloth reload each frame (texture churn).
+
+Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
-- Per-player HUD for players 3 and 4. Two residents draw the clock once per half.
+- Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
 - Field data follows the selected resident, so the right half can show unloaded acres when Player 2 is far
 - Join/leave queue, including joins waited out through a host event
 

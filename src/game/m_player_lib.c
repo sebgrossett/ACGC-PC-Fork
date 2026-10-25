@@ -1299,6 +1299,9 @@ extern void mPlib_change_player_face(GAME* game) {
 
 static PLAYER_ACTOR* s_player_by_slot[PLAYER_NUM];
 static Private_c* s_private_by_slot[PLAYER_NUM];
+/* Pad channel per resident slot. The pad is the Controls row (0 = host,
+ * 1-3 = guests), not the resident slot: the host may be resident 2 or 3. */
+static int s_pad_by_slot[PLAYER_NUM] = { -1, -1, -1, -1 };
 static int s_guest_slot = -1;
 static PLAYER_ACTOR* s_bound_actor = NULL;
 
@@ -1313,8 +1316,30 @@ extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player) {
         if (s_player_by_slot[i] == player) {
             s_player_by_slot[i] = NULL;
             s_private_by_slot[i] = NULL;
+            s_pad_by_slot[i] = -1;
         }
     }
+}
+
+extern void mPlib_register_player_pad(int slot, int pad) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return;
+    }
+
+    if ((pad < 0) || (pad >= PLAYER_NUM)) {
+        s_pad_by_slot[slot] = -1;
+        return;
+    }
+
+    s_pad_by_slot[slot] = pad;
+}
+
+extern int mPlib_pad_for_player_slot(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return -1;
+    }
+
+    return s_pad_by_slot[slot];
 }
 
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
@@ -1331,7 +1356,7 @@ extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
     s_private_by_slot[slot] = Save_GetPointer(private_data[slot]);
 }
 
-extern void mPlib_queue_guest_slot(int slot) {
+extern void mPlib_queue_guest_slot(int slot, int pad) {
     if ((slot < 0) || (slot >= PLAYER_NUM)) {
         s_guest_slot = -1;
         return;
@@ -1339,6 +1364,9 @@ extern void mPlib_queue_guest_slot(int slot) {
 
     s_guest_slot = slot;
     s_private_by_slot[slot] = Save_GetPointer(private_data[slot]);
+    /* The pad is known at spawn, before Player_actor_ct registers the slot,
+     * and Player_actor_*_call needs it around that ct. */
+    mPlib_register_player_pad(slot, pad);
 }
 
 extern int mPlib_guest_slot_ready(void) {

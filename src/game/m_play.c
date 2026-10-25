@@ -728,24 +728,30 @@ static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int right, xyz_t
     Actor_info_draw_actor(play, &play->actor_info);
 }
 
-/* Last normal follow offset from the selected resident. Door and talk cameras
- * stay on that resident. The other half keeps this follow. */
-static xyz_t s_guest_eye_ofs;
-static xyz_t s_guest_center_ofs;
-static int s_guest_ofs_ready;
+/* Last normal follow offset from the selected resident, per pad (Controls row).
+ * Door and talk cameras stay on the selected resident. Each other view keeps
+ * its own follow. */
+static xyz_t s_eye_ofs[PLAYER_NUM];
+static xyz_t s_center_ofs[PLAYER_NUM];
+static int s_ofs_ready[PLAYER_NUM];
 
-static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* host, PLAYER_ACTOR* guest, xyz_t* eye, xyz_t* center) {
+static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* host, PLAYER_ACTOR* guest, int pad, xyz_t* eye,
+                              xyz_t* center) {
     xyz_t* host_pos = &host->actor_class.world.position;
     xyz_t* guest_pos = &guest->actor_class.world.position;
 
+    if ((pad < 0) || (pad >= PLAYER_NUM)) {
+        return;
+    }
+
     if (play->camera.now_main_index == CAMERA2_PROCESS_NORMAL) {
-        s_guest_eye_ofs.x = eye->x - host_pos->x;
-        s_guest_eye_ofs.y = eye->y - host_pos->y;
-        s_guest_eye_ofs.z = eye->z - host_pos->z;
-        s_guest_center_ofs.x = center->x - host_pos->x;
-        s_guest_center_ofs.y = center->y - host_pos->y;
-        s_guest_center_ofs.z = center->z - host_pos->z;
-        s_guest_ofs_ready = TRUE;
+        s_eye_ofs[pad].x = eye->x - host_pos->x;
+        s_eye_ofs[pad].y = eye->y - host_pos->y;
+        s_eye_ofs[pad].z = eye->z - host_pos->z;
+        s_center_ofs[pad].x = center->x - host_pos->x;
+        s_center_ofs[pad].y = center->y - host_pos->y;
+        s_center_ofs[pad].z = center->z - host_pos->z;
+        s_ofs_ready[pad] = TRUE;
 
         eye->x += guest_pos->x - host_pos->x;
         eye->y += guest_pos->y - host_pos->y;
@@ -756,13 +762,13 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* host, PLAYER_ACTOR*
         return;
     }
 
-    if (s_guest_ofs_ready) {
-        eye->x = guest_pos->x + s_guest_eye_ofs.x;
-        eye->y = guest_pos->y + s_guest_eye_ofs.y;
-        eye->z = guest_pos->z + s_guest_eye_ofs.z;
-        center->x = guest_pos->x + s_guest_center_ofs.x;
-        center->y = guest_pos->y + s_guest_center_ofs.y;
-        center->z = guest_pos->z + s_guest_center_ofs.z;
+    if (s_ofs_ready[pad]) {
+        eye->x = guest_pos->x + s_eye_ofs[pad].x;
+        eye->y = guest_pos->y + s_eye_ofs[pad].y;
+        eye->z = guest_pos->z + s_eye_ofs[pad].z;
+        center->x = guest_pos->x + s_center_ofs[pad].x;
+        center->y = guest_pos->y + s_center_ofs[pad].y;
+        center->z = guest_pos->z + s_center_ofs[pad].z;
     }
 }
 
@@ -922,12 +928,17 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 xyz_t guest_center = center;
                 xyz_t up = play->view.up;
                 rect full;
+                int guest_pad = mPlib_pad_for_player_slot(mPlib_player_slot_of(guest));
+
+                if ((guest_pad < 0) || (guest_pad >= PLAYER_NUM)) {
+                    guest_pad = 1;
+                }
 
                 full.top = 0;
                 full.bottom = SCREEN_HEIGHT;
                 full.l = 0;
                 full.r = SCREEN_WIDTH;
-                play_guest_camera(play, host, guest, &guest_eye, &guest_center);
+                play_guest_camera(play, host, guest, guest_pad, &guest_eye, &guest_center);
 
                 play_draw_split_side(play, graph1, 1, &guest_eye, &guest_center);
                 setLookAtView(&play->view, &eye, &center, &up);

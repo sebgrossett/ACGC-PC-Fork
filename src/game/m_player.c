@@ -650,6 +650,10 @@ extern void Player_actor_ct(ACTOR* actorx, GAME* game) {
 
     guest = (slot != session);
     mPlib_register_player_slot(slot, (PLAYER_ACTOR*)actorx);
+    if (guest == FALSE) {
+        /* The selected resident is always the Controls row 0 (pads[0]). */
+        mPlib_register_player_pad(slot, 0);
+    }
 
     if (mEv_IsTitleDemo()) {
         actorx->status_data.weight = 255;
