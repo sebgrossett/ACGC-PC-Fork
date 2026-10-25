@@ -290,6 +290,7 @@ extern void mFI_InitItemTable(mFI_item_table_c* vis_block_info);
 extern int mFI_GetOldItemTableIdx(int n);
 extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos);
 extern int mFI_GetItemTable(mFI_item_table_c* item_table, xyz_t wpos, char* file, int line);
+extern int mFI_GetViewItemTable(mFI_item_table_c* item_table, xyz_t wpos);
 extern int mFI_FGisUpDate();
 extern void mFI_SetFGUpData();
 extern void mFI_BornItemON();
