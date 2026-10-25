@@ -210,6 +210,8 @@ Guest spawn trace (do not re-search):
 
 ## 7. Open items
 
+**Next slice: Player 2 indoors.** Keep Player 2's outdoor half alive while Player 1 is inside their own house. Guest spawn is `SCENE_FG` only (`Actor_info_ct`, `src/game/m_actor.c`), so entering the indoor scene destroys the guest actor and the right half goes with it. Detail under "Player 2 indoors" below. Start from `master` at `bd6a71b`; do not re-search the paths in section 4.
+
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4. Two residents draw the clock once per half.
 - Field data follows the selected resident, so the right half can show unloaded acres when Player 2 is far
@@ -217,7 +219,7 @@ Guest spawn trace (do not re-search):
 
 Open after the 2026-10-25 playtest of `feature/per-player-hud`. Paths are in section 4. Do not re-search them.
 - Mailbox and notice board in co-op: done. Both panels draw in the opener's half (band `l=0 r=160 top=60 bottom=180`), colours/textures match single player, and the hand plus the player model sit on the panel at any window size. Two fixes carried it: `load_player` no longer steals `SubmenuArea_visit` while a menu is open, and `mSM_change_view` now maps 3D viewport centres through the same aspect squeeze the 2D panel gets. Details in section 4, "Split menu catch-up". Do not retry alpha, blend, or cull.
-- Player 2 indoors: Player 1 entering their own house removes Player 2's half. Required: Player 2 keeps their outdoor state while Player 1 is inside. Guest spawn is `SCENE_FG` only, from `Actor_info_ct` (`src/game/m_actor.c`). The indoor scene is not `SCENE_FG`, so that actor is destroyed on the way in and created again on the way out. Player 2's camera during the door zoom is already correct. Another resident's house used to go black and stop answering. `play_split_live` keeps a wipe on one list. Not retested since Player 1's own house started working.
+- Player 2 indoors: Player 1 entering their own house removes Player 2's half. Required: Player 2 keeps their outdoor state while Player 1 is inside. Guest spawn is `SCENE_FG` only, from `Actor_info_ct` (`src/game/m_actor.c`). The indoor scene is not `SCENE_FG`, so that actor is destroyed on the way in and created again on the way out. Player 2's camera during the door zoom is already correct. Another resident's house used to go black and stop answering. `play_split_live` keeps a wipe on one list. Not retested since Player 1's own house started working. **This is the next slice.**
 - Mailbox close no longer leaves Player 1 in `MAIL_JUMP`.
 - Per-half clock: done. A half is 320x480 EFB while the font ortho spans content `x ±160`, so the clock mapped 1 EFB per content across but 2 down and read as 2:1 squashed with a retail height. It now uses `mFont_CulcHudHalfOrthoMatrix` (content `x 0..160`, `y ±120`) while `pc_gx_hud_half` is set, which is the retail right half across the whole half, and the `disp_left` slide is `-92`. Playtest: numbers no longer crunched and the size matches single player. Details in section 4.
 
