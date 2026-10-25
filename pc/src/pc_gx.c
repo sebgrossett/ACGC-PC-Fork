@@ -385,6 +385,9 @@ int pc_gx_menu_no_depth;
 /* Set while the co-op menu is drawn into the opener's half. */
 int pc_gx_menu_half;
 
+/* Set while the per-half HUD (clock) is drawn. */
+int pc_gx_hud_half;
+
 void pc_gx_clear_depth(void) {
     /* Pending world triangles would draw after this clear and refill the depth. */
     GLboolean scissor;

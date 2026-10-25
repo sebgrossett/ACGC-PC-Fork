@@ -7,6 +7,9 @@
 #include "sys_matrix.h"
 #include "m_font.h"
 #include "m_common_data.h"
+#ifdef TARGET_PC
+#include "pc_platform.h"
+#endif
 
 static Banti_c banti;
 
@@ -550,7 +553,15 @@ extern void banti_draw(GAME_PLAY* play) {
         OPEN_DISP(g);
 
         if (m != NULL) {
+#ifdef TARGET_PC
+            if (pc_gx_hud_half) {
+                mFont_CulcHudHalfOrthoMatrix(m);
+            } else {
+                mFont_CulcOrthoMatrix(m);
+            }
+#else
             mFont_CulcOrthoMatrix(m);
+#endif
 
             if (poly_render == TRUE) {
                 gSPMatrix(NOW_POLY_OPA_DISP++, m, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
@@ -562,7 +573,14 @@ extern void banti_draw(GAME_PLAY* play) {
         Matrix_scale(16.0f, 16.0f, 16.0f, MTX_LOAD);
 
         if (banti.disp_left == TRUE) {
+#ifdef TARGET_PC
+            /* The split HUD is drawn at 2x, so the retail slide would carry the
+             * clock past the half's left edge. Half the distance lands it in
+             * the same relative spot as single player. */
+            Matrix_translate(pc_gx_hud_half ? -92.0f : -184.0f, 0.0f, 0.0f, MTX_MULT);
+#else
             Matrix_translate(-184.0f, 0.0f, 0.0f, MTX_MULT);
+#endif
         }
 
         {
