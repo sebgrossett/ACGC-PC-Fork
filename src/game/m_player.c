@@ -836,6 +836,18 @@ static void Player_actor_request_main_change_from_submenu(ACTOR* actorx, GAME* g
         NULL,
     };
 
+#ifdef TARGET_PC
+    /* The pending submenu order belongs to the selected resident. The other
+     * actor moves first and used to consume it, leaving the mailbox jump stuck. */
+    {
+        int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actorx);
+
+        if (slot >= 0 && slot != (int)Common_Get(player_no)) {
+            return;
+        }
+    }
+#endif
+
     if (mPlib_Check_SetOrderSubmenu()) {
         mPlayer_change_data_from_submenu_c* data = mPlib_Get_change_data_from_submenu_p();
         int idx = data->requested_main_index;

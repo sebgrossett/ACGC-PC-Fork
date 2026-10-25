@@ -164,6 +164,14 @@ extern void mSM_submenu_ovlptr_cleanup(Submenu* submenu) {
 extern void load_player(Submenu* submenu) {
     mSM_dlftbl_c* dlftbl = &SubmenuArea_dlftbl[mSM_DLF_PLAYER_ACTOR];
 
+    /* A guest keeps moving while the submenu is open, and its move call lands
+     * here every frame. The menu links its own area and the panel draw gate
+     * requires it, so do not swap the area back until the menu has closed.
+     * mSM_move_End calls this after setting mSM_PROCESS_WAIT. */
+    if (submenu->process_status != mSM_PROCESS_WAIT) {
+        return;
+    }
+
     if (SubmenuArea_visit != dlftbl) {
         if (SubmenuArea_visit != NULL) {
             SubmenuArea_DoUnlink(SubmenuArea_visit, submenu);
