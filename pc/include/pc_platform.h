@@ -92,7 +92,19 @@ void pc_platform_update_window_size(void);
  *   ON (0xAC5701) -> 1, OFF (0xAC5700) -> 2. emu64 reads these during DL processing. */
 #define PC_NOOP_WIDESCREEN_STRETCH     0xAC5701u
 #define PC_NOOP_WIDESCREEN_STRETCH_OFF 0xAC5700u
+/* Menu geometry is a decal. Clear depth after the world so it is not rejected. */
+#define PC_NOOP_CLEAR_DEPTH            0xAC5702u
+/* The open menu is drawn into one player's half. Depth compare stays off for that draw. */
+#define PC_NOOP_MENU_DEPTH_OFF         0xAC5703u
+#define PC_NOOP_MENU_DEPTH_ON          0xAC5704u
 extern int g_pc_widescreen_stretch;
+extern int pc_gx_menu_no_depth;
+/* Host flag, set while the co-op menu is drawn into the opener's half.
+ * Menus lay out for 320x240 and the half is 160x240. */
+extern int pc_gx_menu_half;
+/* Horizontal squeeze the GX layer applies to 4:3 content on a wider window.
+ * 1.0 when the window is 4:3 or narrower. */
+float pc_gx_aspect_factor(void);
 
 /* --- Functions --- */
 void pc_platform_init(void);

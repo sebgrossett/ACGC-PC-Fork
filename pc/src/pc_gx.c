@@ -71,6 +71,8 @@ static void pc_gx_update_aspect(void) {
     }
 }
 
+float pc_gx_aspect_factor(void) { return g_aspect_factor; }
+
 /* EFB capture: keep full-res GL textures from GXCopyTex instead of downsampling to 640x480 */
 #define MAX_EFB_CAPTURES 4
 static struct {
@@ -377,12 +379,37 @@ void pc_gx_init(void) {
 /* Set by the split-screen flush. The next begin keeps the left half. */
 int pc_gx_keep_framebuffer;
 
+/* Set from the menu depth noops while a display list is running. */
+int pc_gx_menu_no_depth;
+
+/* Set while the co-op menu is drawn into the opener's half. */
+int pc_gx_menu_half;
+
+void pc_gx_clear_depth(void) {
+    /* Pending world triangles would draw after this clear and refill the depth. */
+    GLboolean scissor;
+
+    pc_gx_draw_pending();
+    scissor = glIsEnabled(GL_SCISSOR_TEST);
+
+    if (scissor) {
+        glDisable(GL_SCISSOR_TEST);
+    }
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    if (scissor) {
+        glEnable(GL_SCISSOR_TEST);
+    }
+}
+
 void pc_gx_begin_frame(void) {
     /* Profiler frame opens in graph_main so game_main is captured */
     Uint64 prof_start = pc_profiler_begin_timer();
     int keep_fb = pc_gx_keep_framebuffer;
 
     pc_gx_keep_framebuffer = 0;
+    pc_gx_menu_no_depth = 0;
     pc_emu64_frame_cmds = 0;
     pc_emu64_frame_noop_cmds = 0;
     pc_emu64_frame_tri_cmds = 0;

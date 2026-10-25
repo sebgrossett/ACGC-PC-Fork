@@ -2,6 +2,10 @@
 
 #include "m_font.h"
 #include "m_play.h"
+#include "m_player_lib.h"
+#ifdef TARGET_PC
+#include "pc_platform.h"
+#endif
 #include "m_trademark.h"
 #include "m_rcp.h"
 #include "libultra/libultra.h"
@@ -90,7 +94,13 @@ static void mSM_setup_view(Submenu* submenu, GRAPH* graph, int init_flag) {
 #else
         gSPViewport(POLY_OPA_DISP++, &view->viewport);
 #endif
+#ifdef TARGET_PC
+        /* Follow the half the HUD just set. A full view is still 0,0,640,480. */
+        gDPSetScissor(POLY_OPA_DISP++, G_SC_NON_INTERLACE, view->screen.l * 2, view->screen.top * 2,
+                      view->screen.r * 2, view->screen.bottom * 2);
+#else
         gDPSetScissor(POLY_OPA_DISP++, G_SC_NON_INTERLACE, 0, 0, 640, 480);
+#endif
     }
 
     gSPMatrix(POLY_OPA_DISP++, mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
@@ -113,6 +123,33 @@ static void mSM_change_view(GRAPH* graph, f32 eye_dist, f32 y_lookAt, f32 vp_x, 
     u16 persp_norm;
     f32 y_eye;
     f32 z_eye;
+
+#ifdef TARGET_PC
+    /* Callers place this viewport in retail 320x240 screen coordinates, which
+     * are drawn at 2x. The co-op menu is a 4:3 band at 1x in the opener's half,
+     * so the panel and the hand have to share that space or the hand walks off
+     * the half while the panel stays put. Halve the box as well, or 3D items
+     * keep their full-screen size against a half-size panel. */
+    if (pc_gx_menu_half) {
+        f32 centre_x;
+
+        vp_x *= 0.5f;
+        vp_y = 240.0f + vp_y * 0.5f;
+        width /= 2;
+        height /= 2;
+        /* The 2D panel goes through the GX layer's aspect correction, which
+         * squeezes 4:3 content horizontally on a wide window. A 3D item carries
+         * its position in the viewport box, so it needs the same squeeze about
+         * the band centre or the hand and the player model drift sideways when
+         * the window is resized. `vp_x` is twice the box's left edge, so the
+         * centre (twice left + width) is what follows the panel; the box width
+         * stays as it is because the squeezed projection already scales the
+         * model drawn inside it. */
+        centre_x = vp_x + (f32)width;
+        centre_x = 320.0f + (centre_x - 320.0f) * pc_gx_aspect_factor();
+        vp_x = centre_x - (f32)width;
+    }
+#endif
 
     if (viewport == NULL) {
         viewport = &viewport_data;

@@ -151,6 +151,48 @@ static void setScissor(View* view) {
   CLOSE_DISP(g);
 }
 
+#ifdef TARGET_PC
+extern void showSplitHudView(View* view) {
+  GRAPH* g = view->graph;
+  Vp* vp;
+  int left = view->screen.l * 2;
+  int top = view->screen.top * 2;
+  int right = view->screen.r * 2;
+  int bottom = view->screen.bottom * 2;
+  Gfx* gfx;
+
+  OPEN_DISP(g);
+
+  vp = GRAPH_ALLOC_TYPE(g, Vp, 1);
+  if (vp != NULL) {
+    set_viewport(vp, &view->screen);
+    view->viewport = *vp;
+
+    gfx = NOW_POLY_OPA_DISP;
+    gSPViewport(gfx++, vp);
+    gDPSetScissor(gfx++, G_SC_NON_INTERLACE, left, top, right, bottom);
+    SET_POLY_OPA_DISP(gfx);
+
+    gfx = NOW_POLY_XLU_DISP;
+    gSPViewport(gfx++, vp);
+    gDPSetScissor(gfx++, G_SC_NON_INTERLACE, left, top, right, bottom);
+    SET_POLY_XLU_DISP(gfx);
+
+    gfx = NOW_FONT_DISP;
+    gSPViewport(gfx++, vp);
+    gDPSetScissor(gfx++, G_SC_NON_INTERLACE, left, top, right, bottom);
+    SET_FONT_DISP(gfx);
+
+    gfx = NOW_OVERLAY_DISP;
+    gSPViewport(gfx++, vp);
+    gDPSetScissor(gfx++, G_SC_NON_INTERLACE, left, top, right, bottom);
+    SET_OVERLAY_DISP(gfx);
+  }
+
+  CLOSE_DISP(g);
+}
+#endif
+
 extern int stretchViewInit(View* view) {
   view->stretch.target_rotate.x = 0.0f;
   view->stretch.target_rotate.y = 0.0f;

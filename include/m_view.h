@@ -60,6 +60,10 @@ extern int showView(View* view, int flags);
 extern int showPerspectiveView(View* view);
 extern int showOrthoView(View* view);
 extern int showView1(View* view, int flag_mask, Gfx** gfx_p);
+#ifdef TARGET_PC
+/* Viewport and scissor for one split half, on the HUD lists as well as the world lists. */
+extern void showSplitHudView(View* view);
+#endif
 
 #ifdef __cplusplus
 }

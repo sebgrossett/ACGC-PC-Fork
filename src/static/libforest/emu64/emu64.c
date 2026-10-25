@@ -2382,6 +2382,15 @@ void emu64::zmode() {
         compare_enable = GX_FALSE;
     }
 
+#ifdef TARGET_PC
+    /* An open menu is a decal on top of that player's half. Do not depth-test it. */
+    if (pc_gx_menu_no_depth) {
+        compare_enable = GX_FALSE;
+        update_enable = GX_FALSE;
+        GXSetColorUpdate(GX_TRUE);
+    }
+#endif
+
     GXSetZMode(compare_enable, compare_func, update_enable);
 }
 
@@ -3816,6 +3825,7 @@ void emu64::dl_G_SETTILESIZE() {
 #ifdef TARGET_PC
 extern "C" void pc_gx_tlut_set_native_le(unsigned int idx);
 extern "C" u16 s_tlut_first_word[16];
+extern "C" void pc_gx_clear_depth(void);
 #endif
 
 void emu64::dl_G_LOADTLUT() {
@@ -4415,6 +4425,18 @@ void emu64::dl_G_NOOP() {
             }
             if (this->gfx.words.w1 == PC_NOOP_WIDESCREEN_STRETCH_OFF) {
                 g_pc_widescreen_stretch = 2; /* pillarbox mode for UI */
+                break;
+            }
+            if (this->gfx.words.w1 == PC_NOOP_CLEAR_DEPTH) {
+                pc_gx_clear_depth();
+                break;
+            }
+            if (this->gfx.words.w1 == PC_NOOP_MENU_DEPTH_OFF) {
+                pc_gx_menu_no_depth = 1;
+                break;
+            }
+            if (this->gfx.words.w1 == PC_NOOP_MENU_DEPTH_ON) {
+                pc_gx_menu_no_depth = 0;
                 break;
             }
 #endif
