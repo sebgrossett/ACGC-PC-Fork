@@ -388,7 +388,8 @@ int main(int argc, char* argv[]) {
         const char* msg =
             "No game data found.\n\n"
             "Animal Crossing needs the original GameCube ROM to run.\n"
-            "Place a disc image (.iso, .gcm, or .ciso) to the \"rom\" subfolder.";
+            "Place a disc image (.iso, .gcm, or .ciso) in the \"rom\" folder\n"
+            "or in the project root.";
         fprintf(stderr, "[PC] %s\n", msg);
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
                                  "Animal Crossing - Missing ROM", msg, g_pc_window);

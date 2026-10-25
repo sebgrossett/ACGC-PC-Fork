@@ -1297,8 +1297,201 @@ extern void mPlib_change_player_face(GAME* game) {
     mPlib_change_player_face_pallet(game);
 }
 
+static PLAYER_ACTOR* s_player_by_slot[PLAYER_NUM];
+static Private_c* s_private_by_slot[PLAYER_NUM];
+static int s_guest_slot = -1;
+static PLAYER_ACTOR* s_bound_actor = NULL;
+
+extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player) {
+    int i;
+
+    if (player == NULL) {
+        return;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_player_by_slot[i] == player) {
+            s_player_by_slot[i] = NULL;
+            s_private_by_slot[i] = NULL;
+        }
+    }
+}
+
+extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return;
+    }
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        slot = 0;
+    }
+
+    mPlib_unregister_player_slot(player);
+    s_player_by_slot[slot] = player;
+    s_private_by_slot[slot] = Save_GetPointer(private_data[slot]);
+}
+
+extern void mPlib_queue_guest_slot(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        s_guest_slot = -1;
+        return;
+    }
+
+    s_guest_slot = slot;
+    s_private_by_slot[slot] = Save_GetPointer(private_data[slot]);
+}
+
+extern int mPlib_guest_slot_ready(void) {
+    int session = (int)Common_Get(player_no);
+
+    if (s_guest_slot < 0) {
+        return -1;
+    }
+
+    if ((session < 0) || (session >= PLAYER_NUM) || (s_player_by_slot[session] == NULL)) {
+        return -1;
+    }
+
+    return s_guest_slot;
+}
+
+extern int mPlib_take_guest_slot(void) {
+    int slot = mPlib_guest_slot_ready();
+
+    if (slot >= 0) {
+        s_guest_slot = -1;
+    }
+
+    return slot;
+}
+
+extern int mPlib_player_slot_of(PLAYER_ACTOR* player) {
+    int i;
+
+    if (player == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_player_by_slot[i] == player) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+extern PLAYER_ACTOR* mPlib_other_player_actor(void) {
+    int session = (int)Common_Get(player_no);
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (i == session) {
+            continue;
+        }
+
+        if (s_player_by_slot[i] != NULL) {
+            return s_player_by_slot[i];
+        }
+    }
+
+    return NULL;
+}
+
+extern int mPlib_any_player_actor(void) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_player_by_slot[i] != NULL) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+extern Private_c* mPlib_private_for_slot(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return NULL;
+    }
+
+    return s_private_by_slot[slot];
+}
+
+extern void mPlib_bind_player_actor(PLAYER_ACTOR* player) {
+    s_bound_actor = player;
+}
+
+extern void mPlib_unbind_player_actor(void) {
+    s_bound_actor = NULL;
+}
+
+extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {
+    int i;
+    int any = FALSE;
+
+    if ((player_index < 0) || (player_index >= PLAYER_NUM)) {
+        return NULL;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_player_by_slot[i] != NULL) {
+            any = TRUE;
+            break;
+        }
+    }
+
+    if (any) {
+        return s_player_by_slot[player_index];
+    }
+
+    /* Constructor has not registered yet. The only actor is the list head. */
+    if ((player_index == 0) && (play != NULL)) {
+        return (PLAYER_ACTOR*)play->actor_info.list[ACTOR_PART_PLAYER].actor;
+    }
+
+    return NULL;
+}
+
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play) {
-    return (PLAYER_ACTOR*)&play->actor_info.list[ACTOR_PART_PLAYER].actor[0];
+    int slot = (int)Common_Get(player_no);
+    PLAYER_ACTOR* player;
+    PLAYER_ACTOR* only = NULL;
+    int found = 0;
+    int i;
+
+    if (s_bound_actor != NULL) {
+        return s_bound_actor;
+    }
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        slot = 0;
+    }
+
+    player = get_player_actor_by_index(play, slot);
+    if (player != NULL) {
+        return player;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_player_by_slot[i] != NULL) {
+            only = s_player_by_slot[i];
+            found++;
+        }
+    }
+
+    /* Select screen keeps the actor on the old slot, then player_no changes. */
+    if (found == 1) {
+        mPlib_register_player_slot(slot, only);
+        return only;
+    }
+
+    /* Constructor has not registered yet. The only actor is the list head. */
+    if ((found == 0) && (play != NULL)) {
+        return (PLAYER_ACTOR*)play->actor_info.list[ACTOR_PART_PLAYER].actor;
+    }
+
+    return NULL;
 }
 
 static int mPlib_check_DynamicLinkFile_m_player(void) {

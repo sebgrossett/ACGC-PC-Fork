@@ -105,10 +105,18 @@ extern void setScissorView(View* view, rect* screen) {
 static void setScissorX(Gfx** gfx_p, int left, int top, int right, int bottom) {
   Gfx* gfx = *gfx_p;
 
+#ifdef TARGET_PC
+  /* Viewport math scales this 320x240 rect by 2 into the 640x480 EFB. */
+  left *= 2;
+  top *= 2;
+  right *= 2;
+  bottom *= 2;
+#else
   if (left == 0 && top == 0 && right == SCREEN_WIDTH && bottom == SCREEN_HEIGHT) {
     right *=  2;
     bottom *= 2;
   }
+#endif
 
   gDPSetScissor(gfx++, G_SC_NON_INTERLACE, left, top, right, bottom);
   *gfx_p = gfx;

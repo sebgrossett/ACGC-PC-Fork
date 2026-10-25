@@ -292,6 +292,34 @@ static int graph_draw_finish(GRAPH* this) {
     return err;
 }
 
+#ifdef TARGET_PC
+/* Show the lists built so far, then start empty lists for the rest of the
+ * frame. The swap stays with the normal end-of-frame task. */
+extern int pc_gx_keep_framebuffer;
+
+void pc_graph_flush_world(GRAPH* this) {
+    ucode_info ucode[2];
+
+    if (graph_draw_finish(this)) {
+        graph_setup_double_buffer(this);
+        return;
+    }
+
+    ucode[0].type = UCODE_TYPE_POLY_TEXT;
+    ucode[1].type = UCODE_TYPE_SPRITE_TEXT;
+    ucode[0].ucode_p = ucode_GetPolyTextStart();
+    ucode[1].ucode_p = ucode_GetSpriteTextStart();
+    JW_BeginFrame();
+    emu64_init();
+    emu64_set_ucode_info(2, ucode);
+    emu64_set_first_ucode(ucode[0].ucode_p);
+    emu64_taskstart(this->Gfx_list05);
+    emu64_cleanup();
+    pc_gx_keep_framebuffer = 1;
+    graph_setup_double_buffer(this);
+}
+#endif
+
 static void do_soft_reset(GAME* game) {
     SoftResetEnable = FALSE;
     mBGM_reset();

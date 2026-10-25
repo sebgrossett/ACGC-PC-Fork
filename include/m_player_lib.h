@@ -36,6 +36,22 @@ extern u16* mPlib_get_player_face_pallet_p(GAME* game);
 extern void mPlib_change_player_cloth(GAME* game, u16 cloth_idx);
 extern void mPlib_change_player_face_pallet(GAME* game);
 extern void mPlib_change_player_face(GAME* game);
+/* player_index is the resident save slot (0..PLAYER_NUM-1).
+ * get_player_actor_withoutCheck follows Common_Get(player_no). If that slot
+ * is empty and only one actor is registered, it moves that actor to the slot.
+ * A bound actor, set around the guest resident's ct/move/draw, wins over that. */
+extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player);
+extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player);
+extern void mPlib_queue_guest_slot(int slot);
+extern int mPlib_guest_slot_ready(void);
+extern int mPlib_take_guest_slot(void);
+extern int mPlib_player_slot_of(PLAYER_ACTOR* player);
+extern int mPlib_any_player_actor(void);
+extern PLAYER_ACTOR* mPlib_other_player_actor(void);
+extern Private_c* mPlib_private_for_slot(int slot);
+extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
+extern void mPlib_unbind_player_actor(void);
+extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);
 extern int mPlib_get_player_actor_main_index(GAME* game);
 extern int mPlib_get_player_actor_request_main_index(GAME* game);
@@ -190,6 +206,7 @@ extern int mPlib_CheckButtonOnly_forDush(void);
 extern int mPlib_Check_golden_item_get_demo_end(int gold_item_type);
 extern void mPlib_Set_change_color_request(void);
 
+#define GET_PLAYER_ACTOR_INDEX(play, player_index) get_player_actor_by_index((play), (player_index))
 #define GET_PLAYER_ACTOR(play) get_player_actor_withoutCheck(play)
 #define GET_PLAYER_ACTOR_NOW() get_player_actor_withoutCheck((GAME_PLAY*)gamePT)
 #define GET_PLAYER_ACTOR_GAME(game) get_player_actor_withoutCheck((GAME_PLAY*)(game))

@@ -20,6 +20,12 @@ PCSettings g_pc_settings = {
     .master_volume = 100,
     .stick_deadzone = 12,
     .cstick_deadzone = 12,
+    .player_input = {
+        PC_PLAYER_INPUT_KEY_AND_PAD,
+        PC_PLAYER_INPUT_NONE,
+        PC_PLAYER_INPUT_NONE,
+        PC_PLAYER_INPUT_NONE,
+    },
 };
 
 static const char* SETTINGS_FILE = "settings.ini";
@@ -69,7 +75,14 @@ static const char* DEFAULT_SETTINGS =
     "[Input]\n"
     "# Gamepad stick deadzones as a percentage (0-40)\n"
     "stick_deadzone = 12\n"
-    "cstick_deadzone = 12\n";
+    "cstick_deadzone = 12\n"
+    "\n"
+    "# Per player: 0 = keyboard and first pad, 1 = keyboard,\n"
+    "# 2 = pad 1, 3 = pad 2, 4 = pad 3, 5 = pad 4, 6 = none\n"
+    "player1_input = 0\n"
+    "player2_input = 6\n"
+    "player3_input = 6\n"
+    "player4_input = 6\n";
 
 static const char* skip_ws(const char* s) {
     while (*s == ' ' || *s == '\t') s++;
@@ -120,6 +133,10 @@ static void apply_setting(const char* key, const char* value) {
         if (val >= 0 && val <= 40) g_pc_settings.stick_deadzone = val;
     } else if (strcmp(key, "cstick_deadzone") == 0) {
         if (val >= 0 && val <= 40) g_pc_settings.cstick_deadzone = val;
+    } else if (strncmp(key, "player", 6) == 0 && key[6] >= '1' && key[6] <= '4' &&
+               strcmp(key + 7, "_input") == 0) {
+        if (val >= PC_PLAYER_INPUT_KEY_AND_PAD && val <= PC_PLAYER_INPUT_NONE)
+            g_pc_settings.player_input[key[6] - '1'] = val;
     }
 }
 
@@ -208,6 +225,13 @@ void pc_settings_save(void) {
     fprintf(f, "# Gamepad stick deadzones as a percentage (0-40)\n");
     fprintf(f, "stick_deadzone = %d\n", g_pc_settings.stick_deadzone);
     fprintf(f, "cstick_deadzone = %d\n", g_pc_settings.cstick_deadzone);
+    fprintf(f, "\n");
+    fprintf(f, "# Per player: 0 = keyboard and first pad, 1 = keyboard,\n");
+    fprintf(f, "# 2 = pad 1, 3 = pad 2, 4 = pad 3, 5 = pad 4, 6 = none\n");
+    fprintf(f, "player1_input = %d\n", g_pc_settings.player_input[0]);
+    fprintf(f, "player2_input = %d\n", g_pc_settings.player_input[1]);
+    fprintf(f, "player3_input = %d\n", g_pc_settings.player_input[2]);
+    fprintf(f, "player4_input = %d\n", g_pc_settings.player_input[3]);
     fclose(f);
     printf("[Settings] Saved %s\n", SETTINGS_FILE);
 }

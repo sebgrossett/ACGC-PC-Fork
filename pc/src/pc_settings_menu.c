@@ -29,6 +29,10 @@ enum {
     ITEM_MASTER_VOLUME,
     ITEM_STICK_DEADZONE,
     ITEM_CSTICK_DEADZONE,
+    ITEM_PLAYER1,
+    ITEM_PLAYER2,
+    ITEM_PLAYER3,
+    ITEM_PLAYER4,
     ITEM_BINDINGS,
 };
 
@@ -62,6 +66,10 @@ static const Item tab_audio_items[] = {
 };
 
 static const Item tab_controls_items[] = {
+    { "Player 1",         ITEM_PLAYER1,         0 },
+    { "Player 2",         ITEM_PLAYER2,         0 },
+    { "Player 3",         ITEM_PLAYER3,         0 },
+    { "Player 4",         ITEM_PLAYER4,         0 },
     { "Stick deadzone",   ITEM_STICK_DEADZONE,  0 },
     { "C-stick deadzone", ITEM_CSTICK_DEADZONE, 0 },
     { "Keybindings",      ITEM_BINDINGS,        0 },
@@ -257,7 +265,11 @@ static void recompute_dirty(void) {
         (s_pending.nes_aspect       != g_pc_settings.nes_aspect) ||
         (s_pending.master_volume    != g_pc_settings.master_volume) ||
         (s_pending.stick_deadzone   != g_pc_settings.stick_deadzone) ||
-        (s_pending.cstick_deadzone  != g_pc_settings.cstick_deadzone);
+        (s_pending.cstick_deadzone  != g_pc_settings.cstick_deadzone) ||
+        (s_pending.player_input[0]  != g_pc_settings.player_input[0]) ||
+        (s_pending.player_input[1]  != g_pc_settings.player_input[1]) ||
+        (s_pending.player_input[2]  != g_pc_settings.player_input[2]) ||
+        (s_pending.player_input[3]  != g_pc_settings.player_input[3]);
 }
 
 static void snapshot(void) {
@@ -267,6 +279,55 @@ static void snapshot(void) {
 
 /* Per-item dispatch: cycle, format, changed. Add cases here when a
  * new setting row is added to any tab. */
+
+/* Key-and-pad owns the keyboard and pad 1. The row being changed keeps
+ * its new device. The other row drops just that device. */
+static int player_input_conflicts(int a, int b) {
+    if (a == PC_PLAYER_INPUT_NONE || b == PC_PLAYER_INPUT_NONE) return 0;
+    if (a == b) return 1;
+    if (a == PC_PLAYER_INPUT_KEY_AND_PAD &&
+        (b == PC_PLAYER_INPUT_KEYBOARD || b == PC_PLAYER_INPUT_PAD1))
+        return 1;
+    if (b == PC_PLAYER_INPUT_KEY_AND_PAD &&
+        (a == PC_PLAYER_INPUT_KEYBOARD || a == PC_PLAYER_INPUT_PAD1))
+        return 1;
+    return 0;
+}
+
+static void cycle_player_input(int player, int dir) {
+    int count = PC_PLAYER_INPUT_NONE + 1;
+    int v = s_pending.player_input[player];
+    int i;
+
+    if (v < 0 || v > PC_PLAYER_INPUT_NONE) v = PC_PLAYER_INPUT_NONE;
+    v = (v + (dir > 0 ? 1 : count - 1)) % count;
+    s_pending.player_input[player] = v;
+    for (i = 0; i < PC_PLAYER_COUNT; i++) {
+        int other;
+
+        if (i == player) continue;
+        other = s_pending.player_input[i];
+        if (!player_input_conflicts(v, other)) continue;
+        if (other == PC_PLAYER_INPUT_KEY_AND_PAD && v == PC_PLAYER_INPUT_KEYBOARD)
+            s_pending.player_input[i] = PC_PLAYER_INPUT_PAD1;
+        else if (other == PC_PLAYER_INPUT_KEY_AND_PAD && v == PC_PLAYER_INPUT_PAD1)
+            s_pending.player_input[i] = PC_PLAYER_INPUT_KEYBOARD;
+        else
+            s_pending.player_input[i] = PC_PLAYER_INPUT_NONE;
+    }
+}
+
+static const char* player_input_label(int v) {
+    switch (v) {
+        case PC_PLAYER_INPUT_KEY_AND_PAD: return "< Key and Pad >";
+        case PC_PLAYER_INPUT_KEYBOARD:    return "< Keyboard >";
+        case PC_PLAYER_INPUT_PAD1 + 0:    return "< Pad 1 >";
+        case PC_PLAYER_INPUT_PAD1 + 1:    return "< Pad 2 >";
+        case PC_PLAYER_INPUT_PAD1 + 2:    return "< Pad 3 >";
+        case PC_PLAYER_INPUT_PAD1 + 3:    return "< Pad 4 >";
+        default:                          return "< None >";
+    }
+}
 
 static void item_cycle(int id, int dir) {
     switch (id) {
@@ -334,6 +395,12 @@ static void item_cycle(int id, int dir) {
             if (v > 40) v = 40;
             s_pending.cstick_deadzone = v;
         } break;
+        case ITEM_PLAYER1:
+        case ITEM_PLAYER2:
+        case ITEM_PLAYER3:
+        case ITEM_PLAYER4:
+            cycle_player_input(id - ITEM_PLAYER1, dir);
+            break;
         case ITEM_BINDINGS:
             /* opened via confirm, left/right does nothing */
             break;
@@ -395,6 +462,12 @@ static void item_format(int id, char* buf, size_t n) {
         case ITEM_CSTICK_DEADZONE:
             snprintf(buf, n, "< %d%% >", s_pending.cstick_deadzone);
             break;
+        case ITEM_PLAYER1:
+        case ITEM_PLAYER2:
+        case ITEM_PLAYER3:
+        case ITEM_PLAYER4:
+            snprintf(buf, n, "%s", player_input_label(s_pending.player_input[id - ITEM_PLAYER1]));
+            break;
         case ITEM_BINDINGS:
             snprintf(buf, n, "Edit...");
             break;
@@ -422,6 +495,11 @@ static int item_changed(int id) {
         case ITEM_MASTER_VOLUME: return s_pending.master_volume != g_pc_settings.master_volume;
         case ITEM_STICK_DEADZONE:  return s_pending.stick_deadzone  != g_pc_settings.stick_deadzone;
         case ITEM_CSTICK_DEADZONE: return s_pending.cstick_deadzone != g_pc_settings.cstick_deadzone;
+        case ITEM_PLAYER1:
+        case ITEM_PLAYER2:
+        case ITEM_PLAYER3:
+        case ITEM_PLAYER4:
+            return s_pending.player_input[id - ITEM_PLAYER1] != g_pc_settings.player_input[id - ITEM_PLAYER1];
         case ITEM_BINDINGS:      return 0; /* bindings save themselves */
     }
     return 0;

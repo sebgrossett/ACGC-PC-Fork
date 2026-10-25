@@ -671,6 +671,50 @@ static void copy_efb_to_texture(Gfx** graph, void* buf) {
     gGXCallDisplayList((*graph)++, gxbuf, dl);
 }
 
+#ifdef TARGET_PC
+/* Left half follows the selected resident. Right half uses that camera's
+ * offset, moved onto the other resident. One actor keeps the full window. */
+static void play_set_view_half(GAME_PLAY* play, int right) {
+    rect half;
+
+    half.top = 0;
+    half.bottom = SCREEN_HEIGHT;
+    half.l = right ? (SCREEN_WIDTH / 2) : 0;
+    half.r = right ? SCREEN_WIDTH : (SCREEN_WIDTH / 2);
+    setScissorView(&play->view, &half);
+}
+
+static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int right, xyz_t* eye, xyz_t* center) {
+    play_set_view_half(play, right);
+    if ((eye != NULL) && (center != NULL)) {
+        setLookAtView(&play->view, eye, center, &play->view.up);
+    }
+
+    setupFog(play, graph);
+    setupViewer(play);
+    setupViewMatrix(play, graph, graph);
+    Actor_info_draw_actor(play, &play->actor_info);
+}
+
+extern void pc_graph_flush_world(GRAPH* graph);
+
+/* The left half has already been shown. Start a new list for the right half
+ * and the HUD without changing the clear color. */
+static void play_restart_disp(GAME_PLAY* play, GRAPH* graph) {
+    u8 fill_r = 0;
+    u8 fill_g = 0;
+    u8 fill_b = 0;
+
+    if (Common_Get(field_type) == mFI_FIELDTYPE2_FG && mEv_CheckTitleDemo() != mEv_TITLEDEMO_STAFFROLL) {
+        fill_r = play->kankyo.base_light.background_color[0];
+        fill_g = play->kankyo.base_light.background_color[1];
+        fill_b = play->kankyo.base_light.background_color[2];
+    }
+
+    DisplayList_initialize(graph, fill_r, fill_g, fill_b, (GAME*)play);
+}
+#endif
+
 static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     Gfx* newdisp;
     Gfx* polydisp;
@@ -683,6 +727,21 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
             play->fb_mode, play->fb_wipe_mode, play->submenu.mode);
     OPEN_DISP(graph1);
+
+#ifdef TARGET_PC
+    /* One world fills the display-list buffers. Draw the left half, show it,
+     * then build the right half in a fresh list. */
+    {
+        PLAYER_ACTOR* guest = mPlib_other_player_actor();
+        PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+
+        if ((guest != NULL) && (host != NULL) && (host != guest)) {
+            play_draw_split_side(play, graph1, 0, NULL, NULL);
+            pc_graph_flush_world(graph1);
+            play_restart_disp(play, graph1);
+        }
+    }
+#endif
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 92) != 0)) {
         newdisp = NOW_POLY_OPA_DISP;
@@ -765,7 +824,44 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 85) != 0)) {
         PC_DIAG(3, "makeBumpTexture: before Actor_info_draw_actor\n");
+#ifdef TARGET_PC
+        {
+            PLAYER_ACTOR* guest = mPlib_other_player_actor();
+            PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+
+            if ((guest != NULL) && (host != NULL) && (host != guest)) {
+                xyz_t eye = play->view.eye;
+                xyz_t center = play->view.center;
+                xyz_t guest_eye = eye;
+                xyz_t guest_center = center;
+                xyz_t up = play->view.up;
+                rect full;
+                f32 dx = guest->actor_class.world.position.x - host->actor_class.world.position.x;
+                f32 dy = guest->actor_class.world.position.y - host->actor_class.world.position.y;
+                f32 dz = guest->actor_class.world.position.z - host->actor_class.world.position.z;
+
+                full.top = 0;
+                full.bottom = SCREEN_HEIGHT;
+                full.l = 0;
+                full.r = SCREEN_WIDTH;
+                guest_eye.x += dx;
+                guest_eye.y += dy;
+                guest_eye.z += dz;
+                guest_center.x += dx;
+                guest_center.y += dy;
+                guest_center.z += dz;
+
+                play_draw_split_side(play, graph1, 1, &guest_eye, &guest_center);
+                setLookAtView(&play->view, &eye, &center, &up);
+                setScissorView(&play->view, &full);
+                setupViewer(play);
+            } else {
+                Actor_info_draw_actor(play, &play->actor_info);
+            }
+        }
+#else
         Actor_info_draw_actor(play, &play->actor_info);
+#endif
         PC_DIAG(3, "makeBumpTexture: Actor draw done, Camera2...\n");
         Camera2_draw(play);
         mMsg_Draw((GAME*)play);

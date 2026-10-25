@@ -379,8 +379,12 @@ static void padmgr_UpdatePC(void) {
         }
     }
 
-    /* Always report PAD0 as connected (keyboard is always available) */
-    this->device_type[0] = PADMGR_TYPE_CONTROLLER;
+    /* HandleDoneReadPadMsg drops any channel whose device_type is not a
+     * controller. PADRead already filled cur_pads[0..3] from the Controls
+     * rows, so each of those channels has to stay connected. */
+    for (i = 0; i < MAXCONTROLLERS; i++) {
+        this->device_type[i] = PADMGR_TYPE_CONTROLLER;
+    }
 
     /* Process cur_pads into pads (button triggers, stick deltas, etc.) */
     padmgr_HandleDoneReadPadMsg();

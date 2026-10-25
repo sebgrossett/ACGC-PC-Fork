@@ -5,7 +5,8 @@
 #include "types.h"
 
 /* Initialize disc image reader. Searches for .ciso/.iso/.gcm in
- * current dir, orig/, rom/. Parses GCM filesystem into lookup table.
+ * current dir, orig/, rom/, then the repo root relative to the exe
+ * (pc/build32/bin/../../../). A disc in rom/ wins.
  * Returns 1 on success, 0 if no disc image found. */
 int pc_disc_init(void);
 

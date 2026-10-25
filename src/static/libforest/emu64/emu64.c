@@ -4173,9 +4173,14 @@ void emu64::dl_G_SETSCISSOR() {
 
 #endif
 
-    /* NOTE: fractional scissor components are ignored */
+    /* gDPSetScissor stores the far corner. GXSetScissor wants a width and height. */
     if (this->disable_polygons == false) {
-        GXSetScissor(scissor->x0, scissor->y0, scissor->x1, scissor->y1);
+        u32 x0 = scissor->x0;
+        u32 y0 = scissor->y0;
+        u32 w = (scissor->x1 > x0) ? (scissor->x1 - x0) : 0;
+        u32 h = (scissor->y1 > y0) ? (scissor->y1 - y0) : 0;
+
+        GXSetScissor(x0, y0, w, h);
     }
 }
 

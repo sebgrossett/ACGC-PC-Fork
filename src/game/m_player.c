@@ -640,6 +640,16 @@ static void Player_actor_init_value(ACTOR* actorx, GAME* game) {
 
 extern void Player_actor_ct(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
+    int session = (int)Common_Get(player_no);
+    int slot = mPlib_take_guest_slot();
+    int guest;
+
+    if (slot < 0) {
+        slot = session;
+    }
+
+    guest = (slot != session);
+    mPlib_register_player_slot(slot, (PLAYER_ACTOR*)actorx);
 
     if (mEv_IsTitleDemo()) {
         actorx->status_data.weight = 255;
@@ -653,24 +663,33 @@ extern void Player_actor_ct(ACTOR* actorx, GAME* game) {
     mPlib_change_player_face(game);                   //
     Player_actor_ct_other_func1(actorx, game);        //
     Player_actor_set_eye_PositionAndAngle(actorx);    //
-    Camera2_request_main_normal(play, 1, 1);
+    if (guest == FALSE) {
+        Camera2_request_main_normal(play, 1, 1);
+        mPlib_Clear_change_data_from_submenu();
+    }
     Shape_Info_init(actorx, 0.0f, &mAc_ActorShadowCircle, 18.0f, 18.0f);
     actorx->shape_info.ofs_y = 200.0f;
-    mPlib_Clear_change_data_from_submenu();       //
     Player_actor_request_main_dma(game, 41);      //
     Player_actor_change_proc_index(actorx, game); //
 }
 
 extern void Player_actor_dt(ACTOR* actorx, GAME* game) {
     PLAYER_ACTOR* player = (PLAYER_ACTOR*)actorx;
+    int slot = mPlib_player_slot_of(player);
+    int guest = (slot >= 0) && (slot != (int)Common_Get(player_no));
 
+    mPlib_unregister_player_slot(player);
     Player_actor_dt_forCorect(actorx, game); //
-    Common_Set(player_actor_exists, FALSE);
-    mPlib_cancel_player_warp_forEvent();              //
-    Player_actor_Reset_bee_chase(actorx);             //
+    if (mPlib_any_player_actor() == FALSE) {
+        Common_Set(player_actor_exists, FALSE);
+    }
+    if (guest == FALSE) {
+        mPlib_cancel_player_warp_forEvent();
+        Player_actor_Reset_bee_chase(actorx);
+    }
     Player_actor_Check_player_sunburn_for_dt(actorx); //
 
-    if (mEv_IsNotTitleDemo() && player->bgm_volume_mode != mPlayer_BGM_VOLUME_MODE_NORMAL) {
+    if ((guest == FALSE) && mEv_IsNotTitleDemo() && player->bgm_volume_mode != mPlayer_BGM_VOLUME_MODE_NORMAL) {
         switch (player->bgm_volume_mode) {
             case mPlayer_BGM_VOLUME_MODE_COLLECT_INSECTS:
                 mBGMPsComp_volume_collect_insects_end();

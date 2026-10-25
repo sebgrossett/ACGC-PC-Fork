@@ -21,7 +21,17 @@ typedef struct {
     int master_volume;    /* Applied at the PC audio output, 0-100 (default 100) */
     int stick_deadzone;   /* Gamepad main stick deadzone, percent 0-40 (default 12) */
     int cstick_deadzone;  /* Gamepad C-stick deadzone, percent 0-40 (default 12) */
+    int player_input[4];  /* Per player. See PC_PLAYER_INPUT_* */
 } PCSettings;
+
+#define PC_PLAYER_COUNT 4
+
+/* Controls-tab device. Pad 1 is the first connected gamepad. */
+#define PC_PLAYER_INPUT_KEY_AND_PAD 0
+#define PC_PLAYER_INPUT_KEYBOARD    1
+#define PC_PLAYER_INPUT_PAD1        2
+#define PC_PLAYER_INPUT_PAD_COUNT   4
+#define PC_PLAYER_INPUT_NONE        6
 
 extern PCSettings g_pc_settings;
 

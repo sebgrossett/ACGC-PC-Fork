@@ -6,6 +6,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <dirent.h>
+#include <SDL.h>
 #include "types.h"
 #include "pc_disc.h"
 
@@ -285,27 +286,51 @@ static int str_ends_ci(const char* s, const char* suffix) {
     return 1;
 }
 
+static int scan_dir_for_disc(const char* dir, char* out_path, int out_sz) {
+    DIR* dp = opendir(dir);
+    struct dirent* ent;
+    size_t len;
+    int slash;
+
+    if (!dp) return 0;
+    len = strlen(dir);
+    slash = (len > 0 && (dir[len - 1] == '/' || dir[len - 1] == '\\'));
+    while ((ent = readdir(dp)) != NULL) {
+        if (str_ends_ci(ent->d_name, ".ciso") ||
+            str_ends_ci(ent->d_name, ".iso")  ||
+            str_ends_ci(ent->d_name, ".gcm")) {
+            if (strcmp(dir, ".") == 0)
+                snprintf(out_path, out_sz, "%s", ent->d_name);
+            else if (slash)
+                snprintf(out_path, out_sz, "%s%s", dir, ent->d_name);
+            else
+                snprintf(out_path, out_sz, "%s/%s", dir, ent->d_name);
+            closedir(dp);
+            return 1;
+        }
+    }
+    closedir(dp);
+    return 0;
+}
+
 static int find_disc_image(char* out_path, int out_sz) {
     static const char* dirs[] = { ".", "orig", "rom", NULL };
+    char* base;
     int d;
 
     for (d = 0; dirs[d]; d++) {
-        DIR* dp = opendir(dirs[d]);
-        struct dirent* ent;
-        if (!dp) continue;
-        while ((ent = readdir(dp)) != NULL) {
-            if (str_ends_ci(ent->d_name, ".ciso") ||
-                str_ends_ci(ent->d_name, ".iso")  ||
-                str_ends_ci(ent->d_name, ".gcm")) {
-                if (strcmp(dirs[d], ".") == 0)
-                    snprintf(out_path, out_sz, "%s", ent->d_name);
-                else
-                    snprintf(out_path, out_sz, "%s/%s", dirs[d], ent->d_name);
-                closedir(dp);
-                return 1;
-            }
-        }
-        closedir(dp);
+        if (scan_dir_for_disc(dirs[d], out_path, out_sz)) return 1;
+    }
+
+    /* AnimalCrossing.exe lives in pc/build32/bin. Three levels up is the
+     * repo root. A disc already in rom/ is chosen above and wins. */
+    base = SDL_GetBasePath();
+    if (base) {
+        char dir[512];
+        int n = snprintf(dir, sizeof(dir), "%s../../../", base);
+        SDL_free(base);
+        if (n > 0 && n < (int)sizeof(dir) && scan_dir_for_disc(dir, out_path, out_sz))
+            return 1;
     }
     return 0;
 }

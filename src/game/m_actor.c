@@ -20,6 +20,8 @@
 #include "m_common_data.h"
 #ifdef TARGET_PC
 #include "pc_platform.h"
+#include "pc_settings.h"
+#include "m_private.h"
 #endif
 
 #ifdef MUST_MATCH
@@ -338,6 +340,72 @@ static void Actor_delete_check(ACTOR* actor, GAME* game) {
     }
 }
 
+#ifdef TARGET_PC
+/* Other resident stands beside the selected one. Player 2's Controls row drives them.
+ * make_actor runs ct immediately, so this must run after the selected actor has
+ * registered. Otherwise the guest ct sees an empty session slot and takes it. */
+static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_data* player_data) {
+    int session;
+    int guest;
+    int i;
+    ACTOR* actor;
+
+    if (player_data == NULL) {
+        return;
+    }
+
+    if (Save_Get(scene_no) != SCENE_FG) {
+        return;
+    }
+
+    /* First Intro is the scripted Nook scene. First Job stays set after the
+     * player can walk, until the errand ends. Spawn runs only from Actor_info_ct,
+     * so a First Job check hides the guest for that whole stretch. */
+    if (mEv_CheckFirstIntro() == TRUE) {
+        return;
+    }
+
+    if (g_pc_settings.player_input[1] == PC_PLAYER_INPUT_NONE) {
+        return;
+    }
+
+    session = (int)Common_Get(player_no);
+    if ((session < 0) || (session >= PLAYER_NUM)) {
+        return;
+    }
+
+    guest = -1;
+    for (i = 0; i < PLAYER_NUM; i++) {
+        Private_c* priv;
+
+        if (i == session) {
+            continue;
+        }
+
+        priv = Save_GetPointer(private_data[i]);
+        if ((priv != NULL) && (mPr_CheckPrivate(priv) == TRUE)) {
+            guest = i;
+            break;
+        }
+    }
+
+    if (guest < 0) {
+        return;
+    }
+
+    mPlib_queue_guest_slot(guest);
+    actor = Actor_info_make_actor(actor_info, game, player_data->profile, player_data->position.x + 80.0f,
+                                  player_data->position.y, player_data->position.z, player_data->rotation.x,
+                                  player_data->rotation.y, player_data->rotation.z, -1, -1, -1, EMPTY_NO,
+                                  player_data->arg, -1, -1);
+    if (actor != NULL) {
+        actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+    } else {
+        mPlib_queue_guest_slot(-1);
+    }
+}
+#endif
+
 extern void Actor_info_ct(GAME* game, Actor_info* actor_info, Actor_data* player_data) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     ACTOR* player_actor;
@@ -383,6 +451,9 @@ extern void Actor_info_ct(GAME* game, Actor_info* actor_info, Actor_data* player
     if (player_actor != NULL) {
         player_actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(player_actor->world.position, 0.0f);
         mFI_SetBearActor(play, player_actor->world.position, FALSE);
+#ifdef TARGET_PC
+        Actor_info_spawn_guest(game, actor_info, player_data);
+#endif
     }
 
     /* Spawn the current bg item type actor */

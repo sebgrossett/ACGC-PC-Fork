@@ -374,9 +374,15 @@ void pc_gx_init(void) {
     g_gx.dirty = PC_GX_DIRTY_ALL;
 }
 
+/* Set by the split-screen flush. The next begin keeps the left half. */
+int pc_gx_keep_framebuffer;
+
 void pc_gx_begin_frame(void) {
     /* Profiler frame opens in graph_main so game_main is captured */
     Uint64 prof_start = pc_profiler_begin_timer();
+    int keep_fb = pc_gx_keep_framebuffer;
+
+    pc_gx_keep_framebuffer = 0;
     pc_emu64_frame_cmds = 0;
     pc_emu64_frame_noop_cmds = 0;
     pc_emu64_frame_tri_cmds = 0;
@@ -400,7 +406,9 @@ void pc_gx_begin_frame(void) {
 #endif
     glClearDepth(g_gx.clear_depth);
     glClearColor(g_gx.clear_color[0], g_gx.clear_color[1], g_gx.clear_color[2], g_gx.clear_color[3]);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (!keep_fb) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
     pc_profiler_add_time(PC_PROF_TIMER_GX_BEGIN, prof_start);
 }
 

@@ -37,6 +37,11 @@ compile_commands.json
 !requirements.txt
 *.exe
 
+# User-supplied disc images. Never commit these.
+*.ciso
+*.iso
+*.gcm
+
 # For saving work files into (like IDB)
 temp/
 
