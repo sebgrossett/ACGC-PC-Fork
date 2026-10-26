@@ -518,23 +518,21 @@ extern void play_init(GAME* game) {
     mEA_GetCardDLProgram();
 }
 
-static void play_session_wait_actors_add(GAME_PLAY* play) {
-    int count = mPlib_extra_player_count();
+/* Every player who must not move this pass: the primary menu's opener (when
+ * the primary menu is open), each open side slot's opener, and each guest with
+ * an open session menu. */
+static void play_menu_wait_actors_add(GAME_PLAY* play) {
+    PLAYER_ACTOR* opener0;
+    int slot;
     int i;
+    int count;
 
-    for (i = 0; i < count; i++) {
-        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
-        int pad = mPlib_pad_for_player(guest);
-
-        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
-            Actor_info_add_wait_actor((ACTOR*)guest);
+    if (play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE) {
+        opener0 = mPlib_menu_opener_for_slot(0);
+        if (opener0 != NULL) {
+            Actor_info_add_wait_actor((ACTOR*)opener0);
         }
     }
-}
-
-/* A guest's side-slot menu: its opener waits like a session-menu opener. */
-static void play_side_menu_wait_actors_add(GAME_PLAY* play) {
-    int slot;
 
     for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
         Submenu* side = mSM_side_slot_p(slot);
@@ -547,6 +545,16 @@ static void play_side_menu_wait_actors_add(GAME_PLAY* play) {
         opener = mPlib_menu_opener_for_slot(slot);
         if (opener != NULL) {
             Actor_info_add_wait_actor((ACTOR*)opener);
+        }
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int pad = mPlib_pad_for_player(guest);
+
+        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
+            Actor_info_add_wait_actor((ACTOR*)guest);
         }
     }
 }
@@ -652,8 +660,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 9;
         game->doing_point = 0;
         game->doing_point_specific = 0x90;
-        play_session_wait_actors_add(play);
-        play_side_menu_wait_actors_add(play);
+        play_menu_wait_actors_add(play);
         Actor_info_call_actor(play, &play->actor_info);
         Actor_info_clear_wait_actors();
         game->doing_point = 0;
@@ -679,14 +686,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             play->game_frame++;
             CollisionCheck_OC(game, &play->collision_check);
             CollisionCheck_clear(game, &play->collision_check);
-            if (mPlib_menu_opener() != NULL) {
-                Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
-            }
-            play_session_wait_actors_add(play);
-            play_side_menu_wait_actors_add(play);
+            play_menu_wait_actors_add(play);
             Actor_info_call_actor(play, &play->actor_info);
             Actor_info_clear_wait_actors();
-            Actor_info_set_wait_actor(NULL);
             mCoBG_CalcTimerDecalCircle();
 #ifdef TARGET_PC
             mPlib_demo_context_begin(play);

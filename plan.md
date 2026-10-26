@@ -213,7 +213,7 @@ Guest spawn trace (do not re-search):
 - Build: MSYS2 MINGW32, `./build_pc.sh` (see repo README)
 - Packages: `mingw-w64-i686-gcc`, `cmake`, `SDL2`, `make`
 - Output: `pc/build32/bin/AnimalCrossing.exe`
-- The exe looks for a disc in the current directory, `orig/`, and `rom/`. If those are empty, it uses the repo root three levels above `pc/build32/bin`. A disc in `rom/` wins.
+- The exe looks for a disc in `rom/` only (operator decision 2026-10-26; a file picker for choosing the disc image is planned for a future update).
 - Debug flags: `--verbose`, `--no-framelimit`, `--model-viewer`, `--time HOUR`
 
 ## 7. Open items
@@ -319,6 +319,8 @@ Also open after this slice (paths in section 4):
 - Per-player menus, long term: one menu at a time in the menu slice's checkpoint 1 is a stepping stone only. 3-4 player co-op needs simultaneous menus, which means per-player submenu state (mode, overlay, item pointer, opener pad) and drawing each menu in its opener's view instead of one global `play->submenu`.
 - Spawn at own house: long-term goal after per-player inventory/state. Each resident should appear at their own house door, not at a fixed offset from the selected resident. Needs per-player identity, door/scene transitions and per-world instancing (the same dependency as Player 2 indoors).
 - **3-4 player validation — LAST** (operator decision 2026-10-26): deferred to the end of the project's testing because it needs 3 physical controllers. Also needs 3-4 residents in the save (currently 2; creating two more is part of the playtest). Covers: four quadrants with no input bleed, one resident per device, the per-view clock and HUD in quadrants, the menu band in P1's top-left quadrant, simultaneous menus at 3-4 players, and session menus at 3-4 players.
+
+**Disc image picker** (requested 2026-10-26, future update): a file picker to select the disc image destination at startup, replacing the fixed `rom/` search (the rom-path search was narrowed to `rom/`-only on 2026-10-26).
 
 **Audio sync** (requested 2026-10-26, branch `feature/audio-sync`): the "doubled mail ping" was retail's own once-per-second mailbox ping (`0x43B` in `aMBX_actor_draw`) broken two ways by split: (1) its timing accumulator was ONE static shared by every mailbox draw call, and a mailbox visible in any view draws in every view, so the accumulator advanced draw-count times per frame — the ping ran at draw-count × the intended rate (fixed: per-home accumulator `mbx_se_accum[PLAYER_NUM]` keyed by `arrange_idx`, plus a `play->game_frame` guard latched per frame — latching per FIRE was not enough, since the accumulator still double-stepped between fires); (2) the ownership gate now stays retail (only the selected resident's mailbox pings) — widening it to "any active resident" produced two pings per cycle, and audible guest mail needs per-player audio listeners (deferred). Ping confirmed 1/s by the operator with P2 on split.
 

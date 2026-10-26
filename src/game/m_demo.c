@@ -832,23 +832,10 @@ static void mDemo_push_talk_request(int type, ACTOR* actor, mDemo_REQUEST_PROC r
 
 /* TRUE when the demo's owner player currently has a menu open: a side-slot
  * inventory on their pad, or the primary menu they opened. Starting a demo on
- * that player would fight their menu. */
-static int mDemo_owner_menu_open(int slot, int pad) {
-    GAME_PLAY* play = (GAME_PLAY*)gamePT;
-    PLAYER_ACTOR* primary_opener;
-
-    if (pad > 0 && pad < mSM_SLOT_NUM && mSM_side_slot_p(pad)->menu_type != mSM_OVL_NONE) {
-        return TRUE;
-    }
-
-    if (play->submenu.menu_type != mSM_OVL_NONE) {
-        primary_opener = mPlib_menu_opener_for_slot(0);
-        if (primary_opener != NULL && mPlib_player_slot_of(primary_opener) == slot) {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
+ * that player would fight their menu. Implemented by the shared submenu
+ * helper. */
+static int mDemo_owner_menu_open(int slot) {
+    return mSM_player_menu_open_by_slot((GAME_PLAY*)gamePT, slot);
 }
 #endif
 
@@ -1155,7 +1142,7 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                         }
 
                         /* A player with a menu open must not have a demo started on them. */
-                        if (mDemo_owner_menu_open(slot, mPlib_pad_for_player(player))) {
+                        if (mDemo_owner_menu_open(slot)) {
                             continue;
                         }
 
@@ -1223,7 +1210,7 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                 }
 
                 /* A player with a menu open must not have a demo started on them. */
-                if (mDemo_owner_menu_open(slot, pad)) {
+                if (mDemo_owner_menu_open(slot)) {
                     mPlib_clear_request_owner();
                     return FALSE;
                 }
