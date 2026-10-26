@@ -20,6 +20,9 @@ typedef struct submenu_s Submenu;
 #define mSM_SLOT_NUM 4
 extern int mSM_cur_slot(void);
 extern void mSM_set_cur_slot(int slot);
+extern Submenu* mSM_side_slot_p(int slot);
+extern void mSM_side_slot_begin(int slot);
+extern void mSM_side_slot_end(int slot);
 
 #define mSM_MAP_BUTTON BUTTON_X
 #define mSM_INV_BUTTON_0 BUTTON_START

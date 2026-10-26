@@ -22,6 +22,49 @@ extern void mSM_set_cur_slot(int slot) {
     s_submenu_cur_slot = (slot >= 0 && slot < mSM_SLOT_NUM) ? slot : 0;
 }
 
+/* Side slots: one Submenu per guest Controls row (slots 1-3). A side slot's
+ * state is copied into the primary `play->submenu` for its move/draw and
+ * copied back afterwards, so the retail code keeps operating on the one
+ * working struct. `item_p` points into its own struct's `items` array, so it
+ * is re-pointed after every copy. While a side slot runs, the primary's state
+ * is held in the backup so a host menu and a guest menu can both be open. */
+static Submenu s_submenu_side_slot[mSM_SLOT_NUM];
+static Submenu s_submenu_primary_backup;
+
+extern Submenu* mSM_side_slot_p(int slot) {
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return NULL;
+    }
+
+    return &s_submenu_side_slot[slot];
+}
+
+extern void mSM_side_slot_begin(int slot) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return; /* slot 0 is the primary and runs in place */
+    }
+
+    s_submenu_primary_backup = play->submenu;
+    play->submenu = s_submenu_side_slot[slot];
+    play->submenu.item_p = &play->submenu.items[0];
+    mSM_set_cur_slot(slot);
+}
+
+extern void mSM_side_slot_end(int slot) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return;
+    }
+
+    s_submenu_side_slot[slot] = play->submenu;
+    s_submenu_side_slot[slot].item_p = &s_submenu_side_slot[slot].items[0];
+    mSM_set_cur_slot(0);
+    play->submenu = s_submenu_primary_backup;
+}
+
 #define mSM_DLFTBL_INIT \
     { { NULL, 0, 0, 0, 0, 0, "submenu_ovl" }, { NULL, 0, 0, 0, 0, 0, "player_actor" } }
 
@@ -185,6 +228,12 @@ extern void mSM_submenu_ovlptr_cleanup(Submenu* submenu) {
             SubmenuArea_DoUnlink(visit, submenu);
             SubmenuArea_visit_slot[i] = NULL;
         }
+    }
+
+    /* Side slots keep their state across the copy-in/copy-out swap; reset them
+     * with the primary so a scene change cannot leave a stale open menu. */
+    for (i = 1; i < mSM_SLOT_NUM; i++) {
+        mSM_submenu_ct(&s_submenu_side_slot[i]);
     }
 
     s_submenu_cur_slot = 0;
