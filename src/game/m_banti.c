@@ -20,15 +20,19 @@ extern cKF_Skeleton_R_c cKF_bs_r_clk_hiniti;
 extern cKF_Skeleton_R_c cKF_bs_r_clk_jikan;
 
 extern void banti_ct() {
+    int i;
+
     bzero(&banti, sizeof(Banti_c));
 
-    banti.addressable_type = 0;
-    banti.disabled = 0;
-    banti.timer = 0.0f;
-    banti.alpha = 0.0f;
-    banti.disp_left = 0;
-    banti.move_left = 0;
-    banti.move_timer = 0.0f;
+    for (i = 0; i < banti_VIEW_NUM; i++) {
+        banti.view[i].addressable_type = 0;
+        banti.view[i].disabled = 0;
+        banti.view[i].timer = 0.0f;
+        banti.view[i].alpha = 0.0f;
+        banti.view[i].disp_left = 0;
+        banti.view[i].move_left = 0;
+        banti.view[i].move_timer = 0.0f;
+    }
 
     cKF_SkeletonInfo_R_ct(&banti.month_anim.keyframe, &cKF_bs_r_clk_hiniti, NULL, banti.month_anim.work,
                           banti.month_anim.morph);
@@ -73,61 +77,106 @@ extern void banti_dt() {
     cKF_SkeletonInfo_R_dt(&banti.min_lower_anim.keyframe);
 }
 
-static void banti_chk_disp_left(GAME_PLAY* play) {
-    xyz_t player_pos_screen;
-    f32 dt = (f32)play->game.graph->dt_num_60fps_frames;
-
-    Game_play_Projection_Trans(play, &get_player_actor_withoutCheck(play)->actor_class.world.position,
-                               &player_pos_screen);
-
-    if (player_pos_screen.x >= 180.0f && player_pos_screen.y >= 150.0f) {
-        if (banti.move_left == FALSE) {
-            banti.move_left = TRUE;
-            banti.move_timer = 0.0f;
+/* Per-view slide state machine. `screen_pos` is the view player's position in
+ * 320x240 view space (retail thresholds); the PC driver projects through that
+ * view's own camera, the retail path projects through the one camera. */
+static void banti_view_slide_disp(Banti_view_c* view, f32 dt, xyz_t* screen_pos) {
+    if (screen_pos->x >= 180.0f && screen_pos->y >= 150.0f) {
+        if (view->move_left == FALSE) {
+            view->move_left = TRUE;
+            view->move_timer = 0.0f;
         }
 
-        banti.move_timer += dt;
+        view->move_timer += dt;
 
-        if (banti.move_timer > 10.0f) {
-            banti.move_timer = 10.0f;
+        if (view->move_timer > 10.0f) {
+            view->move_timer = 10.0f;
 
-            if (banti.alpha < 0.01f) {
-                banti.disp_left = TRUE;
-                banti.disabled = FALSE;
-            } else if (banti.disp_left == FALSE) {
-                banti.disabled = TRUE;
+            if (view->alpha < 0.01f) {
+                view->disp_left = TRUE;
+                view->disabled = FALSE;
+            } else if (view->disp_left == FALSE) {
+                view->disabled = TRUE;
             }
         }
     } else {
-        if (banti.move_left == TRUE) {
-            banti.move_left = FALSE;
-            banti.move_timer = 0.0f;
+        if (view->move_left == TRUE) {
+            view->move_left = FALSE;
+            view->move_timer = 0.0f;
         }
 
-        banti.move_timer += dt;
+        view->move_timer += dt;
 
-        if (banti.move_timer > 10.0f) {
-            banti.move_timer = 10.0f;
+        if (view->move_timer > 10.0f) {
+            view->move_timer = 10.0f;
 
-            if (banti.alpha < 0.01f) {
-                banti.disp_left = FALSE;
-                banti.disabled = FALSE;
-            } else if (banti.disp_left == TRUE) {
-                banti.disabled = TRUE;
+            if (view->alpha < 0.01f) {
+                view->disp_left = FALSE;
+                view->disabled = FALSE;
+            } else if (view->disp_left == TRUE) {
+                view->disabled = TRUE;
             }
         }
     }
 }
 
-static f32 banti_calc_disp_alpha_rate(GAME_PLAY* play) {
-    if (mDemo_CheckDemo() || mEv_IsTitleDemo() || banti.disabled) {
-        banti.addressable_type = mPlayer_ADDRESSABLE_FALSE_MOVEMENT;
-        add_calc(&banti.alpha, 0.0f, 1.0f - sqrtf(0.8), 0.1f,
+/* PC entry: m_play.c projects each view's player through that view's camera. */
+extern void banti_view_slide(int view_idx, xyz_t* screen_pos, f32 dt) {
+    if (view_idx < 0 || view_idx >= banti_VIEW_NUM) {
+        return;
+    }
+
+    banti_view_slide_disp(&banti.view[view_idx], dt, screen_pos);
+}
+
+/* TRUE when this player has a menu open or transitioning (their primary menu,
+ * or their own side-slot menu). The retail check was the one global submenu. */
+static int banti_player_menu_open(GAME_PLAY* play, PLAYER_ACTOR* player) {
+    Submenu* side;
+    int pad;
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    if ((play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE) &&
+        mPlib_menu_opener_for_slot(0) == player) {
+        return TRUE;
+    }
+
+    pad = mPlib_pad_for_player(player);
+    side = (pad > 0 && pad < mSM_SLOT_NUM) ? mSM_side_slot_p(pad) : NULL;
+    if (side != NULL &&
+        (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE)) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static void banti_calc_disp_alpha_rate(GAME_PLAY* play, Banti_view_c* view, PLAYER_ACTOR* player) {
+    /* The retail forced fade was global: any demo faded the one clock. With
+     * per-player demos, only the demo's own player (or an unattributable one)
+     * forces the fade; the other player's clock follows their own state. */
+    int demo_mine = FALSE;
+
+    if (mDemo_CheckDemo()) {
+        PLAYER_ACTOR* talker = mPlib_demo_talker();
+        ACTOR* side_talker = mDemo_side_player();
+
+        demo_mine = (talker == player) || (talker == NULL) ||
+                    (side_talker != NULL && (PLAYER_ACTOR*)side_talker == player);
+    }
+
+    if (demo_mine || mEv_IsTitleDemo() || view->disabled) {
+        view->addressable_type = mPlayer_ADDRESSABLE_FALSE_MOVEMENT;
+        add_calc(&view->alpha, 0.0f, 1.0f - sqrtf(0.8), 0.1f,
                  0.005f); /* quickly fade out on demo screen or title or force disabled */
-    } else if (banti.addressable_type == mPlayer_ADDRESSABLE_TRUE && play->submenu.process_status == mSM_PROCESS_WAIT) {
-        add_calc(&banti.alpha, 1.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade in */
+    } else if (view->addressable_type == mPlayer_ADDRESSABLE_TRUE &&
+               banti_player_menu_open(play, player) == FALSE) {
+        add_calc(&view->alpha, 1.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade in */
     } else {
-        add_calc(&banti.alpha, 0.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade out */
+        add_calc(&view->alpha, 0.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade out */
     }
 }
 
@@ -278,38 +327,59 @@ static void banti_time_check() {
 }
 
 extern void banti_move(GAME_PLAY* play) {
-    int addressable_type;
-    int update;
+    int count = 1;
+    int i;
 
-    banti_chk_disp_left(play);
+#ifdef TARGET_PC
+    count = 1 + mPlib_extra_player_count();
+#else
+    /* Retail path: one view, the slide projects through the one camera. */
+    {
+        xyz_t player_pos_screen;
 
-    addressable_type = mPlib_Get_address_able_display();
+        Game_play_Projection_Trans(play, &get_player_actor_withoutCheck(play)->actor_class.world.position,
+                                   &player_pos_screen);
+        banti_view_slide(0, &player_pos_screen, (f32)play->game.graph->dt_num_60fps_frames);
+    }
+#endif
 
-    if (banti.addressable_type != addressable_type) {
-        update = FALSE;
-        banti.timer += (f32)play->game.graph->dt_num_60fps_frames;
+    /* Per-view fade: each clock follows its own player's addressable state and
+     * menu. The retail clock read only the selected resident, so both clocks
+     * faded together. The PC slide is driven per view from m_play.c before
+     * this call, because each view needs its own camera. */
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? GET_PLAYER_ACTOR_NOW() : mPlib_extra_player_at(i - 1);
+        int addressable_type =
+            (player != NULL) ? player->address_able_display : mPlayer_ADDRESSABLE_FALSE_MOVEMENT;
 
-        if (addressable_type == mPlayer_ADDRESSABLE_FALSE_READY_NET) {
-            if (banti.timer > 50.0f) {
+        if (banti.view[i].addressable_type != addressable_type) {
+            int update = FALSE;
+
+            banti.view[i].timer += (f32)play->game.graph->dt_num_60fps_frames;
+
+            if (addressable_type == mPlayer_ADDRESSABLE_FALSE_READY_NET) {
+                if (banti.view[i].timer > 50.0f) {
+                    update = TRUE;
+                }
+            } else if (banti.view[i].addressable_type != mPlayer_ADDRESSABLE_TRUE) {
+                if (banti.view[i].timer > 30.0f || addressable_type == mPlayer_ADDRESSABLE_FALSE_TALKING) {
+                    update = TRUE;
+                }
+            } else if (banti.view[i].timer > 50.0f || addressable_type == mPlayer_ADDRESSABLE_FALSE_TALKING) {
                 update = TRUE;
             }
-        } else if (banti.addressable_type != mPlayer_ADDRESSABLE_TRUE) {
-            if (banti.timer > 30.0f || addressable_type == mPlayer_ADDRESSABLE_FALSE_TALKING) {
-                update = TRUE;
+
+            if (update == TRUE) {
+                banti.view[i].timer = 0.0f;
+                banti.view[i].addressable_type = addressable_type;
             }
-        } else if (banti.timer > 50.0f || addressable_type == mPlayer_ADDRESSABLE_FALSE_TALKING) {
-            update = TRUE;
+        } else {
+            banti.view[i].timer = 0.0f;
         }
 
-        if (update == TRUE) {
-            banti.timer = 0.0f;
-            banti.addressable_type = addressable_type;
-        }
-    } else {
-        banti.timer = 0.0f;
+        banti_calc_disp_alpha_rate(play, &banti.view[i], player);
     }
 
-    banti_calc_disp_alpha_rate(play);
     banti_time_check();
 }
 
@@ -535,12 +605,14 @@ extern Gfx clk_win_maruT_model[];
 extern Gfx clk_win_maru2T_model[];
 extern Gfx clk_win_ampmT_model[];
 
-extern void banti_draw(GAME_PLAY* play) {
+extern void banti_draw(GAME_PLAY* play, int view_idx) {
     static u8* week_tex_table[lbRTC_WEEK] = { clk_win_sun_tex_rgb_ia8, clk_win_mon_tex_rgb_ia8, clk_win_tue_tex_rgb_ia8,
                                               clk_win_wed_tex_rgb_ia8, clk_win_thu_tex_rgb_ia8, clk_win_fri_tex_rgb_ia8,
                                               clk_win_sat_tex_rgb_ia8 };
+    int vidx = (view_idx >= 0 && view_idx < banti_VIEW_NUM) ? view_idx : 0;
+    f32 alpha_f = banti.view[vidx].alpha;
 
-    if (mFI_GET_TYPE(mFI_GetFieldId()) == mFI_FIELDTYPE_FG && mEv_CheckFirstIntro() != TRUE && banti.alpha > 0.01f) {
+    if (mFI_GET_TYPE(mFI_GetFieldId()) == mFI_FIELDTYPE_FG && mEv_CheckFirstIntro() != TRUE && alpha_f > 0.01f) {
         GRAPH* g = play->game.graph;
         int poly_render = FALSE;
         Mtx* m = (Mtx*)GRAPH_ALLOC_TYPE(g, Mtx, 1);
@@ -572,12 +644,14 @@ extern void banti_draw(GAME_PLAY* play) {
 
         Matrix_scale(16.0f, 16.0f, 16.0f, MTX_LOAD);
 
-        if (banti.disp_left == TRUE) {
+        if (banti.view[vidx].disp_left == TRUE) {
 #ifdef TARGET_PC
-            /* The split HUD is drawn at 2x, so the retail slide would carry the
-             * clock past the half's left edge. Half the distance lands it in
-             * the same relative spot as single player. */
-            Matrix_translate(pc_gx_hud_half ? -92.0f : -184.0f, 0.0f, 0.0f, MTX_MULT);
+            /* A half's ortho maps only content x 0..160 (the retail right
+             * half), so the retail -184 slide would carry the clock off the
+             * half's left edge (it sits at about x +40..+150 there). Slide it
+             * flush to the half's left edge instead. A quadrant uses the full
+             * retail mapping, so it keeps the retail slide. */
+            Matrix_translate(pc_gx_hud_half ? -40.0f : -184.0f, 0.0f, 0.0f, MTX_MULT);
 #else
             Matrix_translate(-184.0f, 0.0f, 0.0f, MTX_MULT);
 #endif
@@ -602,8 +676,8 @@ extern void banti_draw(GAME_PLAY* play) {
 
             gSPMatrix(gfx_pp[0]++, _Matrix_to_Mtx_new(g), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-            alpha = banti.alpha * 255.0f;
-            if (banti.alpha >= 0.4f) {
+            alpha = (int)(alpha_f * 255.0f);
+            if (alpha_f >= 0.4f) {
                 rendermode0 = G_RM_PASS;
                 rendermode1 = G_RM_XLU_SURF2;
             } else {
