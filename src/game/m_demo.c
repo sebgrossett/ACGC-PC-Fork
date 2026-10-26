@@ -11,6 +11,7 @@ extern void mDemo_Set_next_request_no_a_gate(int flag) {
 
 #include "m_common_data.h"
 #include "m_player_lib.h"
+#include "m_submenu.h"
 #include "m_choice.h"
 #include "m_msg.h"
 #include "ac_quest_manager.h"
@@ -828,6 +829,27 @@ static void mDemo_push_talk_request(int type, ACTOR* actor, mDemo_REQUEST_PROC r
     req->pc_owner_pad = pad;
     demo->request_num++;
 }
+
+/* TRUE when the demo's owner player currently has a menu open: a side-slot
+ * inventory on their pad, or the primary menu they opened. Starting a demo on
+ * that player would fight their menu. */
+static int mDemo_owner_menu_open(int slot, int pad) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+    PLAYER_ACTOR* primary_opener;
+
+    if (pad > 0 && pad < mSM_SLOT_NUM && mSM_side_slot_p(pad)->menu_type != mSM_OVL_NONE) {
+        return TRUE;
+    }
+
+    if (play->submenu.menu_type != mSM_OVL_NONE) {
+        primary_opener = mPlib_menu_opener_for_slot(0);
+        if (primary_opener != NULL && mPlib_player_slot_of(primary_opener) == slot) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
 #endif
 
 static int allways_true() {
@@ -1132,6 +1154,11 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                             slot = (int)Common_Get(player_no);
                         }
 
+                        /* A player with a menu open must not have a demo started on them. */
+                        if (mDemo_owner_menu_open(slot, mPlib_pad_for_player(player))) {
+                            continue;
+                        }
+
                         /* Remember this player's A here. The chooser runs next
                          * frame, and a guest demo has overwritten pads[0] by then. */
                         mDemo_push_talk_request(type, actor, req_proc, player_weight, slot,
@@ -1176,13 +1203,11 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             {
                 PLAYER_ACTOR* owner = mPlib_request_owner();
                 int slot;
+                int pad;
 
                 if (owner == NULL) {
                     owner = mPlib_demo_talker();
                 }
-
-                req->pc_no_a_gate = s_request_no_a_gate;
-                s_request_no_a_gate = FALSE;
 
                 if (owner != NULL) {
                     slot = mPlib_player_slot_of(owner);
@@ -1191,12 +1216,22 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                         slot = (int)Common_Get(player_no);
                     }
 
-                    req->pc_owner_slot = slot;
-                    req->pc_owner_pad = mPlib_pad_for_player(owner);
+                    pad = mPlib_pad_for_player(owner);
                 } else {
-                    req->pc_owner_slot = (int)Common_Get(player_no);
-                    req->pc_owner_pad = 0;
+                    slot = (int)Common_Get(player_no);
+                    pad = 0;
                 }
+
+                /* A player with a menu open must not have a demo started on them. */
+                if (mDemo_owner_menu_open(slot, pad)) {
+                    mPlib_clear_request_owner();
+                    return FALSE;
+                }
+
+                req->pc_no_a_gate = s_request_no_a_gate;
+                s_request_no_a_gate = FALSE;
+                req->pc_owner_slot = slot;
+                req->pc_owner_pad = pad;
 
                 mPlib_clear_request_owner();
             }

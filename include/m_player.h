@@ -2315,6 +2315,11 @@ extern void Player_actor_ct(ACTOR*, GAME*);
 extern void Player_actor_dt(ACTOR*, GAME*);
 extern void Player_actor_move(ACTOR*, GAME*);
 extern void Player_actor_draw(ACTOR*, GAME*);
+/* Per-player forms of the receiver-ignoring request checks (see
+ * m_player_common.c_inc); used by per-player menu gating. */
+extern int Player_actor_check_request_main_priority_for(PLAYER_ACTOR* player, int priority);
+extern int Player_actor_able_submenu_request_main_index_for(PLAYER_ACTOR* player);
+extern int Player_actor_check_request_change_item_for(PLAYER_ACTOR* player);
 
 #ifdef __cplusplus
 }

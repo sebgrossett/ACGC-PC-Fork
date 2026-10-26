@@ -154,7 +154,13 @@ static void player_context_end(GAME_PLAY* play) {
 }
 
 extern void mPlib_menu_context_begin(GAME_PLAY* play) {
-    player_context_begin(play, mPlib_menu_opener(), mPlib_menu_opener_pad(), mPlib_menu_opener_slot());
+    player_context_begin(play, mPlib_menu_opener_for_slot(0), mPlib_menu_opener_pad_for_slot(0),
+                         mPlib_menu_opener_priv_for_slot(0));
+}
+
+extern void mPlib_menu_context_begin_slot(GAME_PLAY* play, int menu_slot) {
+    player_context_begin(play, mPlib_menu_opener_for_slot(menu_slot), mPlib_menu_opener_pad_for_slot(menu_slot),
+                         mPlib_menu_opener_priv_for_slot(menu_slot));
 }
 
 extern void mPlib_menu_context_end(GAME_PLAY* play) {

@@ -1,7 +1,12 @@
-static int Player_actor_check_request_main_priority(GAME* game, int priority) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
-
+/* Per-player variants: the proc versions read GET_PLAYER_ACTOR_GAME (the
+ * selected resident / bound player) regardless of which actor's slot they are
+ * called through, so a guest gate needs these to evaluate its own actor. */
+int Player_actor_check_request_main_priority_for(PLAYER_ACTOR* player, int priority) {
     return priority - player->requested_main_index_priority;
+}
+
+static int Player_actor_check_request_main_priority(GAME* game, int priority) {
+    return Player_actor_check_request_main_priority_for(GET_PLAYER_ACTOR_GAME(game), priority);
 }
 
 static void Player_actor_request_main_index(GAME* game, int request_index, int priority) {
@@ -4830,6 +4835,26 @@ static int Player_actor_check_request_change_item(GAME* game) {
     return -1;
 }
 
+/* Per-player form: the proc version reads the selected resident regardless of
+ * receiver, so the guest gate needs this to check its own actor. */
+int Player_actor_check_request_change_item_for(PLAYER_ACTOR* player) {
+    ACTOR* actorx = (ACTOR*)player;
+    s8 item_kind = player->item_kind;
+    s8 requested_item_kind = Player_actor_Get_ItemKind(actorx, player->now_main_index);
+
+    if (item_kind != requested_item_kind) {
+        switch (player->now_main_index) {
+            case mPlayer_INDEX_WAIT:
+            case mPlayer_INDEX_WALK:
+            case mPlayer_INDEX_RUN:
+            case mPlayer_INDEX_DASH:
+                return player->now_main_index;
+        }
+    }
+
+    return -1;
+}
+
 static int Player_actor_check_item_is_fish(mActor_name_t item) {
 #if defined(BUGFIXES)
     if (ITEM_NAME_GET_TYPE(item) == NAME_TYPE_ITEM1 && ITEM_NAME_GET_CAT(item) == ITEM1_CAT_FISH) {
@@ -7344,10 +7369,7 @@ static mActor_name_t Player_actor_Get_itemNo_forWindow(ACTOR* actorx) {
     return EMPTY_NO;
 }
 
-static int Player_actor_able_submenu_request_main_index(GAME* game) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
-    int res;
-
+int Player_actor_able_submenu_request_main_index_for(PLAYER_ACTOR* player) {
     if (player->requested_main_index_changed) {
         int request_main_index = player->requested_main_index;
 
@@ -7486,6 +7508,10 @@ static int Player_actor_able_submenu_request_main_index(GAME* game) {
     }
 
     return FALSE;
+}
+
+static int Player_actor_able_submenu_request_main_index(GAME* game) {
+    return Player_actor_able_submenu_request_main_index_for(GET_PLAYER_ACTOR_GAME(game));
 }
 
 static void Player_actor_Request_main_refuse_pickup_all(GAME* game, int refuse_pickup_knife_fork) {

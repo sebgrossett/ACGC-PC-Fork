@@ -67,14 +67,19 @@ extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
 extern int mPlib_player_slot_in_use(int slot);
 extern int mPlib_pad_in_use(int pad);
 /* Co-op menu opener: the player whose menu is open, its Controls pad and save
- * slot. Cleared when the menu closes. */
+ * slot, one per menu slot (slot 0 is the primary). Cleared when the menu closes. */
 extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot);
+extern void mPlib_set_menu_opener_for_slot(int menu_slot, PLAYER_ACTOR* player, int pad, int slot);
 extern PLAYER_ACTOR* mPlib_menu_opener(void);
+extern PLAYER_ACTOR* mPlib_menu_opener_for_slot(int menu_slot);
 extern int mPlib_menu_opener_pad(void);
+extern int mPlib_menu_opener_pad_for_slot(int menu_slot);
 extern int mPlib_menu_opener_slot(void);
+extern int mPlib_menu_opener_priv_for_slot(int menu_slot);
 extern int mPlib_menu_opener_is_guest(void);
 /* Run the submenu update/draw with the opener's pad and private data. */
 extern void mPlib_menu_context_begin(GAME_PLAY* play);
+extern void mPlib_menu_context_begin_slot(GAME_PLAY* play, int menu_slot);
 extern void mPlib_menu_context_end(GAME_PLAY* play);
 /* Co-op talk/speak talker: the demo runs with this player's pad and private
  * data. Set right before the demo request; cleared when the demo ends. */
@@ -182,6 +187,7 @@ extern int mPlib_strength_request_main_door_priority(GAME* game);
 extern int mPlib_check_request_main_outdoor_priority(GAME* game);
 extern int mPlib_Check_SetOrderSubmenu(void);
 extern int mPlib_able_submenu_type1(GAME* game);
+extern int mPlib_able_submenu_type1_player(GAME* game, PLAYER_ACTOR* player);
 extern int mPlib_check_player_open_umbrella(GAME* game);
 extern int mPlib_check_player_outdoor_start(GAME* game);
 extern int mPlib_check_label_player_demo_wait(GAME* game, void* label);

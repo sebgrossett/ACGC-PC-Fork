@@ -522,6 +522,42 @@ static void play_session_wait_actors_add(GAME_PLAY* play) {
     }
 }
 
+/* A guest's side-slot menu: its opener waits like a session-menu opener. */
+static void play_side_menu_wait_actors_add(GAME_PLAY* play) {
+    int slot;
+
+    for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
+        Submenu* side = mSM_side_slot_p(slot);
+        PLAYER_ACTOR* opener;
+
+        if (side->menu_type == mSM_OVL_NONE) {
+            continue;
+        }
+
+        opener = mPlib_menu_opener_for_slot(slot);
+        if (opener != NULL) {
+            Actor_info_add_wait_actor((ACTOR*)opener);
+        }
+    }
+}
+
+/* Any co-op menu open: the primary, or a guest's side slot. */
+static int play_menu_any_open(GAME_PLAY* play) {
+    int slot;
+
+    if (play->submenu.menu_type != mSM_OVL_NONE) {
+        return TRUE;
+    }
+
+    for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
+        if (mSM_side_slot_p(slot)->menu_type != mSM_OVL_NONE) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 static void Game_play_move_fbdemo_not_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
@@ -531,19 +567,28 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 
     mSM_submenu_ctrl(play);
 
-    if (play->submenu.process_status == mSM_PROCESS_WAIT) {
-        game->doing_point = 2;
+    game->doing_point = 2;
 #ifdef TARGET_PC
+    /* Demos run while the world is live. A co-op menu keeps the world live
+     * (only its opener waits), so the demo processor must keep running or a
+     * guest could never start a talk while the other player has a menu open.
+     * Requests whose owner has a menu open are refused in mDemo_Request. */
+    if (play->submenu.process_status == mSM_PROCESS_WAIT ||
+        (mPlib_extra_player_count() > 0 && play_menu_any_open(play))) {
         mPlib_demo_context_begin(play);
-#endif
         mDemo_Main(play);
-#ifdef TARGET_PC
         mPlib_demo_context_end(play);
         mDemo_side_sync_player(play);
         if (mDemo_CheckDemo() == FALSE) {
             mPlib_clear_demo_talker();
         }
+    }
+#else
+    if (play->submenu.process_status == mSM_PROCESS_WAIT) {
+        mDemo_Main(play);
+    }
 #endif
+    if (play->submenu.process_status == mSM_PROCESS_WAIT) {
         game->doing_point = 3;
         mEv_run(&play->event);
     }
@@ -559,6 +604,32 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     mSM_submenu_move(&play->submenu);
 #ifdef TARGET_PC
     mPlib_menu_context_end(play);
+    /* Side slots: run each slot's move every frame so its WAIT tick keeps the
+     * refuse timers alive after a close (an un-ticked timer would refuse every
+     * later open). The opener's player context is only needed while the menu
+     * is actually open. */
+    {
+        int slot;
+
+        for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
+            Submenu* side = mSM_side_slot_p(slot);
+            int open = side->menu_type != mSM_OVL_NONE;
+
+            if (open == FALSE && mPlib_extra_player_count() == 0) {
+                continue; /* single player never touches side slots */
+            }
+
+            mSM_side_slot_begin(slot);
+            if (open) {
+                mPlib_menu_context_begin_slot(play, slot);
+            }
+            mSM_submenu_move(&play->submenu);
+            if (open) {
+                mPlib_menu_context_end(play);
+            }
+            mSM_side_slot_end(slot);
+        }
+    }
 #endif
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
@@ -572,6 +643,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 0;
         game->doing_point_specific = 0x90;
         play_session_wait_actors_add(play);
+        play_side_menu_wait_actors_add(play);
         Actor_info_call_actor(play, &play->actor_info);
         Actor_info_clear_wait_actors();
         game->doing_point = 0;
@@ -590,14 +662,18 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     } else {
         mVibctl_set_force_stop(2);
 #ifdef TARGET_PC
-        if (mPlib_menu_opener_is_guest()) {
-            /* A guest's menu is open: the selected resident and the other
-             * players keep a normal frame, and the opener waits. */
+        if (mPlib_menu_opener_is_guest() || mPlib_extra_player_count() > 0) {
+            /* Any co-op menu keeps the world live; only the opener waits.
+             * Single player (no extras, host opener) keeps the retail freeze:
+             * no actor loop at all. */
             play->game_frame++;
             CollisionCheck_OC(game, &play->collision_check);
             CollisionCheck_clear(game, &play->collision_check);
-            Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
+            if (mPlib_menu_opener() != NULL) {
+                Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
+            }
             play_session_wait_actors_add(play);
+            play_side_menu_wait_actors_add(play);
             Actor_info_call_actor(play, &play->actor_info);
             Actor_info_clear_wait_actors();
             Actor_info_set_wait_actor(NULL);
@@ -610,36 +686,6 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             mPlib_demo_context_end(play);
             mDemo_side_msg(play);
 #endif
-        } else {
-            /* The selected resident stays in the menu. Every other resident
-             * keeps walking, including the same collision pass as a normal
-             * frame. */
-            int extras = mPlib_extra_player_count();
-            int i;
-
-            if (extras > 0) {
-                CollisionCheck_OC(game, &play->collision_check);
-                CollisionCheck_clear(game, &play->collision_check);
-
-                for (i = 0; i < extras; i++) {
-                    PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
-                    int pad = mPlib_pad_for_player(guest);
-
-                    if (guest == NULL) {
-                        continue;
-                    }
-
-                    if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
-                        continue;
-                    }
-
-                    if (guest->actor_class.mv_proc != NULL) {
-                        guest->actor_class.mv_proc((ACTOR*)guest, game);
-                    }
-
-                    CollisionCheck_Status_Clear(&guest->actor_class.status_data);
-                }
-            }
         }
 #endif
     }
@@ -652,8 +698,17 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 static f32 s_coop_leave_wait[PLAYER_NUM];
 
 /* A frame where a player can join or leave without interrupting a menu, demo,
- * fade or scene wipe. */
+ * fade or scene wipe. A guest's side-slot menu counts: its opener must not be
+ * deleted or spawned over while it edits its pockets. */
 static int play_coop_safe(GAME_PLAY* play) {
+    int slot;
+
+    for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
+        if (mSM_side_slot_p(slot)->menu_type != mSM_OVL_NONE) {
+            return FALSE;
+        }
+    }
+
     return (play->submenu.process_status == mSM_PROCESS_WAIT && play->fb_fade_type == FADE_TYPE_NONE &&
             play->fb_wipe_mode == WIPE_MODE_NONE && play->fb_mode == FBDEMO_MODE_NONE &&
             mEv_CheckFirstIntro() == FALSE && mDemo_CheckDemo() == FALSE);
@@ -766,7 +821,7 @@ static void Game_play_move(GAME* game) {
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT
 #ifdef TARGET_PC
-        || mPlib_menu_opener_is_guest()
+        || mPlib_menu_opener_is_guest() || mPlib_extra_player_count() > 0
 #endif
     ) {
         evw_anime_add_scroll_phase(&play->game);
@@ -1057,11 +1112,6 @@ static void play_draw_talk_msg(GAME_PLAY* play, mMsg_Window_c* msg, PLAYER_ACTOR
 }
 #endif
 
-/* View slot of the player whose menu is open (0 = selected resident). */
-static int play_menu_view_index(GAME_PLAY* play) {
-    return play_actor_view_index(play, mPlib_menu_opener());
-}
-
 /* pc_gx_menu_mode for the opener's view: 1/2 = two-player left/right band,
  * 3-6 = quadrant top-left, top-right, bottom-left, bottom-right. */
 static int play_menu_mode(int count, int index) {
@@ -1338,6 +1388,32 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     }
 
 #ifdef TARGET_PC
+    /* Side-slot menus follow the same mode chain without the prerender blit
+     * (split never displays it): INIT -> WAIT on the open frame's draw, then
+     * WAIT -> DONE on the next, matching the primary's cadence. The primary
+     * keeps its own EFB-copy path above. */
+    {
+        int slot;
+
+        for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
+            Submenu* menu = mSM_side_slot_p(slot);
+
+            if (menu->menu_type == mSM_OVL_NONE) {
+                continue;
+            }
+
+            if (menu->mode == mSM_MODE_PRERENDER_WAIT) {
+                menu->mode = mSM_MODE_PRERENDER_DONE;
+            } else if (menu->mode == mSM_MODE_PRERENDER_INIT) {
+                menu->mode = mSM_MODE_PRERENDER_WAIT;
+            } else if (menu->mode >= mSM_MODE_NUM) {
+                menu->mode = mSM_MODE_IDLE;
+            }
+        }
+    }
+#endif
+
+#ifdef TARGET_PC
     /* With extra players, keep drawing every view. The fullscreen prerender
      * blit is what blacked out the other view and hid the menu. */
     if (play->submenu.mode == mSM_MODE_PRERENDER_DONE && mPlib_extra_player_count() == 0) {
@@ -1498,33 +1574,51 @@ static void Game_play_draw(GAME_PLAY* play) {
                     pc_gx_hud_half = FALSE;
                 }
 
-                /* The opener's view gets the menu. Show the town first. The panel
-                 * then gets its own list. One list cannot hold a town and this UI. */
-                if (play->submenu.process_status != mSM_PROCESS_WAIT &&
-                    play->submenu.mode >= mSM_MODE_PRERENDER_DONE) {
-                    int opener_index = play_menu_view_index(play);
+                /* Per-slot menus: the primary (slot 0) and any open guest
+                 * slots, each drawn in its opener's view. Each panel gets its
+                 * own list: flush the previous pass, restart, fresh texture
+                 * cache, band view, depth clear. */
+                {
+                    int slot;
 
-                    pc_graph_flush_world(graph);
-                    play_restart_disp(play, graph);
-                    /* The town pass leaves the texture cache full. The panel's
-                     * tex-edge test rejects the default 0x88 texture (136 < 144). */
-                    emu64_refresh();
-                    /* Menu geometry and its 3D hand both read this flag while
-                     * the lists are built, so it is a host flag, not a noop. */
-                    play_set_view_menu(play, count, opener_index);
-                    showSplitHudView(&play->view);
-                    OPEN_DISP(graph);
-                    gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
-                    gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
-                    CLOSE_DISP(graph);
-                    pc_gx_menu_mode = play_menu_mode(count, opener_index);
-                    mPlib_menu_context_begin(play);
-                    mSM_submenu_draw(&play->submenu, (GAME*)play);
-                    mPlib_menu_context_end(play);
-                    pc_gx_menu_mode = 0;
-                    OPEN_DISP(graph);
-                    gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
-                    CLOSE_DISP(graph);
+                    for (slot = 0; slot < mSM_SLOT_NUM; slot++) {
+                        Submenu* menu = (slot == 0) ? &play->submenu : mSM_side_slot_p(slot);
+                        int opener_index;
+
+                        if (menu->process_status == mSM_PROCESS_WAIT ||
+                            menu->mode < mSM_MODE_PRERENDER_DONE) {
+                            continue;
+                        }
+
+                        opener_index = play_actor_view_index(play, mPlib_menu_opener_for_slot(slot));
+
+                        pc_graph_flush_world(graph);
+                        play_restart_disp(play, graph);
+                        /* The town pass leaves the texture cache full. The panel's
+                         * tex-edge test rejects the default 0x88 texture (136 < 144). */
+                        emu64_refresh();
+                        /* Menu geometry and its 3D hand both read this flag while
+                         * the lists are built, so it is a host flag, not a noop. */
+                        play_set_view_menu(play, count, opener_index);
+                        showSplitHudView(&play->view);
+                        OPEN_DISP(graph);
+                        gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
+                        gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
+                        CLOSE_DISP(graph);
+                        pc_gx_menu_mode = play_menu_mode(count, opener_index);
+                        /* Side slots: swap the slot's Submenu in so the overlay
+                         * draw sees its own state and its own per-slot
+                         * statics; slot 0 runs in place. */
+                        mSM_side_slot_begin(slot);
+                        mPlib_menu_context_begin_slot(play, slot);
+                        mSM_submenu_draw(&play->submenu, (GAME*)play);
+                        mPlib_menu_context_end(play);
+                        mSM_side_slot_end(slot);
+                        pc_gx_menu_mode = 0;
+                        OPEN_DISP(graph);
+                        gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
+                        CLOSE_DISP(graph);
+                    }
                 }
                 play->view.screen = saved;
             } else
