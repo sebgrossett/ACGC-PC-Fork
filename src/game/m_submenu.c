@@ -321,19 +321,11 @@ static void mSM_Reset_player_btn_type2(GAME_PLAY* play) {
     }
 }
 
-static int mSM_check_open_map_new(GAME_PLAY* play) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-    int open_map = FALSE;
+/* Map-open position checks for one player: not a cottage scene, not standing
+ * on ocean-block ground. */
+static int mSM_check_map_position(PLAYER_ACTOR* player) {
     int bx;
     int bz;
-
-    if (mSM_CHECK_OPEN_MAP()) {
-        open_map = TRUE;
-    }
-
-    if (open_map == FALSE) {
-        return FALSE;
-    }
 
     if (player == NULL) {
         return FALSE;
@@ -345,6 +337,14 @@ static int mSM_check_open_map_new(GAME_PLAY* play) {
 
     mFI_Wpos2BlockNum(&bx, &bz, player->actor_class.world.position);
     return mFI_CheckBlockKind_OR(bx, bz, mRF_BLOCKKIND_OCEAN) == FALSE;
+}
+
+static int mSM_check_open_map_new(GAME_PLAY* play) {
+    if (mSM_CHECK_OPEN_MAP() == FALSE) {
+        return FALSE;
+    }
+
+    return mSM_check_map_position(GET_PLAYER_ACTOR(play));
 }
 
 /* First active player pressing Start/Y, in controller-index order (ties go to
@@ -415,6 +415,43 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         /* A guest press never opens the primary inventory; fall through to the
          * board loop, like a refused press used to. */
         open_inventory = FALSE;
+    }
+
+    /* A guest's map button (X) routes to their side slot, with the same gates
+     * as their inventory plus the map's own position checks at their position.
+     * Start/Y wins when both are pressed the same frame, like retail. */
+    if (open_inventory == FALSE) {
+        int count = 1 + mPlib_extra_player_count();
+
+        for (i = 1; i < count; i++) {
+            PLAYER_ACTOR* player = mPlib_extra_player_at(i - 1);
+            int pad = (player != NULL) ? mPlib_pad_for_player_slot(mPlib_player_slot_of(player)) : -1;
+            Submenu* side;
+
+            if ((player == NULL) || (pad <= 0) || (pad >= MAXCONTROLLERS)) {
+                continue;
+            }
+
+            if (chkTrigger_pad(pad, mSM_MAP_BUTTON) == FALSE) {
+                continue;
+            }
+
+            side = mSM_side_slot_p(pad);
+            if (side != NULL && side->process_status == mSM_PROCESS_WAIT && side->menu_type == mSM_OVL_NONE &&
+                Common_Get(reset_flag) == FALSE && Common_Get(map_flag) == TRUE &&
+                side->start_refuse == FALSE && side->start_refuse_timer == 0 &&
+                mEv_CheckFirstIntro() == FALSE && mPlib_able_submenu_type1_player((GAME*)play, player) &&
+                mSM_check_map_position(player)) {
+                mPlib_set_menu_opener_for_slot(pad, player, pad, mPlib_player_slot_of(player));
+                mSM_open_submenu(side, mSM_OVL_MAP, 1, 0);
+                player->a_btn_triggers_submenu = TRUE;
+                side->process_status = mSM_PROCESS_PREWAIT;
+                side->mode = mSM_MODE_PRERENDER_INIT;
+                SetGameFrame(1);
+            }
+
+            break; /* one guest map attempt per frame */
+        }
     }
 
     if (((open_inventory && Common_Get(reset_flag) == FALSE) ||
