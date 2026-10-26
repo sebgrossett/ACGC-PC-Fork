@@ -522,7 +522,13 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     game->doing_point = 5;
     mSc_dmacopy_data_bank(&play->object_exchange);
     game->doing_point = 6;
+#ifdef TARGET_PC
+    mPlib_menu_context_begin(play);
+#endif
     mSM_submenu_move(&play->submenu);
+#ifdef TARGET_PC
+    mPlib_menu_context_end(play);
+#endif
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
         play->game_frame++;
@@ -544,9 +550,21 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     } else {
         mVibctl_set_force_stop(2);
 #ifdef TARGET_PC
-        /* The selected resident stays in the menu. Every other resident keeps
-         * walking, including the same collision pass as a normal frame. */
-        {
+        if (mPlib_menu_opener_is_guest()) {
+            /* A guest's menu is open: the selected resident and the other
+             * players keep a normal frame, and the opener waits. */
+            play->game_frame++;
+            CollisionCheck_OC(game, &play->collision_check);
+            CollisionCheck_clear(game, &play->collision_check);
+            Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
+            Actor_info_call_actor(play, &play->actor_info);
+            Actor_info_set_wait_actor(NULL);
+            mCoBG_CalcTimerDecalCircle();
+            mMsg_Main(game);
+        } else {
+            /* The selected resident stays in the menu. Every other resident
+             * keeps walking, including the same collision pass as a normal
+             * frame. */
             int extras = mPlib_extra_player_count();
             int i;
 
@@ -613,7 +631,11 @@ static void Game_play_move(GAME* game) {
         }
     }
 
-    if (play->submenu.process_status == mSM_PROCESS_WAIT) {
+    if (play->submenu.process_status == mSM_PROCESS_WAIT
+#ifdef TARGET_PC
+        || mPlib_menu_opener_is_guest()
+#endif
+    ) {
         evw_anime_add_scroll_phase(&play->game);
         game->doing_point = 0;
         game->doing_point_specific = 0x92;
@@ -1179,7 +1201,9 @@ static void Game_play_draw(GAME_PLAY* play) {
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
                     CLOSE_DISP(graph);
                     pc_gx_menu_mode = (count == 2) ? 1 : 2;
+                    mPlib_menu_context_begin(play);
                     mSM_submenu_draw(&play->submenu, (GAME*)play);
+                    mPlib_menu_context_end(play);
                     pc_gx_menu_mode = 0;
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
@@ -1190,7 +1214,13 @@ static void Game_play_draw(GAME_PLAY* play) {
 #endif
             {
                 banti_draw(play);
+#ifdef TARGET_PC
+                mPlib_menu_context_begin(play);
+#endif
                 mSM_submenu_draw(&play->submenu, (GAME*)play);
+#ifdef TARGET_PC
+                mPlib_menu_context_end(play);
+#endif
             }
         }
     }

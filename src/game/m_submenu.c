@@ -261,6 +261,7 @@ static int mSM_check_open_map_new(GAME_PLAY* play) {
 extern void mSM_submenu_ctrl(GAME_PLAY* play) {
     Submenu* submenu = &play->submenu;
     int open_inventory;
+    int i;
 
     if (submenu->process_status != mSM_PROCESS_WAIT) {
         return;
@@ -274,9 +275,24 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         return;
     }
 
+    /* Default opener: the selected resident. A guest pressing Start/Y replaces
+     * it below and owns the menu until it closes. */
+    mPlib_set_menu_opener(GET_PLAYER_ACTOR(play), 0, (int)Common_Get(player_no));
+
     open_inventory = FALSE;
-    if (chkTrigger(mSM_INV_BUTTON_0) || chkTrigger(mSM_INV_BUTTON_1)) {
-        open_inventory = TRUE;
+    for (i = 0; i < (1 + mPlib_extra_player_count()); i++) {
+        PLAYER_ACTOR* opener = (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
+        int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(opener));
+
+        if ((opener == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
+            continue;
+        }
+
+        if (chkTrigger_pad(pad, mSM_INV_BUTTON_0) || chkTrigger_pad(pad, mSM_INV_BUTTON_1)) {
+            mPlib_set_menu_opener(opener, pad, mPlib_player_slot_of(opener));
+            open_inventory = TRUE;
+            break;
+        }
     }
 
     if (((open_inventory && Common_Get(reset_flag) == FALSE) ||

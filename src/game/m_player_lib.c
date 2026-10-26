@@ -1493,6 +1493,38 @@ extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
     return get_player_actor_withoutCheck(play);
 }
 
+/* Co-op menu opener. One menu can be open at a time for now (a stepping stone
+ * toward 3-4 concurrent menus): while it is open, the submenu update and draw
+ * run with this player's pad and private data instead of the selected
+ * resident's. */
+static PLAYER_ACTOR* s_menu_opener = NULL;
+static int s_menu_opener_pad = 0;
+static int s_menu_opener_slot = -1;
+
+extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot) {
+    s_menu_opener = player;
+    s_menu_opener_pad = pad;
+    s_menu_opener_slot = slot;
+}
+
+extern PLAYER_ACTOR* mPlib_menu_opener(void) {
+    return s_menu_opener;
+}
+
+extern int mPlib_menu_opener_pad(void) {
+    return s_menu_opener_pad;
+}
+
+extern int mPlib_menu_opener_slot(void) {
+    return s_menu_opener_slot;
+}
+
+extern int mPlib_menu_opener_is_guest(void) {
+    int slot = mPlib_player_slot_of(s_menu_opener);
+
+    return (slot >= 0) && (slot != (int)Common_Get(player_no));
+}
+
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {
     int i;
     int any = FALSE;

@@ -568,6 +568,16 @@ extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play) {
     actor_dlftbls_cleanup();
 }
 
+#ifdef TARGET_PC
+/* The player waiting in their menu: their actor is skipped for one
+ * Actor_info_call_actor pass while the other players keep playing. */
+static ACTOR* s_wait_actor = NULL;
+
+extern void Actor_info_set_wait_actor(ACTOR* actor) {
+    s_wait_actor = actor;
+}
+#endif
+
 extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
     // GAME* game = (GAME*)play;
     PLAYER_ACTOR* player_actor = get_player_actor_withoutCheck(play);
@@ -582,6 +592,12 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
         actor = actor_info->list[i].actor;
 
         while (actor != NULL) {
+#ifdef TARGET_PC
+            if (actor == s_wait_actor) {
+                actor = actor->next_actor;
+                continue;
+            }
+#endif
             play->game.doing_point = actor->id;
             play->game.doing_point_specific = 151;
 

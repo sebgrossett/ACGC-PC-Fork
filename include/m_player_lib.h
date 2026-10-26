@@ -59,6 +59,18 @@ extern void mPlib_unbind_player_actor(void);
 /* Player whose split view is being drawn. NULL falls back to the selected resident. */
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
+#ifdef TARGET_PC
+/* Co-op menu opener: the player whose menu is open, its Controls pad and save
+ * slot. Cleared when the menu closes. */
+extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot);
+extern PLAYER_ACTOR* mPlib_menu_opener(void);
+extern int mPlib_menu_opener_pad(void);
+extern int mPlib_menu_opener_slot(void);
+extern int mPlib_menu_opener_is_guest(void);
+/* Run the submenu update/draw with the opener's pad and private data. */
+extern void mPlib_menu_context_begin(GAME_PLAY* play);
+extern void mPlib_menu_context_end(GAME_PLAY* play);
+#endif
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);
 extern int mPlib_get_player_actor_main_index(GAME* game);

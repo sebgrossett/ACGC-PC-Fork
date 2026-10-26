@@ -278,6 +278,20 @@ Scope out: collision/data (already per block, no window), actor spawn, shells/mu
 - Playtest: no shift when the players alternate at opposite map edges, each half stable while the other moves, follow feel matches, single player unchanged. C-stick input stays shared by design.
 - Open: none for 2 players; 3-4 player validation still waits on two more residents.
 
+**Per-player menus** (branch `feature/per-player-menu`). One menu at a time is a stepping stone; per-player submenu state is the long-term design (see below).
+
+Checkpoint 1, open + input (built and playtested 2026-10-25):
+- `chkTrigger_pad` reads any Controls pad. `mSM_submenu_ctrl` checks every active player's Start/Y and records the opener (actor, pad, save slot) with `mPlib_set_menu_opener`; every other menu open (mail, NPC, mailbox) keeps the selected resident as opener.
+- `mPlib_menu_context_begin/end` (`src/game/m_player_call.c`) swap `pads[0]`, `mcon`, `Now_Private` and `player_no` to the opener around the submenu update (`mSM_submenu_move`) and the submenu draw, then restore.
+- A guest opener keeps the world live: `Game_play_move_fbdemo_not_move` runs the host and other players through `Actor_info_call_actor` with the opener skipped by `Actor_info_set_wait_actor`; `Game_play_move` runs the camera/world proc while a guest opener has the menu (the host camera used to freeze at the menu-open tile). Host menus and single player keep the retail freeze.
+- Playtest: P2 sees and edits P2's items with P2's pad only; P1 keeps walking with a live camera; P1's menu is unchanged; closing either menu resumes both.
+- Limitation for now: one menu at a time, and `mPlib_able_submenu_type1`/`start_refuse` are still host-state checks, so P1's state can block a guest's Start. A waiting player has no collision body.
+
+Checkpoint 2, draw in the opener's view (next):
+- `play_set_view_menu` takes the opener's view index: the opener's half at two players, its quadrant at 3-4, keeping the 4:3 band for the half.
+- Generalise `pc_gx_menu_mode` so `mSM_change_view` shifts the 3D item/hand viewport into the opener's half/quadrant (currently `1` = left half, `2` = top-left quadrant).
+- Verify: P2's menu draws in P2's half with the hand and item inside the panel, P1's half keeps live world and HUD, P1's menu unchanged, resize keeps the panel/hand aligned, closing restores both halves.
+
 Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.

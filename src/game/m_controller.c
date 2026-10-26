@@ -119,6 +119,18 @@ extern int chkTrigger(u16 mask) {
 }
 
 /**
+ * @brief Same as chkTrigger, for one pad channel (co-op players each read their
+ * own pad while the shared pads[0] belongs to the selected resident).
+ **/
+extern int chkTrigger_pad(int pad, u16 mask) {
+  if (mEv_IsTitleDemo() || pad < 0 || pad >= MAXCONTROLLERS) {
+    return FALSE;
+  }
+
+  return (mask & (gamePT->pads[pad].on.button)) == mask;
+}
+
+/**
  * @brief Gets the buttons pressed on the current frame.
  * 
  * @return Buttons pressed on the current frame
