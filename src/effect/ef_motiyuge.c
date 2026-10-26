@@ -2,6 +2,7 @@
 
 #include "graph.h"
 #include "m_common_data.h"
+#include "m_play.h"
 #include "m_rcp.h"
 #include "sys_matrix.h"
 
@@ -53,8 +54,18 @@ static void eMotiyuge_mv(eEC_Effect_c* effect, GAME* game) {
     }
 
     {
+        /* One step per game frame. Each puff used to add dt again. */
         static float cycle_accum = 0.0f;
-        if (graph_dt_period_elapsed(game, &cycle_accum, 4.0f)) {
+        static u32 cycle_frame = 0xFFFFFFFFu;
+        static int cycle_tick = 0;
+        u32 frame = ((GAME_PLAY*)game)->game_frame;
+
+        if (cycle_frame != frame) {
+            cycle_frame = frame;
+            cycle_tick = graph_dt_period_elapsed(game, &cycle_accum, 4.0f);
+        }
+
+        if (cycle_tick) {
             if (effect->effect_specific[1] >= 2) {
                 effect->effect_specific[1] = 0;
             } else {

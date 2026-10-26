@@ -1139,8 +1139,20 @@ static int mMsg_Main_Cursol_ControlCursol(mMsg_Window_c* msg_p) {
 
   if (choice_hidden) {
     if (msg_p->hide_choice_window_timer > 0) {
+      /* One step per game frame. A second message window used to add dt
+       * again, so the choice line hid twice as fast. */
       static float hide_choice_accum = 0.0f;
-      int ticks = graph_dt_60hz_ticks(gamePT, &hide_choice_accum);
+      static u32 hide_choice_frame = 0xFFFFFFFFu;
+      static int hide_choice_ticks = 0;
+      u32 frame = ((GAME_PLAY*)gamePT)->game_frame;
+      int ticks;
+
+      if (hide_choice_frame != frame) {
+        hide_choice_frame = frame;
+        hide_choice_ticks = graph_dt_60hz_ticks(gamePT, &hide_choice_accum);
+      }
+
+      ticks = hide_choice_ticks;
       msg_p->hide_choice_window_timer =
         ticks >= msg_p->hide_choice_window_timer ? 0 : msg_p->hide_choice_window_timer - ticks;
     }

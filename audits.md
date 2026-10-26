@@ -21,7 +21,7 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 - **Dependency weight** — no new dependencies beyond SDL2 (already required). ✓
 - **Perf risks**
   - Per-frame overhead measured/assessed: idle side-slot move copies (~2.6 KB/frame) — negligible; per-view HUD/clock loops — negligible; per-open-menu panel passes (flush/restart/`emu64_refresh`) — acceptable at 2 players, watch at 3-4 (deferred validation covers it).
-  - Shared-accumulator audit complete: the only draw-path (per-view) accumulator was the mailbox ping — fixed and playtested. Singleton systems with statics are safe. Instance-count move-side statics remain (low, see mitigations).
+  - Shared-accumulator audit complete: the mailbox ping and the six instance-count move-side gates (A5) are fixed and playtested. Singleton systems with statics are safe.
   - Positional mic anomaly (`play->camera.mic_pos` garbage in one probe log) — dismissed by the operator as a pre-fix artifact.
 - **Accessibility baseline** — N/A (game port); input isolation per player is the relevant proxy and is playtested.
 - **Tests on critical paths** — no automated tests; every slice is playtested before merge (established workflow). No change recommended.
@@ -50,10 +50,11 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 | A2 | P2 | Extract the repeated submenu open-gate chain | done |
 | A3 | P2 | Unify the per-frame wait-actor setup | done |
 | A4 | P2 | Remove/gate the `[PAUSE]` debug printfs | done |
-| A5 | P2 | Instance-count accumulator statics (6 sites) | open |
+| A5 | P2 | Instance-count accumulator statics (6 sites) | done |
 
 ## Pass log
 
+- 2026-10-26: A5 playtested on `feature/audit-a5`. The six gates latch on `game_frame` and step once per frame (`ef_turi_mizu`, `ef_motiyuge`, `ac_train0`, `ac_s_car`, `ac_kamakura_indoor`, `m_msg_cursol`). One copy of each is unchanged.
 - 2026-10-26: Join and leave no longer write the town file. `Actor_info_save_game` and both call sites are gone. The gyroid save remains the only write. The accepted-as-is note about its fg snapshot is closed with the function.
 - 2026-10-26: Initial audit of the co-op work (55 commits, 2026-10-24..26). Verdict: proceed. Findings A1-A5 opened. The mailbox shared-accumulator fix and the receiver-ignoring proc pattern are recorded in `plan.md` §4 and were verified during this audit.
 - 2026-10-26: A1 done on `feature/audit-a1`. New helper `mSM_player_menu_open_by_slot(GAME_PLAY*, slot)` in `m_submenu.c` (primary busy with this slot as opener, or this slot's side-slot menu open/transitioning; slot-based because `PLAYER_ACTOR` is not visible in `m_submenu.h`). Reworked onto it: `mDemo_owner_menu_open` (now a one-line wrapper, pad param dropped), `banti_player_menu_open` (deleted; the clock fade gate calls the helper via `mPlib_player_slot_of`), and `pc_session_menu_can_open` (helper + the two retail `mode` tails kept inline as scoped extras). MINGW32 clean. Smoke regression owed by the operator: clock fade during a menu, demo guard vs a menu holder's A, session gate block.

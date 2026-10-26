@@ -56,8 +56,19 @@ static void aSCR_actor_move(ACTOR* actor, GAME* game) {
 
     designer_common = (mEv_dsg_common_c*)mEv_get_common_area(mEv_EVENT_DESIGNER, FALSE);
     if (designer_common != NULL && designer_common->button_presses >= 100) {
+        /* One step per game frame. Each car used to add dt again. */
         static float dt_accum = 0.0f;
-        int ticks = graph_dt_60hz_ticks(game, &dt_accum);
+        static u32 dt_frame = 0xFFFFFFFFu;
+        static int dt_ticks = 0;
+        u32 frame = ((GAME_PLAY*)game)->game_frame;
+        int ticks;
+
+        if (dt_frame != frame) {
+            dt_frame = frame;
+            dt_ticks = graph_dt_60hz_ticks(game, &dt_accum);
+        }
+
+        ticks = dt_ticks;
         int t;
         for (t = 0; t < ticks; t++) {
             if (car->action <= 0) {

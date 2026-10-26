@@ -329,8 +329,17 @@ static void Kamakura_Indoor_Actor_move(ACTOR* actorx, GAME* game) {
     counter = (u32)k_indoor->anim_frame;
 
     {
+        /* One step per game frame. Each hut used to add dt again. */
         static float dt_accum = 0.0f;
-        if (graph_dt_period_elapsed(game, &dt_accum, 8.0f)) {
+        static u32 dt_frame = 0xFFFFFFFFu;
+        static int dt_tick = 0;
+
+        if (dt_frame != play->game_frame) {
+            dt_frame = play->game_frame;
+            dt_tick = graph_dt_period_elapsed(game, &dt_accum, 8.0f);
+        }
+
+        if (dt_tick) {
             xyz_t soba_yuge_pos = k_indoor->mochi.pos;
 
             soba_yuge_pos.y += 42.0f;
