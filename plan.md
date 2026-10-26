@@ -287,10 +287,10 @@ Checkpoint 1, open + input (built and playtested 2026-10-25):
 - Playtest: P2 sees and edits P2's items with P2's pad only; P1 keeps walking with a live camera; P1's menu is unchanged; closing either menu resumes both.
 - Limitation for now: one menu at a time, and `mPlib_able_submenu_type1`/`start_refuse` are still host-state checks, so P1's state can block a guest's Start. A waiting player has no collision body.
 
-Checkpoint 2, draw in the opener's view (next):
-- `play_set_view_menu` takes the opener's view index: the opener's half at two players, its quadrant at 3-4, keeping the 4:3 band for the half.
-- Generalise `pc_gx_menu_mode` so `mSM_change_view` shifts the 3D item/hand viewport into the opener's half/quadrant (currently `1` = left half, `2` = top-left quadrant).
-- Verify: P2's menu draws in P2's half with the hand and item inside the panel, P1's half keeps live world and HUD, P1's menu unchanged, resize keeps the panel/hand aligned, closing restores both halves.
+Checkpoint 2, draw in the opener's view (built and playtested 2026-10-25):
+- `play_set_view_menu(play, count, index)` uses the opener's view slot: its half at two players (keeping the vertically centred 4:3 band) or its quadrant at 3-4. `play_menu_view_index` maps the opener actor back to the slot; `play_menu_mode` returns 1/2 for the two-player halves and 3-6 for the quadrants.
+- `mSM_change_view` shifts the 3D item/hand viewport by the view origin before the aspect squeeze. After its halving the viewport x is `2*X - width`, so moving one half (320 EFB) is `+640`, and one quadrant row (240 EFB) is `+480`; the first attempt used half those and put the hand off screen.
+- Playtest: P2's panel, hand/cursor and player model sit in P2's half and track the selection; P1's menu stays in the left half; resize keeps them aligned; closing and single player unchanged.
 
 Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
