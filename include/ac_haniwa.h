@@ -69,6 +69,10 @@ struct actor_haniwa_s {
     /* 0x284 */ u8 playing_save_bgm;
 #ifdef TARGET_PC
     f32 door_approach_accum;
+    /* Player who started the current talk. Kept through the save-door walk,
+     * which runs after the demo talker has been cleared. -1 means none. */
+    s8 pc_talker_slot;
+    s8 pc_talker_pad;
 #endif
 };
 

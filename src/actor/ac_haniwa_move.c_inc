@@ -31,9 +31,9 @@ extern u16 hnw_face[];
 #endif
 
 static void aHNW_setupAction(HANIWA_ACTOR* haniwa, GAME* game, int action);
+static int aHNW_player_slot(HANIWA_ACTOR* haniwa);
 
-static int aHNW_set_save_permission() {
-    u32 player_no = Common_Get(player_no);
+static int aHNW_set_save_permission(int player_no) {
     PersonalID_c* pid;
     mHm_hs_c* house;
     int res = FALSE;
@@ -52,8 +52,214 @@ static int aHNW_set_save_permission() {
     return res;
 }
 
+#ifdef TARGET_PC
+/* Remember the demo talker while the talk is up. The save walk happens after
+ * the demo (and its talker) has already been cleared. */
+static void aHNW_note_talker(HANIWA_ACTOR* haniwa) {
+    int slot;
+
+    if (mDemo_Check(mDemo_TYPE_TALK, (ACTOR*)haniwa) == FALSE) {
+        return;
+    }
+
+    slot = mPlib_demo_talker_slot();
+    if (slot < 0) {
+        return;
+    }
+
+    haniwa->pc_talker_slot = (s8)slot;
+    haniwa->pc_talker_pad = (s8)mPlib_demo_talker_pad();
+}
+
+static int aHNW_player_slot(HANIWA_ACTOR* haniwa) {
+    int act = haniwa->common_actor_class.act;
+
+    if (haniwa->pc_talker_slot >= 0 &&
+        (mDemo_Check(mDemo_TYPE_TALK, (ACTOR*)haniwa) || act >= aHNW_ACTION_CHECK_PROCEEDS)) {
+        return haniwa->pc_talker_slot;
+    }
+
+    return (int)Common_Get(player_no);
+}
+
+static Private_c* aHNW_player_private(HANIWA_ACTOR* haniwa) {
+    int slot = aHNW_player_slot(haniwa);
+
+    if (slot != (int)Common_Get(player_no)) {
+        Private_c* priv = mPlib_private_for_slot(slot);
+
+        if (priv != NULL) {
+            return priv;
+        }
+    }
+
+    return Common_Get(now_private);
+}
+
+static void aHNW_bind_talker(HANIWA_ACTOR* haniwa) {
+    PLAYER_ACTOR* player;
+
+    if (haniwa->pc_talker_pad <= 0 || haniwa->pc_talker_slot < 0) {
+        return;
+    }
+
+    player = get_player_actor_by_index((GAME_PLAY*)gamePT, haniwa->pc_talker_slot);
+    if (player != NULL) {
+        mPlib_bind_player_actor(player);
+    }
+}
+
+static void aHNW_unbind_talker(HANIWA_ACTOR* haniwa) {
+    if (haniwa->pc_talker_pad > 0) {
+        mPlib_unbind_player_actor();
+    }
+}
+
+static void aHNW_open_submenu(HANIWA_ACTOR* haniwa, GAME* game, int type, int arg0, int arg1) {
+    int pad = haniwa->pc_talker_pad;
+
+    if (pad > 0 && pad < mSM_SLOT_NUM) {
+        Submenu* side = mSM_side_slot_p(pad);
+        PLAYER_ACTOR* player = get_player_actor_by_index((GAME_PLAY*)game, haniwa->pc_talker_slot);
+
+        if (side != NULL && player != NULL) {
+            mPlib_set_menu_opener_for_slot(pad, player, pad, haniwa->pc_talker_slot);
+            mSM_open_submenu(side, type, arg0, arg1);
+            side->process_status = mSM_PROCESS_PREWAIT;
+            side->mode = mSM_MODE_PRERENDER_INIT;
+            SetGameFrame(1);
+            return;
+        }
+    }
+
+    mSM_open_submenu(&((GAME_PLAY*)game)->submenu, type, arg0, arg1);
+}
+
+static Submenu* aHNW_menu(HANIWA_ACTOR* haniwa, GAME* game) {
+    int pad = haniwa->pc_talker_pad;
+
+    if (pad > 0 && pad < mSM_SLOT_NUM) {
+        Submenu* side = mSM_side_slot_p(pad);
+
+        if (side != NULL) {
+            return side;
+        }
+    }
+
+    return &((GAME_PLAY*)game)->submenu;
+}
+#else
+static int aHNW_player_slot(HANIWA_ACTOR* haniwa) {
+    (void)haniwa;
+    return (int)Common_Get(player_no);
+}
+
+static Private_c* aHNW_player_private(HANIWA_ACTOR* haniwa) {
+    (void)haniwa;
+    return Common_Get(now_private);
+}
+
+static void aHNW_open_submenu(HANIWA_ACTOR* haniwa, GAME* game, int type, int arg0, int arg1) {
+    (void)haniwa;
+    mSM_open_submenu(&((GAME_PLAY*)game)->submenu, type, arg0, arg1);
+}
+
+static Submenu* aHNW_menu(HANIWA_ACTOR* haniwa, GAME* game) {
+    (void)haniwa;
+    return &((GAME_PLAY*)game)->submenu;
+}
+#endif
+
+#ifdef TARGET_PC
+/* player_distance_xz and player_no are the selected resident. A guest's own
+ * gyroid has to see that guest: nearest player for the talk range, the owner
+ * for the excited shake. */
+static void aHNW_scan_near(HANIWA_ACTOR* haniwa, f32* nearest_out, int* owner_near, int* owner_active, s16* face) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+    ACTOR* actorx = (ACTOR*)haniwa;
+    int count = 1 + mPlib_extra_player_count();
+    int owner_slot = mHS_get_pl_no(haniwa->house_idx);
+    f32 nearest = actorx->player_distance_xz;
+    s16 face_angle = actorx->player_angle_y;
+    s16 owner_angle = actorx->player_angle_y;
+    int have = FALSE;
+    int i;
+
+    *owner_near = FALSE;
+    *owner_active = FALSE;
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+        f32 dist;
+        int slot;
+        s16 angle;
+
+        if (player == NULL) {
+            continue;
+        }
+
+        dist = search_position_distanceXZ(&actorx->world.position, &player->actor_class.world.position);
+        angle = search_position_angleY(&actorx->world.position, &player->actor_class.world.position);
+        slot = mPlib_player_slot_of(player);
+        if (slot < 0) {
+            slot = (int)Common_Get(player_no);
+        }
+
+        if (have == FALSE || dist < nearest) {
+            nearest = dist;
+            face_angle = angle;
+            have = TRUE;
+        }
+
+        if (slot == owner_slot) {
+            *owner_active = TRUE;
+            if (dist < 80.0f) {
+                *owner_near = TRUE;
+                owner_angle = angle;
+            }
+        }
+    }
+
+    if (*owner_near != FALSE) {
+        face_angle = owner_angle;
+    }
+
+    if (haniwa->pc_talker_slot >= 0) {
+        PLAYER_ACTOR* talker = get_player_actor_by_index(play, haniwa->pc_talker_slot);
+
+        if (talker != NULL) {
+            face_angle = search_position_angleY(&actorx->world.position, &talker->actor_class.world.position);
+        }
+    }
+
+    *nearest_out = nearest;
+    *face = face_angle;
+}
+
+static f32 aHNW_react_distance(HANIWA_ACTOR* haniwa) {
+    f32 nearest;
+    int owner_near;
+    int owner_active;
+    s16 face;
+
+    aHNW_scan_near(haniwa, &nearest, &owner_near, &owner_active, &face);
+    return nearest;
+}
+#endif
+
 static void aHNW_search_player(HANIWA_ACTOR* haniwa) {
-    chase_angle(&((ACTOR*)haniwa)->shape_info.rotation.y, ((ACTOR*)haniwa)->player_angle_y, 0x0600);
+    s16 angle = ((ACTOR*)haniwa)->player_angle_y;
+
+#ifdef TARGET_PC
+    {
+        f32 nearest;
+        int owner_near;
+        int owner_active;
+
+        aHNW_scan_near(haniwa, &nearest, &owner_near, &owner_active, &angle);
+    }
+#endif
+    chase_angle(&((ACTOR*)haniwa)->shape_info.rotation.y, angle, 0x0600);
 }
 
 static void aHNW_search_front(HANIWA_ACTOR* haniwa, int house_idx) {
@@ -86,26 +292,26 @@ static void aHNW_set_proceeds_str(Haniwa_c* haniwa) {
     mMsg_SET_FREE_STR(mMsg_FREE_STR0, str, sizeof(str));
 }
 
-static int aHNW_check_handOver_proceeds(Haniwa_c* haniwa) {
+static int aHNW_check_handOver_proceeds(Haniwa_c* haniwa, Private_c* priv) {
     int handOver = FALSE;
-    u32 money = Common_Get(now_private)->inventory.wallet + haniwa->bells;
+    u32 money = priv->inventory.wallet + haniwa->bells;
 
     if (money < mPr_WALLET_MAX) {
-        Common_Get(now_private)->inventory.wallet = money;
+        priv->inventory.wallet = money;
         handOver = TRUE;
     } else {
         u32 num_30k_bell_bags = (money - mPr_WALLET_MAX) / 30000 + 1;
 
-        if (mPr_GetPossessionItemSumWithCond(Common_Get(now_private), EMPTY_NO, mPr_ITEM_COND_NORMAL) >=
+        if (mPr_GetPossessionItemSumWithCond(priv, EMPTY_NO, mPr_ITEM_COND_NORMAL) >=
             num_30k_bell_bags) {
             handOver = TRUE;
 
             for (num_30k_bell_bags; num_30k_bell_bags != 0; num_30k_bell_bags--) {
-                mPr_SetFreePossessionItem(Common_Get(now_private), ITM_MONEY_30000, mPr_ITEM_COND_NORMAL);
+                mPr_SetFreePossessionItem(priv, ITM_MONEY_30000, mPr_ITEM_COND_NORMAL);
                 money -= 30000;
             }
 
-            Common_Get(now_private)->inventory.wallet = money;
+            priv->inventory.wallet = money;
         } else {
             u8 str[5];
 
@@ -149,7 +355,12 @@ static int aHNW_check_house_door(ACTOR* actor, GAME_PLAY* play) {
 }
 
 static void aHNW_wait(HANIWA_ACTOR* haniwa, GAME* game) {
-    if (haniwa->common_actor_class.actor_class.player_distance_xz < 80.0f) {
+    f32 dist = haniwa->common_actor_class.actor_class.player_distance_xz;
+
+#ifdef TARGET_PC
+    dist = aHNW_react_distance(haniwa);
+#endif
+    if (dist < 80.0f) {
         aHNW_setupAction(haniwa, game, aHNW_ACTION_DANCE);
     }
 }
@@ -157,17 +368,17 @@ static void aHNW_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 static int aHNW_decide_msg_idx_dance(HANIWA_ACTOR* haniwa) {
     Haniwa_c* house_haniwa;
     int house_idx = haniwa->house_idx;
-    int player_is_owner = Common_Get(player_no) == mHS_get_pl_no(haniwa->house_idx);
+    int player_is_owner = aHNW_player_slot(haniwa) == mHS_get_pl_no(haniwa->house_idx);
     int res;
 
     if (mPr_NullCheckPersonalID(&Save_Get(homes[house_idx]).ownerID) == TRUE) {
         res = aHNW_MSG_NO_OWNER; /* no one owns this house */
     } else if (player_is_owner == TRUE) {
         Haniwa_c* house_haniwa = &Save_Get(homes[house_idx]).haniwa;
-        int house_arrange_idx = mHS_get_arrange_idx(Common_Get(player_no));
+        int house_arrange_idx = mHS_get_arrange_idx(aHNW_player_slot(haniwa));
         mHm_hs_c* house = Save_GetPointer(homes[house_arrange_idx]);
         if (house->flags.has_saved == FALSE && mEv_CheckFirstJob() == TRUE &&
-            mNpc_GetFriendAnimalNum(&Common_Get(now_private)->player_ID) == 0) {
+            mNpc_GetFriendAnimalNum(&aHNW_player_private(haniwa)->player_ID) == 0) {
             res =
                 aHNW_MSG_NEED_FRIEND; /* player owns this house, but is in intro and has not spoken to any villagers */
         } else if (house_haniwa->bells != 0) {
@@ -196,7 +407,15 @@ static void aHNW_set_talk_info_dance(ACTOR* actor) {
     HANIWA_ACTOR* haniwa = (HANIWA_ACTOR*)actor;
     int house_idx = haniwa->house_idx;
     Haniwa_c* house_haniwa = &Save_Get(homes[house_idx]).haniwa;
-    int msg_idx = aHNW_decide_msg_idx_dance(haniwa);
+    int msg_idx;
+
+#ifdef TARGET_PC
+    /* The demo proc runs before the actor move, so record the talker here.
+     * Otherwise the message is chosen from player_no and the action from the
+     * talker, and the first choice is read as Save. */
+    aHNW_note_talker(haniwa);
+#endif
+    msg_idx = aHNW_decide_msg_idx_dance(haniwa);
 
     switch (msg_idx) {
         case aHNW_MSG_PROCEEDS: {
@@ -223,8 +442,13 @@ static void aHNW_dance(HANIWA_ACTOR* haniwa, GAME* game) {
     };
 
     ACTOR* actorx = (ACTOR*)haniwa;
+    f32 dist = actorx->player_distance_xz;
 
-    if (((ACTOR*)haniwa)->player_distance_xz > 90.0f) {
+#ifdef TARGET_PC
+    dist = aHNW_react_distance(haniwa);
+#endif
+
+    if (dist > 90.0f) {
         aHNW_setupAction(haniwa, game, aHNW_ACTION_WAIT);
     } else {
         if (mDemo_Check(mDemo_TYPE_TALK, actorx) == TRUE && mDemo_Check_ListenAble() == FALSE) {
@@ -254,7 +478,7 @@ static void aHNW_check_proceeds(HANIWA_ACTOR* haniwa, GAME* game) {
         Haniwa_c* house_haniwa = &Save_Get(homes[house_idx]).haniwa;
         int handover_state;
 
-        if (aHNW_check_handOver_proceeds(house_haniwa) == TRUE) {
+        if (aHNW_check_handOver_proceeds(house_haniwa, aHNW_player_private(haniwa)) == TRUE) {
             house_haniwa->bells = 0;
             handover_state = aHNW_HANDOVER_YES;
         } else {
@@ -350,22 +574,21 @@ static void aHNW_menu_open_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 
     if (mMsg_Check_main_wait(msg_win) == TRUE) {
         int submenu_type = haniwa->submenu_type;
-        Submenu* submenu = &((GAME_PLAY*)game)->submenu;
         int arg1 = haniwa->house_idx;
 
         switch (submenu_type) {
             case mSM_OVL_HBOARD: {
-                mSM_open_submenu(submenu, mSM_OVL_HBOARD, 0, arg1);
+                aHNW_open_submenu(haniwa, game, mSM_OVL_HBOARD, 0, arg1);
                 break;
             }
 
             case mSM_OVL_INVENTORY: {
-                mSM_open_submenu(submenu, mSM_OVL_INVENTORY, mSM_IV_OPEN_HANIWA_ENTRUST, arg1);
+                aHNW_open_submenu(haniwa, game, mSM_OVL_INVENTORY, mSM_IV_OPEN_HANIWA_ENTRUST, arg1);
                 break;
             }
 
             case mSM_OVL_NEEDLEWORK: {
-                mSM_open_submenu(submenu, mSM_OVL_NEEDLEWORK, mNW_OPEN_DESIGN, arg1);
+                aHNW_open_submenu(haniwa, game, mSM_OVL_NEEDLEWORK, mNW_OPEN_DESIGN, arg1);
                 break;
             }
         }
@@ -377,8 +600,14 @@ static void aHNW_menu_open_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 }
 
 static void aHNW_menu_end_wait(HANIWA_ACTOR* haniwa, GAME* game) {
-    Submenu* submenu = &((GAME_PLAY*)game)->submenu;
+    Submenu* submenu = aHNW_menu(haniwa, game);
     Submenu_Item_c* item;
+
+    /* menu_type is set the frame the menu opens. open_flag comes later, so a
+     * guest (whose actor loop keeps running) must not treat that gap as a close. */
+    if (submenu->menu_type != mSM_OVL_NONE) {
+        return;
+    }
 
     if (submenu->open_flag == FALSE) {
         if (mMsg_CHECK_NOT_SERIES_MAIN_WAIT() == TRUE) {
@@ -436,16 +665,18 @@ static void aHNW_menu_open_wait_for_guest(HANIWA_ACTOR* haniwa, GAME* game) {
     mMsg_Window_c* msg_win = mMsg_Get_base_window_p();
 
     if (mMsg_Check_main_wait(msg_win) == TRUE) {
-        Submenu* submenu = &((GAME_PLAY*)game)->submenu;
-
-        mSM_open_submenu(submenu, mSM_OVL_INVENTORY, mSM_IV_OPEN_HANIWA_TAKE, haniwa->house_idx);
+        aHNW_open_submenu(haniwa, game, mSM_OVL_INVENTORY, mSM_IV_OPEN_HANIWA_TAKE, haniwa->house_idx);
         mMsg_ChangeMsgData(msg_win, 0x092B);
         aHNW_setupAction(haniwa, game, aHNW_ACTION_MENU_END_WAIT_FOR_GUEST);
     }
 }
 
 static void aHNW_menu_end_wait_for_guest(HANIWA_ACTOR* haniwa, GAME* game) {
-    Submenu* submenu = &((GAME_PLAY*)game)->submenu;
+    Submenu* submenu = aHNW_menu(haniwa, game);
+
+    if (submenu->menu_type != mSM_OVL_NONE) {
+        return;
+    }
 
     if (!submenu->open_flag && mMsg_CHECK_NOT_SERIES_MAIN_WAIT() == TRUE) {
         aHNW_setupAction(haniwa, game, aHNW_ACTION_TALK_END_WAIT);
@@ -521,7 +752,7 @@ static void aHNW_save_end_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 
     if (mDemo_Check(mDemo_TYPE_TALK, (ACTOR*)haniwa) == FALSE) {
         aHNW_setupAction(haniwa, game, aHNW_ACTION_PL_APPROACH_DOOR);
-        aHNW_set_save_permission();
+        aHNW_set_save_permission(aHNW_player_slot(haniwa));
     }
 }
 
@@ -535,7 +766,12 @@ static void aHNW_pl_approach_door(HANIWA_ACTOR* haniwa, GAME* game) {
         { { 2382.0f, 0.0f, 1820.0f }, { 2369.0f, 0.0f, 1755.0f } },
     };
 
-    ACTOR* playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
+    ACTOR* playerx;
+
+#ifdef TARGET_PC
+    aHNW_bind_talker(haniwa);
+#endif
+    playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
 
 #ifdef TARGET_PC
     haniwa->door_approach_frame += graph_dt_60hz_ticks(game, &haniwa->door_approach_accum);
@@ -561,12 +797,16 @@ static void aHNW_pl_approach_door(HANIWA_ACTOR* haniwa, GAME* game) {
 
             if (house_actor != NULL) {
                 house_actor->structure_class.actor_class.world.angle.z = 1;
-                aHNW_setupAction(haniwa, game, aHNW_ACTION_WAIT);
             }
+
+            aHNW_setupAction(haniwa, game, aHNW_ACTION_WAIT);
         } else if (stage == 1 && search_position_distanceXZ(goal, &playerx->world.position) < 3.0f) {
             aHNW_setupAction(haniwa, game, aHNW_ACTION_DOOR_OPEN_WAIT);
         }
     }
+#ifdef TARGET_PC
+    aHNW_unbind_talker(haniwa);
+#endif
 }
 
 static void aHNW_door_open_wait(HANIWA_ACTOR* haniwa, GAME* game) {
@@ -576,13 +816,22 @@ static void aHNW_door_open_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 
     if (house_actor != NULL) {
         house_actor->structure_class.request_type = 6; // TODO: this is probably an enum
+#ifdef TARGET_PC
+        aHNW_bind_talker(haniwa);
+#endif
         if (house_actor != GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+#ifdef TARGET_PC
+            aHNW_unbind_talker(haniwa);
+#endif
             aHNW_setupAction(haniwa, game, aHNW_ACTION_DOOR_OPEN_TIMER);
             haniwa->door_approach_frame = 0;
 #ifdef TARGET_PC
             haniwa->door_approach_accum = 0.0f;
 #endif
         } else {
+#ifdef TARGET_PC
+            aHNW_unbind_talker(haniwa);
+#endif
             aHNW_setupAction(haniwa, game, aHNW_ACTION_WAIT);
         }
     }
@@ -594,9 +843,18 @@ static void aHNW_door_open_timer(HANIWA_ACTOR* haniwa, GAME* game) {
         (MY_HOUSE_ACTOR*)Actor_info_fgName_search(&((GAME_PLAY*)game)->actor_info, house_item, ACTOR_PART_ITEM);
 
     if (house_actor != NULL) {
+#ifdef TARGET_PC
+        aHNW_bind_talker(haniwa);
+#endif
         if (house_actor == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+#ifdef TARGET_PC
+            aHNW_unbind_talker(haniwa);
+#endif
             aHNW_setupAction(haniwa, game, aHNW_ACTION_WAIT);
         } else {
+#ifdef TARGET_PC
+            aHNW_unbind_talker(haniwa);
+#endif
 #ifdef TARGET_PC
             haniwa->door_approach_frame += graph_dt_60hz_ticks(game, &haniwa->door_approach_accum);
 #else
@@ -626,13 +884,46 @@ static void aHNW_talk_with_guest_init(HANIWA_ACTOR* haniwa, GAME* game) {
 }
 
 static void aHNW_pl_approach_door_init(HANIWA_ACTOR* haniwa, GAME* game) {
+#ifndef TARGET_PC
+    /* Retail drops pads until the indoor scene builds a new game. On PC that
+     * clear hits every controller, and a walk that never changes scene never
+     * turns them back on. */
     game->pad_initialized = FALSE;
+#endif
     haniwa->player_approach_door_stage = -1;
     haniwa->door_approach_frame = 0;
 #ifdef TARGET_PC
     haniwa->door_approach_accum = 0.0f;
 #endif
 }
+
+#ifdef TARGET_PC
+/* The save walk leaves the talker in demo-walk or demo-wait. Retail ends that
+ * by loading the house. If this walk did not, put them back on foot and turn
+ * pads on again. A real entry (door label is this house) is left alone. */
+static void aHNW_finish_save_walk(HANIWA_ACTOR* haniwa, GAME* game) {
+    mActor_name_t house_item = HOUSE0 + haniwa->house_idx;
+    MY_HOUSE_ACTOR* house_actor =
+        (MY_HOUSE_ACTOR*)Actor_info_fgName_search(&((GAME_PLAY*)game)->actor_info, house_item, ACTOR_PART_ITEM);
+    PLAYER_ACTOR* player;
+    int entered = FALSE;
+
+    game->pad_initialized = TRUE;
+    aHNW_bind_talker(haniwa);
+    player = GET_PLAYER_ACTOR_GAME(game);
+
+    if (player != NULL && house_actor != NULL && house_actor == player->get_door_label_proc(gamePT)) {
+        entered = TRUE;
+    }
+
+    if (entered == FALSE && player != NULL) {
+        player->request_main_return_demo_all_proc(game, mPlayer_INDEX_WAIT, 3.0f, mPlayer_REQUEST_PRIORITY_34);
+        mPlib_Reset_able_force_speak_label();
+    }
+
+    aHNW_unbind_talker(haniwa);
+}
+#endif
 
 typedef void (*HANIWA_PROC)(HANIWA_ACTOR*, GAME*);
 
@@ -686,7 +977,21 @@ static void aHNW_setupAction(HANIWA_ACTOR* haniwa, GAME* game, int action) {
     int house_idx = haniwa->house_idx;
     int animation_state = haniwa->common_actor_class.anime.anime_no;
     int no_owner = mPr_NullCheckPersonalID(&Save_Get(homes[house_idx]).ownerID);
-    int owner_is_player = mHS_get_pl_no(house_idx) == Common_Get(player_no);
+    int owner_is_player = mHS_get_pl_no(house_idx) == aHNW_player_slot(haniwa);
+
+#ifdef TARGET_PC
+    if (action == aHNW_ACTION_WAIT) {
+        int prev = haniwa->common_actor_class.act;
+
+        if (prev == aHNW_ACTION_PL_APPROACH_DOOR || prev == aHNW_ACTION_DOOR_OPEN_WAIT ||
+            prev == aHNW_ACTION_DOOR_OPEN_TIMER) {
+            aHNW_finish_save_walk(haniwa, game);
+        }
+
+        haniwa->pc_talker_slot = -1;
+        haniwa->pc_talker_pad = -1;
+    }
+#endif
 
     haniwa->common_actor_class.act = action;
     haniwa->action_proc = process[action];
@@ -750,6 +1055,27 @@ static void aHNW_common_process(ACTOR* actor, GAME* game) {
         aHNW_search_front(haniwa, house_idx);
     }
 
+#ifdef TARGET_PC
+    /* Speed is chosen in setupAction from player_no. Recompute while idle so a
+     * guest owner speeds up as they walk in, and a visitor leaves it relaxed. */
+    if (no_owner == FALSE &&
+        (haniwa->common_actor_class.act == aHNW_ACTION_WAIT || haniwa->common_actor_class.act == aHNW_ACTION_DANCE)) {
+        f32 nearest;
+        int owner_near;
+        int owner_active;
+        s16 face;
+
+        aHNW_scan_near(haniwa, &nearest, &owner_near, &owner_active, &face);
+        if (owner_near != FALSE && haniwa->common_actor_class.act == aHNW_ACTION_DANCE) {
+            haniwa->anim_frame_speed = 0.45f;
+        } else if (owner_active != FALSE && haniwa->common_actor_class.act == aHNW_ACTION_WAIT) {
+            haniwa->anim_frame_speed = 0.3f;
+        } else {
+            haniwa->anim_frame_speed = 0.1f;
+        }
+    }
+#endif
+
     target = haniwa->anim_frame_speed;
 
     {
@@ -767,6 +1093,9 @@ static void aHNW_actor_move(ACTOR* actor, GAME* game) {
     cKF_SkeletonInfo_R_c* keyframe = &haniwa->common_actor_class.anime.keyframe;
 
     haniwa->common_actor_class.anime.state = cKF_SkeletonInfo_R_play(keyframe);
+#ifdef TARGET_PC
+    aHNW_note_talker(haniwa);
+#endif
     (*haniwa->action_proc)(haniwa, game);
     aHNW_common_process(actor, game);
     CollisionCheck_Uty_ActorWorldPosSetPipeC(actor, &haniwa->common_actor_class.col_pipe);
