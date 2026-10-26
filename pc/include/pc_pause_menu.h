@@ -19,6 +19,9 @@ extern int g_pc_nes_active;
 /* Toggle pause. ESC handler in pc_main calls this. No-op if pausing is blocked. */
 void pc_pause_menu_toggle(void);
 
+/* Reset the per-frame "already drawn in the play view" flag. */
+void pc_pause_menu_begin_frame(void);
+
 /* Forward an SDL event for menu navigation. Returns 1 if consumed. No-op if not paused. */
 int  pc_pause_menu_handle_event(const SDL_Event* e);
 

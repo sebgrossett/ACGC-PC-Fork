@@ -388,7 +388,7 @@ static void aAL_pc_game_start_wait(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
     return;
   }
 
-  /* Main menu navigation (3 items: Start / Options / Quit) */
+  /* Main menu navigation (4 items: Single Player / Co-op / Settings / Quit) */
   if (actor->pc_cursor_cooldown <= 0.0f) {
     if (stick_y > 30 || (on_btn & BUTTON_DUP)) {
       if (actor->pc_menu_sel > 0) {
@@ -396,7 +396,7 @@ static void aAL_pc_game_start_wait(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
         actor->pc_cursor_cooldown = 10.0f;
       }
     } else if (stick_y < -30 || (on_btn & BUTTON_DDOWN)) {
-      if (actor->pc_menu_sel < 2) {
+      if (actor->pc_menu_sel < 3) {
         actor->pc_menu_sel++;
         actor->pc_cursor_cooldown = 10.0f;
       }
@@ -405,20 +405,37 @@ static void aAL_pc_game_start_wait(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
 
   /* Select */
   if (on_btn & (BUTTON_A | BUTTON_START)) {
+    int start_ok = (mLd_CheckStartFlag() == TRUE &&
+                    aAL_wipe_end_check(game) == TRUE &&
+                    mTD_tdemo_button_ok_check());
+
     switch (actor->pc_menu_sel) {
-      case 0: /* Start Game */
-        if (mLd_CheckStartFlag() == TRUE &&
-            aAL_wipe_end_check(game) == TRUE &&
-            mTD_tdemo_button_ok_check()) {
+      case 0: /* Single Player */
+        if (start_ok) {
+          g_pc_coop_session = 0;
           aAL_setupAction(actor, game, aAL_ACTION_FADE_OUT_START);
         }
         break;
-      case 1: /* Options */
+      case 1: /* Co-op */
+        if (start_ok) {
+          int i;
+
+          g_pc_coop_session = 1;
+          /* Full screen until a guest presses Start. A joined row is marked
+           * when it joins; the load-time spawn only restores joined rows. */
+          for (i = 0; i < PC_PLAYER_COUNT; i++) {
+            g_pc_coop_joined[i] = 0;
+            g_pc_coop_guest_slot[i] = -1;
+          }
+          aAL_setupAction(actor, game, aAL_ACTION_FADE_OUT_START);
+        }
+        break;
+      case 2: /* Settings */
         actor->pc_options_open = 1;
         actor->pc_cursor_cooldown = 10.0f;
         pc_settings_menu_enter();
         break;
-      case 2: /* Quit Game */
+      case 3: /* Quit Game */
         g_pc_running = 0;
         actor->pc_cursor_cooldown = 10.0f;
         break;
@@ -795,16 +812,16 @@ static void aAL_pc_menu_draw(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
   static const u32 dim_g[5] = {  40,  50,  40,  50,  50 };
   static const u32 dim_b[5] = {  40,  30,  60,  70,  60 };
 
-  static const char* const labels[3] = { "Start Game", "Options", "Quit Game" }; // me when const
+  static const char* const labels[4] = { "Single Player", "Co-op", "Settings", "Quit Game" };
 
-  f32 y_base = 135.0f;
+  f32 y_base = 117.0f;
   f32 line_h = 18.0f;
   int sel = actor->pc_menu_sel;
 
-  /* Hide the title's main menu items while the Options overlay is open, else
-   * Start/Options/Quit bleed through the dimmed backdrop. */
+  /* Hide the title's main menu items while the Settings overlay is open, else
+   * the title menu bleeds through the dimmed backdrop. */
   if (!actor->pc_options_open) {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       int on = (sel == i);
       pc_menu_draw_centered(game, labels[i], y_base + i * line_h,
         on ? sel_r[td] : dim_r[td],
@@ -815,7 +832,7 @@ static void aAL_pc_menu_draw(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
     }
   }
 
-  /* Options sub-menu, shared with the in-game pause menu. */
+  /* Settings sub-menu, shared with the in-game pause menu. */
   if (actor->pc_options_open) {
     pc_settings_menu_tick();
     pc_settings_menu_draw(game, /*with_dim_backdrop=*/1);

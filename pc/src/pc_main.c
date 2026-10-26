@@ -8,6 +8,7 @@
 #include "pc_disc.h"
 #include "pc_typing.h"
 #include "pc_pause_menu.h"
+#include "pc_session_menu.h"
 #include "pc_settings_menu.h"
 #include "pc_profiler.h"
 #include "m_kankyo.h"
@@ -186,17 +187,14 @@ int pc_platform_poll_events(void) {
                     pc_speedhack_toggle();
                     break;
                 }
-                if (event.key.keysym.sym == SDLK_ESCAPE && !event.key.repeat) {
-                    if (g_pc_paused) {
-                        pc_pause_menu_handle_event(&event);
-                    } else {
-                        pc_pause_menu_toggle();
-                    }
-                    break;
-                }
                 if (g_pc_paused) {
                     pc_pause_menu_handle_event(&event);
                     break; /* swallow all keys while paused */
+                }
+                if (pc_session_menu_handle_event(&event)) break;
+                if (event.key.keysym.sym == SDLK_ESCAPE && !event.key.repeat) {
+                    pc_pause_menu_toggle();
+                    break;
                 }
                 pc_typing_handle_event(&event);
                 break;
@@ -214,8 +212,11 @@ int pc_platform_poll_events(void) {
                     pc_pause_menu_handle_event(&event);
                     break;
                 }
-                /* Back/Select opens the pause menu (controller Esc). */
-                if (event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                if (pc_session_menu_handle_event(&event)) break;
+                /* Back/Select opens the host pause menu. A guest's Back is
+                 * consumed above as that guest's session menu. */
+                if (event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK &&
+                    pc_pad_row_for_instance((SDL_JoystickID)event.cbutton.which) == 0) {
                     pc_pause_menu_toggle();
                 }
                 break;
@@ -226,6 +227,8 @@ int pc_platform_poll_events(void) {
                 }
                 if (g_pc_paused) {
                     pc_pause_menu_handle_event(&event);
+                } else {
+                    pc_session_menu_handle_event(&event);
                 }
                 break;
             case SDL_TEXTINPUT:

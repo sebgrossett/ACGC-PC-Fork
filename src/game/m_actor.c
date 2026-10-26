@@ -22,6 +22,7 @@
 #include "pc_platform.h"
 #include "pc_settings.h"
 #include "m_private.h"
+#include "m_controller.h"
 #endif
 
 #ifdef MUST_MATCH
@@ -366,7 +367,16 @@ extern int Actor_is_near_active_player(GAME_PLAY* play, ACTOR* actor, int keep_r
     }
 
     for (i = 0; i < count; i++) {
-        player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+        if (i == 0) {
+            /* Independent of any bound guest context: a guest's move must not
+             * hide the host from this keep-alive check. */
+            player = mPlib_host_player_actor();
+            if (player == NULL) {
+                player = get_player_actor_withoutCheck(play);
+            }
+        } else {
+            player = mPlib_extra_player_at(i - 1);
+        }
 
         if (player == NULL || mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
             continue;
@@ -418,18 +428,23 @@ static void Actor_delete_check(ACTOR* actor, GAME* game) {
  * make_actor runs ct immediately, so each queue entry is consumed by its own
  * spawn and this must run after the selected actor has registered. Otherwise
  * the guest ct sees an empty session slot and takes it. */
+static const f32 s_guest_ofs[PLAYER_NUM - 1][2] = {
+    { 80.0f, 0.0f },
+    { 0.0f, 80.0f },
+    { 0.0f, -80.0f },
+};
+
 static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_data* player_data) {
-    /* Pad order: row 1 (+x), row 2 (+z), row 3 (-z). */
-    static const f32 ofs[PLAYER_NUM - 1][2] = {
-        { 80.0f, 0.0f },
-        { 0.0f, 80.0f },
-        { 0.0f, -80.0f },
-    };
     int session;
-    int i;
     int row;
 
     if (player_data == NULL) {
+        return;
+    }
+
+    /* Single Player never spawns guests, even when other Controls rows are
+     * configured. Co-op restores the rows that already joined this session. */
+    if (g_pc_coop_session == 0) {
         return;
     }
 
@@ -449,35 +464,37 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
         return;
     }
 
-    row = 1;
-    for (i = 0; i < PLAYER_NUM; i++) {
+    for (row = 1; row < PLAYER_NUM; row++) {
         Private_c* priv;
         ACTOR* actor;
+        int slot;
 
-        if (i == session) {
+        if ((g_pc_settings.player_input[row] == PC_PLAYER_INPUT_NONE) || (g_pc_coop_joined[row] == 0)) {
             continue;
         }
 
-        priv = Save_GetPointer(private_data[i]);
+        slot = g_pc_coop_guest_slot[row];
+        if ((slot < 0) || (slot >= PLAYER_NUM) || (slot == session)) {
+            continue;
+        }
+
+        priv = Save_GetPointer(private_data[slot]);
         if ((priv == NULL) || (mPr_CheckPrivate(priv) != TRUE)) {
             continue;
         }
 
-        while ((row < PLAYER_NUM) && (g_pc_settings.player_input[row] == PC_PLAYER_INPUT_NONE)) {
-            row++;
+        if (mPlib_player_slot_in_use(slot) == TRUE) {
+            continue;
         }
 
-        if (row >= PLAYER_NUM) {
-            return;
-        }
-
-        mPlib_queue_guest_slot(i, row);
+        mPlib_queue_guest_slot(slot, row);
         /* arg 0 means "no door transition": the low three bits of actor_specific
          * select the spawn state in Player_actor_request_proc_index_fromDma, and
          * 1-3 replay the host's own door-exit animation. A guest has no door of
          * its own until scene instancing, so it stands (INTRO -> WAIT) instead. */
-        actor = Actor_info_make_actor(actor_info, game, player_data->profile, player_data->position.x + ofs[row - 1][0],
-                                      player_data->position.y, player_data->position.z + ofs[row - 1][1],
+        actor = Actor_info_make_actor(actor_info, game, player_data->profile,
+                                      player_data->position.x + s_guest_ofs[row - 1][0],
+                                      player_data->position.y, player_data->position.z + s_guest_ofs[row - 1][1],
                                       player_data->rotation.x, player_data->rotation.y, player_data->rotation.z, -1,
                                       -1, -1, EMPTY_NO, 0, -1, -1);
         if (actor == NULL) {
@@ -486,8 +503,131 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
         }
 
         actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
-        row++;
     }
+}
+
+/* Mid-game save (co-op join/leave). The normal save path runs after the play
+ * scene is torn down, so actors have already restored their fg items. A live
+ * save has to do that itself: structures clear their fg item when they spawn,
+ * and writing the save without restoring them would persist houses/shops as
+ * reserved markers. Restore the fg table, write, then put the live table back
+ * so the spawned actors are not duplicated on the next block setup. */
+extern int Actor_info_save_game(GAME* game) {
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    static u8 fg_snapshot[sizeof(((Save_t*)0)->fg)];
+    int ok;
+
+    memcpy(fg_snapshot, Save_GetPointer(fg), sizeof(fg_snapshot));
+    restore_fgdata_all(play);
+    ok = pc_save_commit();
+    memcpy(Save_GetPointer(fg), fg_snapshot, sizeof(fg_snapshot));
+    return ok;
+}
+
+/* Mid-game join: the first idle Controls row that presses Start gets the next
+ * free resident, spawned beside the selected resident. The caller only runs
+ * this in a safe frame (no menu, demo, fade or wipe). One join per call so the
+ * single guest queue and the save write stay paired. */
+extern int Actor_info_join_guest(GAME* game) {
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    PLAYER_ACTOR* host;
+    ACTOR* actor;
+    Private_c* priv;
+    int session;
+    int pad;
+    int slot;
+    int i;
+    int other;
+
+    if (g_pc_coop_session == 0) {
+        return FALSE;
+    }
+
+    if (Save_Get(scene_no) != SCENE_FG) {
+        return FALSE;
+    }
+
+    if (mEv_CheckFirstIntro() == TRUE) {
+        return FALSE;
+    }
+
+    host = get_player_actor_withoutCheck(play);
+    if (host == NULL) {
+        return FALSE;
+    }
+
+    session = (int)Common_Get(player_no);
+    if ((session < 0) || (session >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        if (g_pc_settings.player_input[pad] == PC_PLAYER_INPUT_NONE) {
+            continue;
+        }
+
+        if (mPlib_pad_in_use(pad) == TRUE) {
+            continue;
+        }
+
+        if (chkTrigger_pad(pad, BUTTON_START) == FALSE) {
+            continue;
+        }
+
+        slot = -1;
+        for (i = 0; i < PLAYER_NUM; i++) {
+            int claimed = FALSE;
+
+            if ((i == session) || (mPlib_player_slot_in_use(i) == TRUE)) {
+                continue;
+            }
+
+            for (other = 1; other < PLAYER_NUM; other++) {
+                if ((other != pad) && (g_pc_coop_joined[other] != 0) && (g_pc_coop_guest_slot[other] == i)) {
+                    claimed = TRUE;
+                    break;
+                }
+            }
+
+            if (claimed == TRUE) {
+                continue;
+            }
+
+            priv = Save_GetPointer(private_data[i]);
+            if ((priv != NULL) && (mPr_CheckPrivate(priv) == TRUE)) {
+                slot = i;
+                break;
+            }
+        }
+
+        if (slot < 0) {
+            return FALSE;
+        }
+
+        mPlib_queue_guest_slot(slot, pad);
+        actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER,
+                                      host->actor_class.world.position.x + s_guest_ofs[pad - 1][0],
+                                      host->actor_class.world.position.y,
+                                      host->actor_class.world.position.z + s_guest_ofs[pad - 1][1],
+                                      host->actor_class.world.angle.x, host->actor_class.world.angle.y,
+                                      host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 0, -1, -1);
+        if (actor == NULL) {
+            mPlib_queue_guest_slot(-1, -1);
+            return FALSE;
+        }
+
+        actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+        g_pc_coop_joined[pad] = 1;
+        g_pc_coop_guest_slot[pad] = slot;
+
+        if (Actor_info_save_game(game) == FALSE) {
+            OSReport("[PC] co-op join: save write failed\n");
+        }
+
+        return TRUE;
+    }
+
+    return FALSE;
 }
 #endif
 
@@ -597,9 +737,50 @@ extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play) {
 /* The player waiting in their menu: their actor is skipped for one
  * Actor_info_call_actor pass while the other players keep playing. */
 static ACTOR* s_wait_actor = NULL;
+/* Per-player session menus can have several waiters in the same pass. */
+static ACTOR* s_session_wait_actors[PLAYER_NUM];
 
 extern void Actor_info_set_wait_actor(ACTOR* actor) {
     s_wait_actor = actor;
+}
+
+extern void Actor_info_clear_wait_actors(void) {
+    bzero(s_session_wait_actors, sizeof(s_session_wait_actors));
+}
+
+extern void Actor_info_add_wait_actor(ACTOR* actor) {
+    int i;
+
+    if (actor == NULL) {
+        return;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_session_wait_actors[i] == actor) {
+            return;
+        }
+
+        if (s_session_wait_actors[i] == NULL) {
+            s_session_wait_actors[i] = actor;
+            return;
+        }
+    }
+}
+
+static int Actor_info_is_wait_actor(ACTOR* actor) {
+    int i;
+
+    if (actor == s_wait_actor) {
+        return TRUE;
+    }
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (s_session_wait_actors[i] == actor) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 #endif
 
@@ -618,7 +799,7 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
 
         while (actor != NULL) {
 #ifdef TARGET_PC
-            if (actor == s_wait_actor) {
+            if (Actor_info_is_wait_actor(actor)) {
                 actor = actor->next_actor;
                 continue;
             }

@@ -54,6 +54,8 @@ extern int mPlib_any_player_actor(void);
 /* Extra players in pad order (Controls rows 1-3), excluding the selected resident. */
 extern int mPlib_extra_player_count(void);
 extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
+/* The selected resident, independent of any bound guest context. */
+extern PLAYER_ACTOR* mPlib_host_player_actor(void);
 extern Private_c* mPlib_private_for_slot(int slot);
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);
@@ -61,6 +63,9 @@ extern void mPlib_unbind_player_actor(void);
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
 #ifdef TARGET_PC
+/* Is this resident slot / Controls pad already driven by an actor? */
+extern int mPlib_player_slot_in_use(int slot);
+extern int mPlib_pad_in_use(int pad);
 /* Co-op menu opener: the player whose menu is open, its Controls pad and save
  * slot. Cleared when the menu closes. */
 extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot);

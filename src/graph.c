@@ -405,6 +405,7 @@ static void graph_main(GRAPH* this, GAME* game) {
     {
         Uint64 pc_prof_t;
         pc_profiler_begin_frame();
+        pc_pause_menu_begin_frame();
         pc_prof_t = pc_profiler_begin_timer();
         game_main(game);
         pc_profiler_add_time(PC_PROF_TIMER_GAME_LOGIC, pc_prof_t);

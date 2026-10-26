@@ -295,6 +295,16 @@ static int pc_save_write_gci(void) {
     return pc_save_write_gci_to(PC_GCI_PATH, PC_GCI_TMP_PATH);
 }
 
+/* Full save outside the save menu (co-op join/leave). Mirrors what the GC card
+ * write does: clear the reset code, update play time and copy protection, then
+ * write the home GCI. */
+int pc_save_commit(void) {
+    if (!pc_save_ready) return TRUE;
+
+    pc_save_pre_write_side_effects(0);
+    return pc_save_write_gci();
+}
+
 static int pc_save_write_gci_to(const char* gci_path, const char* tmp_path) {
     FILE* fp;
     u8* file_data;

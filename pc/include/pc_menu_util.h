@@ -13,6 +13,13 @@ struct graph_s;
 
 #define PC_MENU_SCALE_SELECTED 1.15f
 
+/* Band the next dim rect should cover, in 320x240 screen coords. l < 0 means
+ * use the full-screen path. Set by the co-op overlay draw, reset afterwards. */
+extern int pc_menu_band_l;
+extern int pc_menu_band_t;
+extern int pc_menu_band_r;
+extern int pc_menu_band_b;
+
 /* Full-screen translucent black backdrop, drawn into NOW_FONT_DISP. */
 void pc_menu_dim_rect(struct graph_s* graph, int alpha);
 

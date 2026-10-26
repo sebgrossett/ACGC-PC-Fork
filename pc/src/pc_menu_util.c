@@ -6,8 +6,26 @@
 #include "m_rcp.h"
 #include "main.h" /* SCREEN_WIDTH_F */
 
+int pc_menu_band_l = -1;
+int pc_menu_band_t = -1;
+int pc_menu_band_r = -1;
+int pc_menu_band_b = -1;
+
 void pc_menu_dim_rect(GRAPH* graph, int alpha) {
     Gfx* gfx;
+
+    if (pc_menu_band_l >= 0) {
+        /* The band viewport is already set and the scissor is the opener's
+         * rect. Use the game's known-good full-screen fill; the scissor clips
+         * it to that rect. A projected quad was rejected here. */
+        OPEN_DISP(graph);
+        gfx = NOW_FONT_DISP;
+        fade_rgba8888_draw(&gfx, (u32)alpha);
+        SET_FONT_DISP(gfx);
+        CLOSE_DISP(graph);
+        return;
+    }
+
     OPEN_DISP(graph);
     gfx = NOW_FONT_DISP;
     gDPNoOpTag(gfx++, PC_NOOP_WIDESCREEN_STRETCH);

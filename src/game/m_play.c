@@ -43,6 +43,10 @@
 #ifdef TARGET_PC
 #include "pc_diag.h"
 #include "pc_platform.h"
+#include "pc_settings.h"
+#include "pc_session_menu.h"
+#include "pc_pause_menu.h"
+#include "pc_menu_util.h"
 #include "libforest/emu64/emu64_wrapper.h"
 #endif
 
@@ -57,6 +61,9 @@ static u8 prbuf[(2*SCREEN_WIDTH) * (2*SCREEN_HEIGHT) * sizeof(u32)] ATTRIBUTE_AL
 
 static void Game_play_fbdemo_wipe_init(GAME_PLAY* play);
 static void Gameplay_Scene_Read(GAME_PLAY* play, s16 scene_no);
+#ifdef TARGET_PC
+static void play_guest_camera_reset(int pad);
+#endif
 
 static void Game_play_dec_dt_timer(f32* timer, GAME_PLAY* play) {
     if (*timer > 0.0f) {
@@ -501,6 +508,20 @@ extern void play_init(GAME* game) {
     mEA_GetCardDLProgram();
 }
 
+static void play_session_wait_actors_add(GAME_PLAY* play) {
+    int count = mPlib_extra_player_count();
+    int i;
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int pad = mPlib_pad_for_player(guest);
+
+        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
+            Actor_info_add_wait_actor((ACTOR*)guest);
+        }
+    }
+}
+
 static void Game_play_move_fbdemo_not_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
@@ -550,7 +571,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 9;
         game->doing_point = 0;
         game->doing_point_specific = 0x90;
+        play_session_wait_actors_add(play);
         Actor_info_call_actor(play, &play->actor_info);
+        Actor_info_clear_wait_actors();
         game->doing_point = 0;
         game->doing_point_specific = 0x91;
         game->doing_point = 1;
@@ -574,7 +597,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             CollisionCheck_OC(game, &play->collision_check);
             CollisionCheck_clear(game, &play->collision_check);
             Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
+            play_session_wait_actors_add(play);
             Actor_info_call_actor(play, &play->actor_info);
+            Actor_info_clear_wait_actors();
             Actor_info_set_wait_actor(NULL);
             mCoBG_CalcTimerDecalCircle();
 #ifdef TARGET_PC
@@ -598,8 +623,13 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 
                 for (i = 0; i < extras; i++) {
                     PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+                    int pad = mPlib_pad_for_player(guest);
 
                     if (guest == NULL) {
+                        continue;
+                    }
+
+                    if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
                         continue;
                     }
 
@@ -617,10 +647,89 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     fbdemo_fade_move(&play->color_fade, game_GameFrame);
 }
 
+#ifdef TARGET_PC
+#define PLAY_COOP_LEAVE_TIMEOUT 180.0f
+static f32 s_coop_leave_wait[PLAYER_NUM];
+
+/* A frame where a player can join or leave without interrupting a menu, demo,
+ * fade or scene wipe. */
+static int play_coop_safe(GAME_PLAY* play) {
+    return (play->submenu.process_status == mSM_PROCESS_WAIT && play->fb_fade_type == FADE_TYPE_NONE &&
+            play->fb_wipe_mode == WIPE_MODE_NONE && play->fb_mode == FBDEMO_MODE_NONE &&
+            mEv_CheckFirstIntro() == FALSE && mDemo_CheckDemo() == FALSE);
+}
+
+/* Co-op join and leave. Start on an idle configured row joins; a guest's
+ * session menu sets a leave request, which runs once that actor is idle and
+ * the frame is safe. */
+static void play_coop_session_proc(GAME_PLAY* play) {
+    int safe = play_coop_safe(play);
+    int count = mPlib_extra_player_count();
+    int pad;
+    int i;
+
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        if (mPlib_pad_in_use(pad) == FALSE) {
+            s_coop_leave_wait[pad] = 0.0f;
+            pc_session_menu_close(pad);
+            pc_session_menu_take_leave_request(pad); /* drop a stale request */
+            play_guest_camera_reset(pad);
+        }
+    }
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int guest_pad = mPlib_pad_for_player(guest);
+
+        if ((guest_pad > 0) && (pc_session_menu_take_leave_request(guest_pad) != FALSE)) {
+            s_coop_leave_wait[guest_pad] = PLAY_COOP_LEAVE_TIMEOUT;
+        }
+    }
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int guest_pad = mPlib_pad_for_player(guest);
+
+        if ((guest_pad <= 0) || (s_coop_leave_wait[guest_pad] <= 0.0f)) {
+            continue;
+        }
+
+        s_coop_leave_wait[guest_pad] -= play->game.graph->dt_num_60fps_frames;
+        if (s_coop_leave_wait[guest_pad] <= 0.0f) {
+            s_coop_leave_wait[guest_pad] = 0.0f;
+            continue;
+        }
+
+        /* A conversation still owns this actor's pointer. Let the talk finish
+         * (or the request time out) instead of freeing it underneath the demo. */
+        if ((guest == mPlib_demo_talker()) || ((ACTOR*)guest == mDemo_side_player())) {
+            continue;
+        }
+
+        if ((safe == FALSE) || (guest->now_main_index != mPlayer_INDEX_WAIT)) {
+            continue;
+        }
+
+        s_coop_leave_wait[guest_pad] = 0.0f;
+        pc_session_menu_close(guest_pad);
+        Actor_info_delete(&play->actor_info, (ACTOR*)guest, (GAME*)play);
+        g_pc_coop_joined[guest_pad] = 0;
+        g_pc_coop_guest_slot[guest_pad] = -1;
+        if (Actor_info_save_game((GAME*)play) == FALSE) {
+            OSReport("[PC] co-op leave: save write failed\n");
+        }
+        return;
+    }
+
+    if (safe != FALSE) {
+        Actor_info_join_guest((GAME*)play);
+    }
+}
+#endif
+
 static void Game_play_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     int pause;
-
 #ifdef TARGET_PC
     {
         extern int g_pc_paused;
@@ -686,6 +795,9 @@ static void Game_play_move(GAME* game) {
     banti_move(play);
     game->doing_point = 5;
     title_demo_move(play);
+#ifdef TARGET_PC
+    play_coop_session_proc(play);
+#endif
     game->doing_point = 0;
     game->doing_point_specific = 0x95;
 }
@@ -810,7 +922,7 @@ static void play_set_view_menu(GAME_PLAY* play, int count, int index) {
 
     play_view_rect(index, count, &band);
 
-    if (count <= 2) {
+    if (count == 2) {
         band.top = (SCREEN_HEIGHT - (SCREEN_HEIGHT / 2)) / 2;
         band.bottom = band.top + (SCREEN_HEIGHT / 2);
     }
@@ -834,6 +946,86 @@ static void play_set_view_talk(GAME_PLAY* play, int count, int index) {
 
     setScissorView(&play->view, &band);
 }
+
+#ifdef TARGET_PC
+/* Live guest session menus and the host pause overlay, each in its owner's
+ * view. The host pause still freezes the game; guest menus do not. */
+static void play_draw_coop_overlays(GAME_PLAY* play) {
+    rect saved = play->view.screen;
+    rect full;
+    int count = 1 + mPlib_extra_player_count();
+    int has_overlay = FALSE;
+    int i;
+
+    for (i = 1; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
+        int pad = mPlib_pad_for_player(guest);
+
+        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
+            has_overlay = TRUE;
+        }
+    }
+
+    if (g_pc_paused) {
+        has_overlay = TRUE;
+    }
+
+    if (has_overlay == FALSE) {
+        return;
+    }
+
+    /* These are 2D overlays over the finished world. The menu pass uses the
+     * same depth bypass; without it the backdrop is rejected by the town's
+     * depth buffer while the font text (depthless) still shows. */
+    OPEN_DISP(play->game.graph);
+    gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
+    CLOSE_DISP(play->game.graph);
+
+    for (i = 1; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
+        int pad = mPlib_pad_for_player(guest);
+
+        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
+            int view_index = play_actor_view_index(play, guest);
+
+            play_set_view_menu(play, count, view_index);
+            showSplitHudView(&play->view);
+            pc_menu_band_l = play->view.screen.l;
+            pc_menu_band_t = play->view.screen.top;
+            pc_menu_band_r = play->view.screen.r;
+            pc_menu_band_b = play->view.screen.bottom;
+            pc_session_menu_draw(&play->game, pad);
+        }
+    }
+
+    if (g_pc_paused) {
+        play_set_view_menu(play, count, 0);
+        showSplitHudView(&play->view);
+        pc_menu_band_l = play->view.screen.l;
+        pc_menu_band_t = play->view.screen.top;
+        pc_menu_band_r = play->view.screen.r;
+        pc_menu_band_b = play->view.screen.bottom;
+        pc_pause_menu_draw(&play->game);
+    }
+
+    OPEN_DISP(play->game.graph);
+    gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
+    CLOSE_DISP(play->game.graph);
+
+    pc_menu_band_l = -1;
+    pc_menu_band_t = -1;
+    pc_menu_band_r = -1;
+    pc_menu_band_b = -1;
+
+    full.top = 0;
+    full.bottom = SCREEN_HEIGHT;
+    full.l = 0;
+    full.r = SCREEN_WIDTH;
+    play->view.screen = saved;
+    setScissorView(&play->view, &full);
+    showSplitHudView(&play->view);
+}
+#endif
 
 #ifdef TARGET_PC
 /* One message window into one player's bottom band. */
@@ -926,6 +1118,15 @@ static s_xyz s_guest_dir[PLAYER_NUM];
 static f32 s_guest_dist[PLAYER_NUM];
 static int s_ofs_ready[PLAYER_NUM];
 static int s_follow_ready[PLAYER_NUM];
+
+static void play_guest_camera_reset(int pad) {
+    if ((pad < 0) || (pad >= PLAYER_NUM)) {
+        return;
+    }
+
+    s_follow_ready[pad] = FALSE;
+    s_ofs_ready[pad] = FALSE;
+}
 
 static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz_t* eye, xyz_t* center) {
     xyz_t* guest_pos = &guest->actor_class.world.position;
@@ -1340,6 +1541,9 @@ static void Game_play_draw(GAME_PLAY* play) {
             }
         }
     }
+#ifdef TARGET_PC
+    play_draw_coop_overlays(play);
+#endif
     if (zurumode_flag != 0) {
         switch (mEv_CheckTitleDemo()) {
             case mEv_TITLEDEMO_STAFFROLL:
