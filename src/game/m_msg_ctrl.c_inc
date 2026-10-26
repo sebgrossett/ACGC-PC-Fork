@@ -1,5 +1,9 @@
 extern mMsg_Window_c* mMsg_Get_base_window_p() {
+#ifdef TARGET_PC
+  return s_msg_use;
+#else
   return &mMsg_window;
+#endif
 }
 
 extern int mMsg_Check_request_priority(mMsg_Window_c* msg_p, int request_priority) {

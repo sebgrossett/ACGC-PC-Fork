@@ -209,6 +209,18 @@ extern int mDemo_Check_and_Go(int type, ACTOR* actor);
 extern int mDemo_End(ACTOR* actor);
 extern void mDemo_Main(GAME_PLAY* play);
 extern void mDemo_Init(GAME_PLAY* play);
+#ifdef TARGET_PC
+/* A second talk or sign while the primary demo is already running. */
+extern int mDemo_player_in_talk(int slot);
+extern int mDemo_side_is_actor(ACTOR* actor);
+extern int mDemo_side_is_player(ACTOR* actor);
+extern int mDemo_side_closing(void);
+extern int mDemo_side_needs_setup(ACTOR* actor);
+extern void mDemo_side_clear_needs_setup(void);
+extern ACTOR* mDemo_side_player(void);
+extern void mDemo_side_sync_player(GAME_PLAY* play);
+extern void mDemo_side_msg(GAME_PLAY* play);
+#endif
 extern int mDemo_CheckDemo();
 extern int mDemo_CheckDemo4Event();
 extern void mDemo_Set_SpeakerAble();

@@ -518,6 +518,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         mDemo_Main(play);
 #ifdef TARGET_PC
         mPlib_demo_context_end(play);
+        mDemo_side_sync_player(play);
         if (mDemo_CheckDemo() == FALSE) {
             mPlib_clear_demo_talker();
         }
@@ -561,6 +562,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         mMsg_Main(game);
 #ifdef TARGET_PC
         mPlib_demo_context_end(play);
+        mDemo_side_msg(play);
 #endif
     } else {
         mVibctl_set_force_stop(2);
@@ -581,6 +583,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             mMsg_Main(game);
 #ifdef TARGET_PC
             mPlib_demo_context_end(play);
+            mDemo_side_msg(play);
 #endif
         } else {
             /* The selected resident stays in the menu. Every other resident
@@ -779,6 +782,26 @@ static void play_set_view_player(GAME_PLAY* play, int index, int count) {
     setScissorView(&play->view, &view_rect);
 }
 
+/* View slot of an actor (0 = selected resident). */
+static int play_actor_view_index(GAME_PLAY* play, PLAYER_ACTOR* actor) {
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    (void)play;
+
+    if (actor == NULL) {
+        return 0;
+    }
+
+    for (i = 1; i < count; i++) {
+        if (mPlib_extra_player_at(i - 1) == actor) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
 /* Menu rect: the opener's view. At two players that is its half with a 4:3
  * band so the panel and its 3D hand share one undistorted space; a quadrant at
  * three or four players is already 4:3. */
@@ -795,23 +818,56 @@ static void play_set_view_menu(GAME_PLAY* play, int count, int index) {
     setScissorView(&play->view, &band);
 }
 
+/* Talk message: the retail window is almost the full 320 width and sits on the
+ * bottom. Map that whole layout into the bottom 4:3 of the talker's half so it
+ * stays in their view instead of crossing the split. A quadrant is already
+ * 4:3. */
+static void play_set_view_talk(GAME_PLAY* play, int count, int index) {
+    rect band;
+
+    play_view_rect(index, count, &band);
+
+    if (count <= 2) {
+        band.top = SCREEN_HEIGHT / 2;
+        band.bottom = SCREEN_HEIGHT;
+    }
+
+    setScissorView(&play->view, &band);
+}
+
+#ifdef TARGET_PC
+/* One message window into one player's bottom band. */
+static void play_draw_talk_msg(GAME_PLAY* play, mMsg_Window_c* msg, PLAYER_ACTOR* talker) {
+    rect saved;
+    rect full;
+    int count;
+    int index;
+
+    if ((msg == NULL) || (msg->draw_flag == FALSE)) {
+        return;
+    }
+
+    saved = play->view.screen;
+    count = 1 + mPlib_extra_player_count();
+    index = play_actor_view_index(play, talker);
+    play_set_view_talk(play, count, index);
+    showSplitHudView(&play->view);
+    mMsg_set_use_window(msg);
+    mMsg_Draw((GAME*)play);
+    mMsg_set_use_window(NULL);
+    full.top = 0;
+    full.bottom = SCREEN_HEIGHT;
+    full.l = 0;
+    full.r = SCREEN_WIDTH;
+    play->view.screen = saved;
+    setScissorView(&play->view, &full);
+    showSplitHudView(&play->view);
+}
+#endif
+
 /* View slot of the player whose menu is open (0 = selected resident). */
 static int play_menu_view_index(GAME_PLAY* play) {
-    PLAYER_ACTOR* opener = mPlib_menu_opener();
-    int count = 1 + mPlib_extra_player_count();
-    int i;
-
-    if (opener == NULL) {
-        return 0;
-    }
-
-    for (i = 1; i < count; i++) {
-        if (mPlib_extra_player_at(i - 1) == opener) {
-            return i;
-        }
-    }
-
-    return 0;
+    return play_actor_view_index(play, mPlib_menu_opener());
 }
 
 /* pc_gx_menu_mode for the opener's view: 1/2 = two-player left/right band,
@@ -1146,7 +1202,17 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #endif
         PC_DIAG(3, "makeBumpTexture: Actor draw done, Camera2...\n");
         Camera2_draw(play);
-        mMsg_Draw((GAME*)play);
+#ifdef TARGET_PC
+        /* The message is one full-screen font ortho. In a split that draws it
+         * across both views. Put it in the talker's bottom band instead. */
+        if (play_split_live(play)) {
+            play_draw_talk_msg(play, mMsg_Get_base_window_p(), mPlib_demo_talker());
+            play_draw_talk_msg(play, mMsg_side_window_p(), (PLAYER_ACTOR*)mDemo_side_player());
+        } else
+#endif
+        {
+            mMsg_Draw((GAME*)play);
+        }
     }
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 93) != 0)) {

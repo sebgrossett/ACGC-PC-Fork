@@ -35,6 +35,33 @@ static QUEST_MANAGER_ACTOR* l_quest_actor_p = NULL;
 static int l_quest_manager_hello = FALSE;
 static int l_aQMgr_hand_start = FALSE;
 
+extern void aQMgr_talk_snap_save(aQMgr_talk_snap_c* snap) {
+    snap->client = l_client_p;
+    snap->mode = l_quest_manager_mode;
+    snap->memory = l_quest_memory_p;
+    snap->hello = l_quest_manager_hello;
+    snap->hand = l_aQMgr_hand_start;
+    snap->have_cloth = FALSE;
+    snap->cloth = 0;
+
+    if (l_quest_actor_p != NULL) {
+        snap->have_cloth = TRUE;
+        snap->cloth = l_quest_actor_p->cloth;
+    }
+}
+
+extern void aQMgr_talk_snap_restore(aQMgr_talk_snap_c* snap) {
+    l_client_p = snap->client;
+    l_quest_manager_mode = snap->mode;
+    l_quest_memory_p = snap->memory;
+    l_quest_manager_hello = snap->hello;
+    l_aQMgr_hand_start = snap->hand;
+
+    if ((snap->have_cloth != FALSE) && (l_quest_actor_p != NULL)) {
+        l_quest_actor_p->cloth = snap->cloth;
+    }
+}
+
 // clang-format off
 static aQMgr_set_data_c l_set_delivery_data[] = {
     {
@@ -485,7 +512,23 @@ static void aQMgr_set_talk_info(ACTOR* client) {
 static int aQMgr_actor_talk_request(ACTOR* client) {
     int res = FALSE;
 
-    if (client != NULL && l_quest_manager_mode == aQMgr_MODE_NORMAL) {
+    if (client == NULL) {
+        return FALSE;
+    }
+
+#ifdef TARGET_PC
+    /* The running conversation owns the quest mode, so a second villager used
+     * to stop requesting. Queue that villager anyway. The side talk snapshots
+     * the quest globals around its own hello. */
+    if ((mPlib_extra_player_count() > 0) && (l_quest_manager_mode != aQMgr_MODE_NORMAL) &&
+        (client != l_client_p) && (mDemo_Get_talk_actor() != NULL) &&
+        (mDemo_Check(mDemo_TYPE_TALK, client) == FALSE)) {
+        mDemo_Request(mDemo_TYPE_TALK, client, &aQMgr_set_talk_info);
+        return FALSE;
+    }
+#endif
+
+    if (l_quest_manager_mode == aQMgr_MODE_NORMAL) {
         if (mDemo_Check(mDemo_TYPE_TALK, client) == FALSE) {
             mDemo_Request(mDemo_TYPE_TALK, client, &aQMgr_set_talk_info);
         }

@@ -169,6 +169,14 @@ extern void mPlib_demo_context_end(GAME_PLAY* play) {
     player_context_end(play);
 }
 
+extern void mPlib_slot_context_begin(GAME_PLAY* play, int slot, int pad) {
+    player_context_begin(play, get_player_actor_by_index(play, slot), pad, slot);
+}
+
+extern void mPlib_slot_context_end(GAME_PLAY* play) {
+    player_context_end(play);
+}
+
 static int guest_slot_for_actor(ACTOR* actor) {
     int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actor);
 

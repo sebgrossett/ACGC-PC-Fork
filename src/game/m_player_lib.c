@@ -1585,6 +1585,22 @@ extern int mPlib_demo_talker_is_guest(void) {
     return (s_demo_talker != NULL) && (s_demo_talker_pad > 0);
 }
 
+/* Stamped onto the next request only. A sign read must not replace the talker
+ * who already owns the running demo. */
+static PLAYER_ACTOR* s_request_owner = NULL;
+
+extern void mPlib_set_request_owner(PLAYER_ACTOR* player) {
+    s_request_owner = player;
+}
+
+extern void mPlib_clear_request_owner(void) {
+    s_request_owner = NULL;
+}
+
+extern PLAYER_ACTOR* mPlib_request_owner(void) {
+    return s_request_owner;
+}
+
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {
     int i;
     int any = FALSE;

@@ -82,6 +82,13 @@ extern int mPlib_demo_talker_slot(void);
 extern int mPlib_demo_talker_is_guest(void);
 extern void mPlib_demo_context_begin(GAME_PLAY* play);
 extern void mPlib_demo_context_end(GAME_PLAY* play);
+/* Who the next mDemo_Request belongs to. Does not replace the active talker. */
+extern void mPlib_set_request_owner(PLAYER_ACTOR* player);
+extern void mPlib_clear_request_owner(void);
+extern PLAYER_ACTOR* mPlib_request_owner(void);
+/* Pad and private data for one slot, without touching the active talker. */
+extern void mPlib_slot_context_begin(GAME_PLAY* play, int slot, int pad);
+extern void mPlib_slot_context_end(GAME_PLAY* play);
 #endif
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);

@@ -507,12 +507,40 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
 
     if (mDemo_Check(mDemo_TYPE_SPEAK, &sign->actor_class)) {
         ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
-        s_xyz player_angle = player_actor->shape_info.rotation;
-        s16 target_y = search_position_angleY(&player_actor->world.position, &sign->target_pos);
+        s_xyz player_angle;
+        s16 target_y;
+#ifdef TARGET_PC
+        PLAYER_ACTOR* reader = NULL;
+        int side = mDemo_side_is_actor(&sign->actor_class);
+
+        /* Turn the reader, not whoever the actor move thinks is the player.
+         * A second sign uses its own window so the choice is not the NPC's. */
+        if (side) {
+            mMsg_set_use_window(mMsg_side_window_p());
+            msg_p = mMsg_side_window_p();
+            reader = (PLAYER_ACTOR*)mDemo_side_player();
+        } else {
+            reader = mPlib_demo_talker();
+        }
+
+        if (reader != NULL) {
+            player_actor = (ACTOR*)reader;
+        }
+#endif
+        player_angle = player_actor->shape_info.rotation;
+        target_y = search_position_angleY(&player_actor->world.position, &sign->target_pos);
 
         add_calc_short_angle2(&player_angle.y, target_y, 0.3f, DEG2SHORT_ANGLE2(22.5f), DEG2SHORT_ANGLE2(1.40625f));
-        GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &player_angle,
-                                                              mPlayer_FORCE_POSITION_ANGLE_ROTY);
+#ifdef TARGET_PC
+        if (reader != NULL) {
+            reader->force_angle.y = player_angle.y;
+            reader->force_position_angle_flag |= mPlayer_FORCE_POSITION_ANGLE_ROTY;
+        } else
+#endif
+        {
+            GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &player_angle,
+                                                                  mPlayer_FORCE_POSITION_ANGLE_ROTY);
+        }
 
         if (mMsg_Check_MainNormalContinue(msg_p) == TRUE) {
             switch (mChoice_GET_CHOSENUM()) {
@@ -527,16 +555,33 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
                     break;
             }
         }
+#ifdef TARGET_PC
+        if (side) {
+            mMsg_set_use_window(NULL);
+        }
+#endif
     } else {
         aSIGN_setup_action(sign, aSIGN_ACTION_WAIT);
     }
 }
 
 static void aSIGN_talk_end(SIGN_ACTOR* sign, GAME* game) {
+#ifdef TARGET_PC
+    int side = mDemo_side_is_actor(&sign->actor_class);
+
+    if (side) {
+        mMsg_set_use_window(mMsg_side_window_p());
+    }
+#endif
     if (mMsg_CHECK_MAIN_WAIT()) {
         aSIGN_setup_action(sign, aSIGN_ACTION_WAIT);
         mMsg_request_main_forceoff();
     }
+#ifdef TARGET_PC
+    if (side) {
+        mMsg_set_use_window(NULL);
+    }
+#endif
 }
 
 static void aSIGN_wait(SIGN_ACTOR* sign, GAME* game) {
@@ -544,17 +589,25 @@ static void aSIGN_wait(SIGN_ACTOR* sign, GAME* game) {
     int count = 1 + mPlib_extra_player_count();
     int i;
 
-    if (mDemo_Get_talk_actor() != NULL) {
+    if (mDemo_Check(mDemo_TYPE_SPEAK, &sign->actor_class)) {
         return;
     }
 
-    /* Any active player facing the sign can read it, with their own A press. */
+    /* Any active player facing the sign can read it, with their own A press.
+     * Someone already in a talk stays there; this request does not become them. */
     for (i = 0; i < count; i++) {
         PLAYER_ACTOR* player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
         f32 dist = FLT_MAX;
         int pad;
+        int slot;
 
         if (player == NULL) {
+            continue;
+        }
+
+        slot = mPlib_player_slot_of(player);
+
+        if (mDemo_player_in_talk(slot)) {
             continue;
         }
 
@@ -568,11 +621,14 @@ static void aSIGN_wait(SIGN_ACTOR* sign, GAME* game) {
             continue;
         }
 
-        mPlib_set_demo_talker(player);
+        mPlib_set_request_owner(player);
+        mDemo_Set_next_request_no_a_gate(TRUE);
 
         if (mDemo_Request(mDemo_TYPE_SPEAK, &sign->actor_class, &aSIGN_set_talk_info) != FALSE) {
             aSIGN_setup_action(sign, aSIGN_ACTION_TALK);
         }
+
+        mPlib_clear_request_owner();
         return;
     }
 }

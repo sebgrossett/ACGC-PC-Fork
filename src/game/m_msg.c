@@ -18,6 +18,11 @@ static u32 Msg_rom_start = 0;
 
 static mMsg_Data_c mMsg_data;
 static mMsg_Window_c mMsg_window;
+#ifdef TARGET_PC
+static mMsg_Data_c mMsg_data_side;
+static mMsg_Window_c mMsg_window_side;
+static mMsg_Window_c* s_msg_use = &mMsg_window;
+#endif
 
 typedef int (*mMsg_CONTROL_CODE_PROC)(mMsg_Window_c*, int*);
 typedef void (*mMsg_MAIN_PROC)(mMsg_Window_c*, GAME*);
@@ -109,10 +114,20 @@ extern void mMsg_aram_init2() {
 extern void mMsg_ct(GAME* game) {
     mMsg_init(game);
     mChoice_ct(&mMsg_window.choice_window, game);
+#ifdef TARGET_PC
+    mMsg_data_side = mMsg_data;
+    mMsg_window_side = mMsg_window;
+    mMsg_window_side.msg_data = &mMsg_data_side;
+    mChoice_ct(&mMsg_window_side.choice_window, game);
+    s_msg_use = &mMsg_window;
+#endif
 }
 
 extern void mMsg_dt(GAME* game) {
     mChoice_dt(&mMsg_window.choice_window, game);
+#ifdef TARGET_PC
+    mChoice_dt(&mMsg_window_side.choice_window, game);
+#endif
 }
 
 extern void mMsg_debug_draw(gfxprint_t* gfxprint) {
@@ -124,10 +139,22 @@ extern void mMsg_debug_draw(gfxprint_t* gfxprint) {
 }
 
 extern void mMsg_Main(GAME* game) {
-    mMsg_Main_Window(&mMsg_window, game);
-    mChoice_Main(&mMsg_window.choice_window, game);
+    mMsg_Window_c* msg = mMsg_Get_base_window_p();
+
+    mMsg_Main_Window(msg, game);
+    mChoice_Main(&msg->choice_window, game);
 }
 
 extern void mMsg_Draw(GAME* game) {
-    mMsg_Draw_Window(&mMsg_window, game);
+    mMsg_Draw_Window(mMsg_Get_base_window_p(), game);
 }
+
+#ifdef TARGET_PC
+extern void mMsg_set_use_window(mMsg_Window_c* msg) {
+    s_msg_use = (msg != NULL) ? msg : &mMsg_window;
+}
+
+extern mMsg_Window_c* mMsg_side_window_p(void) {
+    return &mMsg_window_side;
+}
+#endif

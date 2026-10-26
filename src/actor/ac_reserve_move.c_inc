@@ -66,13 +66,18 @@ static void aRSV_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
             continue;
         }
 
+        if (mDemo_player_in_talk(mPlib_player_slot_of(player))) {
+            continue;
+        }
+
         if (chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) == FALSE) {
             continue;
         }
 
-        mPlib_set_demo_talker(player);
+        mPlib_set_request_owner(player);
         mDemo_Set_next_request_no_a_gate(TRUE);
         mDemo_Request(mDemo_TYPE_TALK, &actor->actor_class, aRSV_set_talk_info);
+        mPlib_clear_request_owner();
         /* Keep going: another active player may also be in front, and each
          * request needs its own owner. */
     }

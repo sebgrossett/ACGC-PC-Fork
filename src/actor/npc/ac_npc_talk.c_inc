@@ -507,6 +507,26 @@ static void aNPC_check_feel_demoCode(ACTOR* actorx) {
 static void aNPC_setup_talk_start(NPC_ACTOR* nactorx, GAME* game) {
     ACTOR* playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
 
+#ifdef TARGET_PC
+    /* Face the player this NPC is actually talking to. A second conversation
+     * is not the demo talker, who is still the first player. */
+    {
+        PLAYER_ACTOR* face = NULL;
+
+        if (mDemo_side_is_actor((ACTOR*)nactorx)) {
+            face = (PLAYER_ACTOR*)mDemo_side_player();
+        }
+
+        if ((face == NULL) && (mPlib_demo_talker() != NULL)) {
+            face = mPlib_demo_talker();
+        }
+
+        if (face != NULL) {
+            playerx = (ACTOR*)face;
+        }
+    }
+#endif
+
     nactorx->palActor = playerx;
     if (nactorx->talk_info.turn == aNPC_TALK_TURN_NORMAL) {
         aNPC_set_dst_pos(nactorx, playerx->world.position.x, playerx->world.position.z);
@@ -573,6 +593,17 @@ static void aNPC_talk_request_event_npc(ACTOR* actorx, GAME* game) {
 static int aNPC_normal_talk_request(ACTOR* actorx, GAME* game) {
     NPC_ACTOR* nactorx = (NPC_ACTOR*)actorx;
     int ret = FALSE;
+
+#ifdef TARGET_PC
+    /* The quest request only arms the demo client. A second NPC still has to
+     * turn toward its own player once. */
+    if (mDemo_side_needs_setup(actorx)) {
+        aNPC_setup_talk_start(nactorx, game);
+        mDemo_side_clear_needs_setup();
+        nactorx->think.force_call_flag = aNPC_FORCE_CALL_NONE;
+        return TRUE;
+    }
+#endif
 
     if (CLIP(quest_manager_clip)->talk_request_proc != NULL &&
         CLIP(quest_manager_clip)->talk_request_proc(actorx) == TRUE) {

@@ -55,13 +55,36 @@ static void Player_actor_Movement_Talk(ACTOR* actorx) {
     Player_actor_Movement_Base_Braking(actorx);
     if (turn_flag) {
         if (talk_actor_p != NULL) {
-            s16 target_angle = DEG2SHORT_ANGLE2(-180.0f) + talk_actor_p->player_angle_y;
-            s16 cur_angle = add_calc_short_angle2(&actorx->shape_info.rotation.y, target_angle, 1.0f - sqrtf(0.5f),
-                                                  DEG2SHORT_ANGLE2(13.73291015625f), DEG2SHORT_ANGLE2(0.274658203125f));
+            s16 angle_y = talk_actor_p->player_angle_y;
+            s16 target_angle;
+            s16 cur_angle;
+
+#ifdef TARGET_PC
+            /* player_angle_y is the selected resident's line to this actor.
+             * A guest is bound as the current player during their own move, so
+             * that comparison never fires. Use their save slot instead. */
+            {
+                int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actorx);
+
+                if ((slot >= 0) && (slot != (int)Common_Get(player_no))) {
+                    angle_y = search_position_angleY(&talk_actor_p->world.position, &actorx->world.position);
+                }
+            }
+#endif
+            target_angle = (s16)(DEG2SHORT_ANGLE2(-180.0f) + angle_y);
+            cur_angle = add_calc_short_angle2(&actorx->shape_info.rotation.y, target_angle, 1.0f - sqrtf(0.5f),
+                                              DEG2SHORT_ANGLE2(13.73291015625f), DEG2SHORT_ANGLE2(0.274658203125f));
 
             actorx->world.angle.y = actorx->shape_info.rotation.y;
             if (mDemo_Check_SpeakerAble() == FALSE && mDemo_Check_DiffAngle_forTalk(cur_angle)) {
+#ifdef TARGET_PC
+                /* The side talk must not mark the primary speaker ready. */
+                if (mDemo_side_is_player(actorx) == FALSE) {
+                    mDemo_Set_SpeakerAble();
+                }
+#else
                 mDemo_Set_SpeakerAble();
+#endif
             }
         }
     } else {

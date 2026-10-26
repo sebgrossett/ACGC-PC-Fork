@@ -269,6 +269,20 @@ struct quest_manager_actor {
 
 extern ACTOR_PROFILE Quest_Manager_Profile;
 
+/* Quest globals around a second player's talk setup. */
+typedef struct aQMgr_talk_snap_s {
+    ACTOR* client;
+    u8 mode;
+    Anmmem_c* memory;
+    int hello;
+    int hand;
+    mActor_name_t cloth;
+    int have_cloth;
+} aQMgr_talk_snap_c;
+
+extern void aQMgr_talk_snap_save(aQMgr_talk_snap_c* snap);
+extern void aQMgr_talk_snap_restore(aQMgr_talk_snap_c* snap);
+
 #ifdef __cplusplus
 }
 #endif

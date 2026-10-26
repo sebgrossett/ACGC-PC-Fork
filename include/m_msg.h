@@ -272,6 +272,10 @@ extern void mMsg_debug_draw(gfxprint_t* gfxprint);
 extern void mMsg_Main(GAME* game);
 extern void mMsg_Draw(GAME* game);
 extern mMsg_Window_c* mMsg_Get_base_window_p();
+#ifdef TARGET_PC
+extern void mMsg_set_use_window(mMsg_Window_c* msg);
+extern mMsg_Window_c* mMsg_side_window_p(void);
+#endif
 extern int mMsg_Check_request_priority(mMsg_Window_c* msg_p, int request_priority);
 extern int mMsg_Check_main_index(mMsg_Window_c* msg_p, int main_index);
 extern int mMsg_Check_main_wait(mMsg_Window_c* msg_p);
