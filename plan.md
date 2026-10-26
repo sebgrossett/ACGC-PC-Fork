@@ -317,9 +317,17 @@ Also open after this slice (paths in section 4):
 
 **Audio sync** (requested 2026-10-26): each player runs their own audio channel, which is fine, but the channels are not time-aligned. Most noticeable in the plaza when a player has mail: two players' mail jingles fire slightly apart and read as one jingle pinged twice as fast. Find where per-player audio/sequence timing starts and sync the shared clocks (or start shared jingles from one source). Investigate `jaudio` sequence start offsets per player context.
 
-**Per-player clock** (requested 2026-10-26, `banti_draw` in `src/game/m_banti.c`):
-- The clock fade is linked: when one player starts running, BOTH half clocks disappear. The fade state (`banti_calc_disp_alpha_rate` drives alpha from a shared/selected-resident condition) must become per view/player — each clock fades only when its own player runs.
-- Clock placement: sometimes the clock slides offscreen while it is being moved aside to show the environment (the `disp_left` slide). Review the slide bounds in the split/half ortho path (half uses `mFont_CulcHudHalfOrthoMatrix` with the `-92` slide; quadrants use the retail mapping).
+**Per-player clock** (requested 2026-10-26, branch `feature/per-player-clock` off `master`; `src/game/m_banti.c`, `include/m_banti.h`). The clock fade was linked: `banti_move` read `mPlib_Get_address_able_display()` (the selected resident's `address_able_display`, a per-actor field set from each player's own `now_main_index` table in `m_player_common.c_inc`), so one player running faded both clocks.
+
+Checkpoint 1, per-view fade (built 2026-10-26, MINGW32 clean, playtest pending):
+- `Banti_c` splits: per-view `Banti_view_c view[banti_VIEW_NUM=4]` (addressable_type, timer, alpha); `disabled` and the slide fields (`disp_left`, `move_left`, `move_timer`) stay shared this checkpoint, with the slide still driven by the selected resident (view 0) as retail.
+- `banti_move` loops active views (view i player = selected resident / `mPlib_extra_player_at(i-1)`) and runs the retail addressable-timer and alpha logic per view from that player's own field; the demo/title forced fade stays global. The fade-in gate is now "this player has no menu open" (`banti_player_menu_open`: their primary opener match, or their own side slot) instead of the one global submenu.
+- `banti_draw(play, view_idx)` takes the view index; the split HUD loop passes `i`, single player passes 0. View 0's behaviour is byte-identical retail.
+- Playtest: P2 running must not fade P1's clock and vice versa; a menu open fades only its opener's clock; demos/title fade both; single player unchanged.
+
+Checkpoint 2, per-view slide and placement (open):
+- The slide condition ("player parked in the clock's screen corner") still projects the selected resident through the stale combined matrix at move time. Per-view needs each view's own camera at decision time — either per-view projection at move (save/restore `play->view`/`projection_matrix` around `Game_play_Projection_Trans`) or moving the decision into the per-view draw pass where that view's camera is current.
+- Placement/offscreen: the half slide is `-92` (half of retail `-184`); confirm against the clock's actual half-coords whether that lands partially offscreen in a half or quadrant and tune.
 
 **Co-op menu and join/leave** (branch `feature/coop-menu` off `master` after the per-player-menu merge). Phase 4.
 

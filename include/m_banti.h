@@ -32,11 +32,18 @@ typedef struct banti_callback_s {
   int state;
 } Banti_callback_c;
 
-typedef struct banti_s {
+/* Per-view clock fade state; view 0 is the selected resident (retail). */
+#define banti_VIEW_NUM 4
+
+typedef struct banti_view_s {
   int addressable_type;
-  int disabled;
   f32 timer;
   f32 alpha;
+} Banti_view_c;
+
+typedef struct banti_s {
+  Banti_view_c view[banti_VIEW_NUM];
+  int disabled; /* shared slide-transition gate */
   int disp_left;
   int move_left;
   f32 move_timer;
@@ -55,7 +62,7 @@ typedef struct banti_s {
 extern void banti_ct();
 extern void banti_dt();
 extern void banti_move(GAME_PLAY* play);
-extern void banti_draw(GAME_PLAY* play);
+extern void banti_draw(GAME_PLAY* play, int view_idx);
 
 #ifdef __cplusplus
 }

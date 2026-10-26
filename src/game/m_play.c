@@ -1570,7 +1570,7 @@ static void Game_play_draw(GAME_PLAY* play) {
                     /* A half is 320x480 EFB for content x 0..160, so it needs the
                      * half ortho. A quadrant is 320x240 EFB, the retail mapping. */
                     pc_gx_hud_half = (count == 2);
-                    banti_draw(play);
+                    banti_draw(play, i);
                     pc_gx_hud_half = FALSE;
                 }
 
@@ -1624,7 +1624,7 @@ static void Game_play_draw(GAME_PLAY* play) {
             } else
 #endif
             {
-                banti_draw(play);
+                banti_draw(play, 0);
 #ifdef TARGET_PC
                 mPlib_menu_context_begin(play);
 #endif
