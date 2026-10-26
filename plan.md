@@ -294,10 +294,20 @@ Checkpoint 2, draw in the opener's view (built and playtested 2026-10-25):
 - Order ownership (same slice): the pending change-data order now records its owner slot (`mPlib_change_data_owner`), taken from `Common_Get(player_no)` while no order is pending — the menu context already points at the opener. `Player_actor_request_main_change_from_submenu` skips actors that are not the owner instead of skipping every guest, so a guest's fruit drop or outfit change applies to that guest; host orders keep the old mailbox-jump protection. Playtest passed.
 - Resize fix (same slice): the 3D menu viewport offset was added before the aspect squeeze, so resizing scaled the half/quadrant offset and pushed the hand and player model out of the panel. Squeeze the box in band-local space and add the view origin afterwards, matching the 2D panel. Playtest passed.
 
+**Guest interactions: signs** (same branch, built and playtested 2026-10-26):
+- Demo requests carry an owner (`pc_owner_slot`/`pc_owner_pad`): the TALK A gate uses that request's pad, and `choice_demo` switches the player context to the chosen request's owner before the setup proc runs (`mPlib_set_demo_talker_by_slot`), so each request's talk runs as its player.
+- Reserve signs (`ac_reserve`, `SIGN00..`): `aRSV_wait` checks every active player's position/facing, requires that player's own A edge, records the demo talker and marks the request `pc_no_a_gate`; the chooser accepts it without re-reading A a frame later. Sign talk turns are off, matching retail for P1.
+- Signboards (`ac_sign`): the target search reads the fg sign item around each player instead of the host camera's draw table; A is read from that player's pad; the demo talker is recorded.
+- Messages: `mMsg_Main` runs in the talker's context (`pads[0]`, `mcon`, `Now_Private`, `player_no`), so each player advances their own dialog.
+- Actor moves: cull visibility accumulates over all views (`Actor_info_cull_begin` clears `ACTOR_STATE_NO_CULL` once per frame and `Actor_cull_check` only sets it). The last view used to overwrite the flag, so a sign seen only by P1 stopped moving when P2 looked elsewhere and P1 could not read it. Side effects: actors visible in any view are drawn in every view (clipped) and kept alive, and the move pass now covers actors near any player.
+- Playtest: both players read signs regardless of the other's distance, each dismisses their own message with their own A, no rotation.
+- Not covered: NPC talk (generic NPC requests still queue with the host owner), and doors/shops for a guest (scene per player, deferred).
+
 Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
 - Join/leave queue, including joins waited out through a host event
+- Guest NPC talk: the generic NPC talk request still queues with the host owner, so only P1 can start villager conversations. The per-request owner path is in place; the NPC request/weight checks still need to see each active player.
 - Per-player menus, long term: one menu at a time in the menu slice's checkpoint 1 is a stepping stone only. 3-4 player co-op needs simultaneous menus, which means per-player submenu state (mode, overlay, item pointer, opener pad) and drawing each menu in its opener's view instead of one global `play->submenu`.
 - Spawn at own house: long-term goal after per-player inventory/state. Each resident should appear at their own house door, not at a fixed offset from the selected resident. Needs per-player identity, door/scene transitions and per-world instancing (the same dependency as Player 2 indoors).
 

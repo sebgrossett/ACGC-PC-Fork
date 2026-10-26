@@ -285,7 +285,7 @@ static int aSIGN_actor_BkandUtNum_formal(int* bz_p, int* bx_p, int* ut_z_p, int*
     return *bz_p >= 0 && *bz_p < bz_max && *bx_p >= 0 && *bx_p < bx_max;
 }
 
-static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
+static int aSIGN_actor_set_target_for_player(SIGN_ACTOR* sign, ACTOR* player_actor, f32* dist_p) {
     xyz_t sign_pos;
     int base_bz;
     int base_bx;
@@ -295,13 +295,9 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
     int bx;
     int ut_z;
     int ut_x;
-    ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
     f32 min_dist = FLT_MAX;
     int z;
     int x;
-    int i;
-    int j;
-    aSIGN_draw_c* draw_p;
     int res = FALSE;
 
     if (mFI_Wpos2BkandUtNuminBlock(&base_bx, &base_bz, &base_ut_x, &base_ut_z, player_actor->world.position)) {
@@ -315,10 +311,14 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
                 ut_z = base_ut_z + z;
 
                 if (aSIGN_actor_BkandUtNum_formal(&bz, &bx, &ut_z, &ut_x)) {
-                    for (i = 0, draw_p = sign->draw; i < 2; i++) {
-                        for (j = 0; j < 2; j++) {
-                            if (draw_p->block.z == bz && draw_p->block.x == bx &&
-                                (draw_p->exist_bitfield[ut_z] & (1 << ut_x)) != 0) {
+                    mActor_name_t* fg_p = mFI_BkNumtoUtFGTop(bx, bz);
+                    mActor_name_t item;
+
+                    if (fg_p != NULL) {
+                        item = fg_p[ut_z * UT_X_NUM + ut_x];
+
+                        if (ITEM_NAME_GET_TYPE(item) == NAME_TYPE_ITEM0 && ITEM_NAME_GET_CAT(item) == ITEM0_CAT_SIGN &&
+                            aSIGN_draw_anime_check(sign, ut_z, ut_x) == FALSE) {
                                 mFI_BkandUtNum2CenterWpos(&sign_pos, bx, bz, ut_x, ut_z);
                                 sign_pos.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(sign_pos, 0.0f);
                                 if (player_actor->world.position.z > sign_pos.z) {
@@ -355,15 +355,13 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
                                     }
                                 }
                             }
-
-                            draw_p++;
                         }
                     }
                 }
             }
         }
-    }
 
+    *dist_p = res ? min_dist : FLT_MAX;
     return res;
 }
 
@@ -542,10 +540,40 @@ static void aSIGN_talk_end(SIGN_ACTOR* sign, GAME* game) {
 }
 
 static void aSIGN_wait(SIGN_ACTOR* sign, GAME* game) {
-    if (mDemo_Get_talk_actor() == NULL && aSIGN_actor_set_target(sign, game) && chkTrigger(BUTTON_A) &&
-        mDemo_Get_talk_actor() == NULL) {
-        mDemo_Request(mDemo_TYPE_SPEAK, &sign->actor_class, &aSIGN_set_talk_info);
-        aSIGN_setup_action(sign, aSIGN_ACTION_TALK);
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    if (mDemo_Get_talk_actor() != NULL) {
+        return;
+    }
+
+    /* Any active player facing the sign can read it, with their own A press. */
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+        f32 dist = FLT_MAX;
+        int pad;
+
+        if (player == NULL) {
+            continue;
+        }
+
+        if (aSIGN_actor_set_target_for_player(sign, (ACTOR*)player, &dist) == FALSE) {
+            continue;
+        }
+
+        pad = mPlib_pad_for_player(player);
+
+        if (chkTrigger_pad(pad, BUTTON_A) == FALSE) {
+            continue;
+        }
+
+        mPlib_set_demo_talker(player);
+
+        if (mDemo_Request(mDemo_TYPE_SPEAK, &sign->actor_class, &aSIGN_set_talk_info) != FALSE) {
+            aSIGN_setup_action(sign, aSIGN_ACTION_TALK);
+        }
+        return;
     }
 }
 

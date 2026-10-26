@@ -113,47 +113,60 @@ static void guest_end(GAME* game, int restore_look) {
     }
 }
 
-/* Menu context: the submenu update and draw read pads[0], mcon, player_no and
- * the player's private data. While a guest's menu is open, run those with the
- * guest's pad and private data, then restore the selected resident's. */
-static int s_menu_ctx_active = FALSE;
-static pad_t s_menu_ctx_saved_pad;
-static MCON s_menu_ctx_saved_mcon;
-static Private_c* s_menu_ctx_saved_priv;
-static u32 s_menu_ctx_saved_player_no;
+/* Player context: the submenu update/draw and the talk demo read pads[0],
+ * mcon, player_no and the player's private data. While a guest owns one of
+ * those, run it with the guest's pad and private data, then restore the
+ * selected resident's. */
+static int s_player_ctx_active = FALSE;
+static pad_t s_player_ctx_saved_pad;
+static MCON s_player_ctx_saved_mcon;
+static Private_c* s_player_ctx_saved_priv;
+static u32 s_player_ctx_saved_player_no;
 
-extern void mPlib_menu_context_begin(GAME_PLAY* play) {
-    PLAYER_ACTOR* opener = mPlib_menu_opener();
-    int pad = mPlib_menu_opener_pad();
-    int slot = mPlib_menu_opener_slot();
-
-    if (s_menu_ctx_active || opener == NULL || pad <= 0 || pad >= MAXCONTROLLERS || slot < 0) {
+static void player_context_begin(GAME_PLAY* play, PLAYER_ACTOR* player, int pad, int slot) {
+    if (s_player_ctx_active || player == NULL || pad <= 0 || pad >= MAXCONTROLLERS || slot < 0) {
         return;
     }
 
-    s_menu_ctx_saved_pad = play->game.pads[0];
-    s_menu_ctx_saved_mcon = play->game.mcon;
-    s_menu_ctx_saved_priv = Common_Get(now_private);
-    s_menu_ctx_saved_player_no = Common_Get(player_no);
+    s_player_ctx_saved_pad = play->game.pads[0];
+    s_player_ctx_saved_mcon = play->game.mcon;
+    s_player_ctx_saved_priv = Common_Get(now_private);
+    s_player_ctx_saved_player_no = Common_Get(player_no);
 
     Common_Set(now_private, mPlib_private_for_slot(slot));
     Common_Set(player_no, slot);
     play->game.pads[0] = play->game.pads[pad];
     mCon_calc(&s_guest_mcon[pad], (f32)play->game.pads[pad].now.stick_x, (f32)play->game.pads[pad].now.stick_y);
     play->game.mcon = s_guest_mcon[pad];
-    s_menu_ctx_active = TRUE;
+    s_player_ctx_active = TRUE;
 }
 
-extern void mPlib_menu_context_end(GAME_PLAY* play) {
-    if (s_menu_ctx_active == FALSE) {
+static void player_context_end(GAME_PLAY* play) {
+    if (s_player_ctx_active == FALSE) {
         return;
     }
 
-    play->game.pads[0] = s_menu_ctx_saved_pad;
-    play->game.mcon = s_menu_ctx_saved_mcon;
-    Common_Set(now_private, s_menu_ctx_saved_priv);
-    Common_Set(player_no, s_menu_ctx_saved_player_no);
-    s_menu_ctx_active = FALSE;
+    play->game.pads[0] = s_player_ctx_saved_pad;
+    play->game.mcon = s_player_ctx_saved_mcon;
+    Common_Set(now_private, s_player_ctx_saved_priv);
+    Common_Set(player_no, s_player_ctx_saved_player_no);
+    s_player_ctx_active = FALSE;
+}
+
+extern void mPlib_menu_context_begin(GAME_PLAY* play) {
+    player_context_begin(play, mPlib_menu_opener(), mPlib_menu_opener_pad(), mPlib_menu_opener_slot());
+}
+
+extern void mPlib_menu_context_end(GAME_PLAY* play) {
+    player_context_end(play);
+}
+
+extern void mPlib_demo_context_begin(GAME_PLAY* play) {
+    player_context_begin(play, mPlib_demo_talker(), mPlib_demo_talker_pad(), mPlib_demo_talker_slot());
+}
+
+extern void mPlib_demo_context_end(GAME_PLAY* play) {
+    player_context_end(play);
 }
 
 static int guest_slot_for_actor(ACTOR* actor) {

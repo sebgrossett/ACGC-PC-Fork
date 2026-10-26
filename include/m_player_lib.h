@@ -45,6 +45,7 @@ extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player);
 /* Pad channel per resident slot. The pad is the Controls row (0 host, 1-3 guests). */
 extern void mPlib_register_player_pad(int slot, int pad);
 extern int mPlib_pad_for_player_slot(int slot);
+extern int mPlib_pad_for_player(PLAYER_ACTOR* player);
 extern void mPlib_queue_guest_slot(int slot, int pad);
 extern int mPlib_guest_slot_ready(void);
 extern int mPlib_take_guest_slot(void);
@@ -70,6 +71,17 @@ extern int mPlib_menu_opener_is_guest(void);
 /* Run the submenu update/draw with the opener's pad and private data. */
 extern void mPlib_menu_context_begin(GAME_PLAY* play);
 extern void mPlib_menu_context_end(GAME_PLAY* play);
+/* Co-op talk/speak talker: the demo runs with this player's pad and private
+ * data. Set right before the demo request; cleared when the demo ends. */
+extern void mPlib_set_demo_talker(PLAYER_ACTOR* player);
+extern void mPlib_set_demo_talker_by_slot(int slot);
+extern void mPlib_clear_demo_talker(void);
+extern PLAYER_ACTOR* mPlib_demo_talker(void);
+extern int mPlib_demo_talker_pad(void);
+extern int mPlib_demo_talker_slot(void);
+extern int mPlib_demo_talker_is_guest(void);
+extern void mPlib_demo_context_begin(GAME_PLAY* play);
+extern void mPlib_demo_context_end(GAME_PLAY* play);
 #endif
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);

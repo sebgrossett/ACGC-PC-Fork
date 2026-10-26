@@ -1343,6 +1343,23 @@ extern int mPlib_pad_for_player_slot(int slot) {
     return s_pad_by_slot[slot];
 }
 
+/* Controls pad of a player actor: 0 for the selected resident, the registered
+ * Controls row for a guest. -1 when the actor is not an active player. */
+extern int mPlib_pad_for_player(PLAYER_ACTOR* player) {
+    int slot;
+
+    if (player == NULL) {
+        return -1;
+    }
+
+    if (player == get_player_actor_withoutCheck((GAME_PLAY*)gamePT)) {
+        return 0;
+    }
+
+    slot = mPlib_player_slot_of(player);
+    return (slot >= 0) ? mPlib_pad_for_player_slot(slot) : -1;
+}
+
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
     if (player == NULL) {
         return;
@@ -1523,6 +1540,49 @@ extern int mPlib_menu_opener_is_guest(void) {
     int slot = mPlib_player_slot_of(s_menu_opener);
 
     return (slot >= 0) && (slot != (int)Common_Get(player_no));
+}
+
+/* Co-op talk/speak talker. The demo runs with this player's pad and private
+ * data, so a guest can read a sign or talk to an NPC. */
+static PLAYER_ACTOR* s_demo_talker = NULL;
+static int s_demo_talker_pad = -1;
+static int s_demo_talker_slot = -1;
+
+extern void mPlib_set_demo_talker(PLAYER_ACTOR* player) {
+    s_demo_talker = player;
+    s_demo_talker_pad = mPlib_pad_for_player(player);
+    s_demo_talker_slot = mPlib_player_slot_of(player);
+}
+
+/* Resolve a demo owner from its save slot (host or guest). */
+extern void mPlib_set_demo_talker_by_slot(int slot) {
+    if ((slot >= 0) && (slot < PLAYER_NUM) && (s_player_by_slot[slot] != NULL)) {
+        mPlib_set_demo_talker(s_player_by_slot[slot]);
+    } else {
+        mPlib_clear_demo_talker();
+    }
+}
+
+extern void mPlib_clear_demo_talker(void) {
+    s_demo_talker = NULL;
+    s_demo_talker_pad = -1;
+    s_demo_talker_slot = -1;
+}
+
+extern PLAYER_ACTOR* mPlib_demo_talker(void) {
+    return s_demo_talker;
+}
+
+extern int mPlib_demo_talker_pad(void) {
+    return s_demo_talker_pad;
+}
+
+extern int mPlib_demo_talker_slot(void) {
+    return s_demo_talker_slot;
+}
+
+extern int mPlib_demo_talker_is_guest(void) {
+    return (s_demo_talker != NULL) && (s_demo_talker_pad > 0);
 }
 
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {

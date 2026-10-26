@@ -512,7 +512,16 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
         game->doing_point = 2;
+#ifdef TARGET_PC
+        mPlib_demo_context_begin(play);
+#endif
         mDemo_Main(play);
+#ifdef TARGET_PC
+        mPlib_demo_context_end(play);
+        if (mDemo_CheckDemo() == FALSE) {
+            mPlib_clear_demo_talker();
+        }
+#endif
         game->doing_point = 3;
         mEv_run(&play->event);
     }
@@ -546,7 +555,13 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 1;
         mCoBG_CalcTimerDecalCircle();
         game->doing_point = 2;
+#ifdef TARGET_PC
+        mPlib_demo_context_begin(play);
+#endif
         mMsg_Main(game);
+#ifdef TARGET_PC
+        mPlib_demo_context_end(play);
+#endif
     } else {
         mVibctl_set_force_stop(2);
 #ifdef TARGET_PC
@@ -560,7 +575,13 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             Actor_info_call_actor(play, &play->actor_info);
             Actor_info_set_wait_actor(NULL);
             mCoBG_CalcTimerDecalCircle();
+#ifdef TARGET_PC
+            mPlib_demo_context_begin(play);
+#endif
             mMsg_Main(game);
+#ifdef TARGET_PC
+            mPlib_demo_context_end(play);
+#endif
         } else {
             /* The selected resident stays in the menu. Every other resident
              * keeps walking, including the same collision pass as a normal
@@ -981,6 +1002,9 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     /* One world fills the display-list buffers. Draw every view but the last,
      * showing each and restarting the lists, then build the last view where
      * the right half used to go. A wipe stays one full list. */
+    /* Visibility accumulates over every view: the next move pass runs once for
+     * all players, so an actor seen by any of them must move. */
+    Actor_info_cull_begin(play);
     if (play_split_live(play)) {
         int count = play_player_count();
         xyz_t host_eye = play->view.eye;

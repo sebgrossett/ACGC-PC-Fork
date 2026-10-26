@@ -22,6 +22,7 @@ static void aRSV_set_talk_info(ACTOR* actor) {
     }
     mDemo_Set_talk_display_name(FALSE);
     mDemo_Set_camera(TRUE);
+    mDemo_Set_talk_turn(FALSE);
     mPlib_Set_able_hand_all_item_in_demo(TRUE);
     mDemo_Set_ListenAble();
     window_color.r = 145;
@@ -33,17 +34,47 @@ static void aRSV_set_talk_info(ACTOR* actor) {
 }
 
 static void aRSV_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-    int angle;
+    int count = 1 + mPlib_extra_player_count();
+    int i;
 
-    if (mDemo_Check(mDemo_TYPE_TALK, &actor->actor_class) != 1 && player != NULL) {
-        if (player->actor_class.world.position.z >= actor->actor_class.world.position.z) {
-            angle = ABS(actor->actor_class.player_angle_y);
+    if (mDemo_Check(mDemo_TYPE_TALK, &actor->actor_class) == 1) {
+        return;
+    }
 
-            if (angle < DEG2SHORT_ANGLE2(45.0f)) {
-                mDemo_Request(mDemo_TYPE_TALK, &actor->actor_class, aRSV_set_talk_info);
-            }
+    /* Any active player standing in front and facing the sign can read it. */
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
+        int angle;
+
+        if (player == NULL) {
+            continue;
         }
+
+        if (player->actor_class.world.position.z < actor->actor_class.world.position.z) {
+            continue;
+        }
+
+        if (i == 0) {
+            angle = ABS(actor->actor_class.player_angle_y);
+        } else {
+            s16 dir = search_position_angleY(&actor->actor_class.world.position, &player->actor_class.world.position);
+
+            angle = ABS((s16)(dir + DEG2SHORT_ANGLE2(180.0f)) - player->actor_class.shape_info.rotation.y);
+        }
+
+        if (angle >= DEG2SHORT_ANGLE2(45.0f)) {
+            continue;
+        }
+
+        if (chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) == FALSE) {
+            continue;
+        }
+
+        mPlib_set_demo_talker(player);
+        mDemo_Set_next_request_no_a_gate(TRUE);
+        mDemo_Request(mDemo_TYPE_TALK, &actor->actor_class, aRSV_set_talk_info);
+        /* Keep going: another active player may also be in front, and each
+         * request needs its own owner. */
     }
 }
 

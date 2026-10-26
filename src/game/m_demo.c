@@ -1,5 +1,14 @@
 #include "m_demo.h"
 
+#ifdef TARGET_PC
+static int s_request_no_a_gate = FALSE;
+
+/* The next mDemo_Request already saw its player's A press. */
+extern void mDemo_Set_next_request_no_a_gate(int flag) {
+    s_request_no_a_gate = flag;
+}
+#endif
+
 #include "m_common_data.h"
 #include "m_player_lib.h"
 #include "m_choice.h"
@@ -408,7 +417,7 @@ static int set_talk_default() {
     demo->data.talk.window_color.g = mDemo_WINDOW_COLOR_G;
     demo->data.talk.window_color.b = mDemo_WINDOW_COLOR_B;
     demo->data.talk.window_color.a = mDemo_WINDOW_COLOR_A;
-    demo->camera_type = CAMERA2_PROCESS_TALK;
+    demo->camera_type = mPlib_demo_talker_is_guest() ? CAMERA2_PROCESS_NORMAL : CAMERA2_PROCESS_TALK;
     mDemo_Unset_SpeakerAble();
     mDemo_Unset_ListenAble();
     demo->speaker_actor = (ACTOR*)GET_PLAYER_ACTOR_NOW();
@@ -822,7 +831,17 @@ static int choice_demo_sub() {
              (demo->request_save.type != mDemo_TYPE_NONE || type >= demo->priority_type)) &&
             (*check_func[type])() != FALSE) {
             if (type == mDemo_TYPE_TALK) {
-                if (chkTrigger(BUTTON_A) && request->talk_weight > max_talk_weight) {
+                int talk_pad = request->pc_owner_pad;
+
+#ifdef TARGET_PC
+                /* The actor already saw this player's A press. */
+                if (request->pc_no_a_gate) {
+                    idx = i;
+                    break;
+                }
+#endif
+
+                if (chkTrigger_pad(talk_pad, BUTTON_A) && request->talk_weight > max_talk_weight) {
                     idx = i;
                     max_talk_weight = request->talk_weight;
                 }
@@ -848,6 +867,13 @@ static int choice_demo() {
 
     if (request_idx != -1) {
         memcpy(&demo->current, &demo->request[request_idx], sizeof(mDemo_Request_c));
+#ifdef TARGET_PC
+        /* Run the chosen request's setup as its own player, even if the last
+         * queued request came from the other player. */
+        mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        mPlib_set_demo_talker_by_slot(demo->current.pc_owner_slot);
+        mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+#endif
         (*default_set_func[demo->current.type])();
 
         if (demo->current.proc != NULL) {
@@ -962,6 +988,11 @@ static void main_proc() {
     if (demo->state == mDemo_STATE_STOP && demo->request_save.type != mDemo_TYPE_NONE &&
         demo->request_save.type != demo->current.type) {
         memcpy(&demo->current, &demo->request_save, sizeof(mDemo_Request_c));
+#ifdef TARGET_PC
+        mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        mPlib_set_demo_talker_by_slot(demo->current.pc_owner_slot);
+        mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+#endif
         demo->state = mDemo_STATE_RUN;
         change_camera(CAMERA2_PROCESS_NUM);
     }
@@ -981,10 +1012,16 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             mDemo_Request_c* req = &demo->request[request_num];
 
             if (type == mDemo_TYPE_TALK) {
-                weight = weight_of_talk_position(actor);
+                if (mPlib_demo_talker_is_guest()) {
+                    /* A guest's request was already checked against that player
+                     * by the actor; the host-based weight cannot see them. */
+                    weight = 1.0f;
+                } else {
+                    weight = weight_of_talk_position(actor);
 
-                if (weight < 0.0f) {
-                    return FALSE;
+                    if (weight < 0.0f) {
+                        return FALSE;
+                    }
                 }
             } else if (type == mDemo_TYPE_SPEAK && mPlib_Check_able_force_speak_label(gamePT, actor) == FALSE) {
                 return FALSE;
@@ -996,6 +1033,12 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             req->actor = actor;
             req->proc = req_proc;
             req->talk_weight = weight;
+#ifdef TARGET_PC
+            req->pc_no_a_gate = s_request_no_a_gate;
+            s_request_no_a_gate = FALSE;
+            req->pc_owner_slot = (mPlib_demo_talker() != NULL) ? mPlib_demo_talker_slot() : (int)Common_Get(player_no);
+            req->pc_owner_pad = (mPlib_demo_talker() != NULL) ? mPlib_demo_talker_pad() : 0;
+#endif
 
             demo->request_num++;
         }

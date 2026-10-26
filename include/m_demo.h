@@ -107,6 +107,15 @@ typedef struct demo_req_s {
     int type;
     mDemo_REQUEST_PROC proc;
     f32 talk_weight;
+#ifdef TARGET_PC
+    /* Player who queued the request; the TALK A gate and the demo context use
+     * this owner so two players can request at the same time. */
+    int pc_owner_slot;
+    int pc_owner_pad;
+    /* The actor already saw this player's A press, so the chooser must not ask
+     * for it again on the next frame. */
+    int pc_no_a_gate;
+#endif
 } mDemo_Request_c;
 
 typedef struct demo_door_data_s {
@@ -181,6 +190,10 @@ extern int mDemo_Get_talk_return_demo_wait();
 extern void mDemo_Set_talk_return_get_golden_axe_demo(u8 return_get_golden_axe_demo);
 extern int mDemo_Get_talk_return_get_golden_axe_demo();
 extern void mDemo_Set_talk_turn(u8 turn);
+#ifdef TARGET_PC
+/* The next mDemo_Request already saw its player's A press. */
+extern void mDemo_Set_next_request_no_a_gate(int flag);
+#endif
 extern int mDemo_Get_talk_turn();
 extern void mDemo_Set_talk_window_color(rgba_t* window_color);
 extern rgba_t* mDemo_Get_talk_window_color_p();
