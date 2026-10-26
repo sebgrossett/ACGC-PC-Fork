@@ -185,10 +185,11 @@ static void aMBX_actor_draw(ACTOR* actorx, GAME* game) {
              * static accumulator shared by every mailbox draw call; in co-op a
              * mailbox draws once per view that can see it, which advanced the
              * shared accumulator several times per frame and doubled the ping
-             * rate. The frame guard keeps the timing to one advance per game
-             * frame. */
+             * rate. The frame guard (the play's real frame counter, not the
+             * frame RATE in game_GameFrame) keeps the timing to one advance
+             * per game frame. */
             static f32 mbx_se_accum[PLAYER_NUM];
-            static u8 mbx_se_frame[PLAYER_NUM];
+            static u32 mbx_se_frame[PLAYER_NUM];
             int mbx_idx = actor->arrange_idx & (PLAYER_NUM - 1);
 
             Evw_Anime_Set(play, evw_table[Common_Get(time.season) == mTM_SEASON_WINTER]);
@@ -196,9 +197,9 @@ static void aMBX_actor_draw(ACTOR* actorx, GAME* game) {
              * selected resident; in co-op any active resident's mailbox pings,
              * positionally. */
             if (mPlib_pad_for_player_slot(mHS_get_pl_no(actor->arrange_idx)) >= 0 &&
-                game_GameFrame != mbx_se_frame[mbx_idx] &&
+                play->game_frame != mbx_se_frame[mbx_idx] &&
                 graph_dt_period_elapsed(game, &mbx_se_accum[mbx_idx], (f32)FRAMES_PER_SECOND)) {
-                mbx_se_frame[mbx_idx] = game_GameFrame;
+                mbx_se_frame[mbx_idx] = play->game_frame;
                 sAdo_OngenTrgStart(0x43B, &actorx->world.position);
             }
         } else {
