@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 
+struct player_actor_s;
+
 enum {
     CAMERA2_PROCESS_STOP,
     CAMERA2_PROCESS_NORMAL,
@@ -336,6 +338,10 @@ extern void Camera2_ClearActorTalking_Cull(GAME_PLAY* play);
 extern int Camera2_Check_main_index(GAME_PLAY* play, int main_index);
 extern xyz_t* Camera2_getMicPos_p(GAME_PLAY* play);
 extern int Camera2NormalState_get(GAME_PLAY* play);
+extern void Camera2_SetEyePos_fromCenterPosCalc(GAME_PLAY* play, xyz_t* center, xyz_t* eye);
+extern void Camera2_SetEyePos_fromFollow(GAME_PLAY* play, const s_xyz* dir, f32 dist, xyz_t* center, xyz_t* eye);
+extern void Camera2_GetNormalCenterGoal(GAME_PLAY* play, struct player_actor_s* player, xyz_t* end_center_pos);
+extern void Camera2_GetNormalFollowGoal(GAME_PLAY* play, struct player_actor_s* player, f32* dist, s_xyz* dir);
 extern int Camera2_request_main_wade(GAME_PLAY* play, xyz_t* pos, int priority, f32 goal_time);
 extern int Camera2_request_main_talk(GAME_PLAY* play, ACTOR* speaker, ACTOR* listener, int priority);
 extern int Camera2_request_main_talk_pos(GAME_PLAY* play, ACTOR* speaker, const xyz_t* const listener_pos, int priority);

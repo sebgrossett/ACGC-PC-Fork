@@ -103,9 +103,15 @@ static void Camera2_PolaPosCalc(xyz_t* eye, s16 inv_dir_x, s16 inv_dir_y, const 
     eye->z += dist_xz * cosf(angle_y);
 }
 
-static void Camera2_SetEyePos_fromCenterPosCalc(GAME_PLAY* play, xyz_t* center, xyz_t* eye) {
+extern void Camera2_SetEyePos_fromCenterPosCalc(GAME_PLAY* play, xyz_t* center, xyz_t* eye) {
     Camera2_PolaPosCalc(eye, play->camera.direction.x + (u16)SHT_MIN_S, play->camera.direction.y + (u16)SHT_MIN_S,
                         center, play->camera.focus_distance);
+}
+
+/* Eye placement for an arbitrary direction/distance, used by the split camera's
+ * per-guest follow. */
+extern void Camera2_SetEyePos_fromFollow(GAME_PLAY* play, const s_xyz* dir, f32 dist, xyz_t* center, xyz_t* eye) {
+    Camera2_PolaPosCalc(eye, dir->x + (u16)SHT_MIN_S, dir->y + (u16)SHT_MIN_S, center, dist);
 }
 
 static void Camera2_SetEyePos_fromCenterPos(GAME_PLAY* play) {
@@ -237,12 +243,12 @@ static void Camera2_SetView(GAME_PLAY* play) {
     setLookAtView(view, &final_eye, &final_center, &camera->lookat.up);
 }
 
-static f32 Camera2_BorderSize(GAME_PLAY* play) {
+static f32 Camera2_BorderSize(GAME_PLAY* play, int block_x) {
     int type = mFI_GET_TYPE(mFI_GetFieldId());
     f32 size = 110.0f;
 
     if (Save_Get(scene_no) == SCENE_FG && mPlib_IsWadeDisabled() &&
-        (play->block_table.block_x != 1 && play->block_table.block_x != FG_BLOCK_X_NUM)) {
+        (block_x != 1 && block_x != FG_BLOCK_X_NUM)) {
         size = 0.0f;
     } else {
         switch (type) {
@@ -261,34 +267,43 @@ static f32 Camera2_BorderSize(GAME_PLAY* play) {
     return size;
 }
 
-static void Camera2_GetBorderScale(GAME_PLAY* play, f32 scale, f32* x_min, f32* x_max, f32* z_min, f32* z_max) {
+/* Border bounds of one block. Called with the selected resident's block by the
+ * default path, and with a guest's block by the split camera so each view
+ * clamps to its own acre. */
+static void Camera2_GetBorderScaleForBlock(GAME_PLAY* play, int block_x, int block_z, int wade_block_x, f32 scale,
+                                           f32* x_min, f32* x_max, f32* z_min, f32* z_max) {
     static xyz_t local_border_base_pos = { 0.0f, 0.0f, 0.0f };
 
-    PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
     xyz_t entrance_pos;
-    int block_x;
-    int block_z;
 
     if (mRmTp_GetEntranceBasePosition(&entrance_pos) == FALSE) {
-        mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position);
         mFI_LposInBKtoWpos(&entrance_pos, local_border_base_pos, block_x, block_z);
     }
 
-    *x_min = entrance_pos.x + mFI_GetBlockWidth() - (scale * Camera2_BorderSize(play));
-    *x_max = entrance_pos.x + (scale * Camera2_BorderSize(play));
-    *z_max =
-        mFI_GetBlockHeight() + (entrance_pos.z - (scale * (Camera2_BorderSize(play) + Camera2_GetUnderBorderAdjust())));
-    *z_min = entrance_pos.z + (scale * (Camera2_BorderSize(play) + mFI_UT_WORLDSIZE_Z_F));
+    *x_min = entrance_pos.x + mFI_GetBlockWidth() - (scale * Camera2_BorderSize(play, wade_block_x));
+    *x_max = entrance_pos.x + (scale * Camera2_BorderSize(play, wade_block_x));
+    *z_max = mFI_GetBlockHeight() +
+             (entrance_pos.z - (scale * (Camera2_BorderSize(play, wade_block_x) + Camera2_GetUnderBorderAdjust())));
+    *z_min = entrance_pos.z + (scale * (Camera2_BorderSize(play, wade_block_x) + mFI_UT_WORLDSIZE_Z_F));
 
     if (Camera2_InDoorCheck()) {
         *z_min += -mFI_UT_WORLDSIZE_Z_F;
     } else if (mPlib_IsWadeDisabled()) {
-        if (play->block_table.block_x == FG_BLOCK_X_NUM) {
+        if (wade_block_x == FG_BLOCK_X_NUM) {
             *x_max = entrance_pos.x;
-        } else if (play->block_table.block_x == 1) {
+        } else if (wade_block_x == 1) {
             *x_min = entrance_pos.x + mFI_GetBlockWidth();
         }
     }
+}
+
+static void Camera2_GetBorderScale(GAME_PLAY* play, f32 scale, f32* x_min, f32* x_max, f32* z_min, f32* z_max) {
+    PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+    int block_x;
+    int block_z;
+
+    mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position);
+    Camera2_GetBorderScaleForBlock(play, block_x, block_z, block_x, scale, x_min, x_max, z_min, z_max);
 }
 
 static void Camera2_GetLongBorderScale(GAME_PLAY* play, f32* scale) {
@@ -372,12 +387,7 @@ static f32 Camera2_MoveDistancePosAndSpeed(GAME_PLAY* play, f32 end_distance, in
     return ret;
 }
 
-static void Camera2_Get_PosBlockRatio(GAME_PLAY* play, xyz_t* pos, f32* x_ratio, f32* z_ratio) {
-    f32 x0;
-    f32 x1;
-    f32 z1;
-    f32 z0;
-
+static void Camera2_Get_PosBlockRatioCalc(f32 x0, f32 x1, f32 z0, f32 z1, const xyz_t* pos, f32* x_ratio, f32* z_ratio) {
     f32 x_center;
     f32 z_center;
 
@@ -386,8 +396,6 @@ static void Camera2_Get_PosBlockRatio(GAME_PLAY* play, xyz_t* pos, f32* x_ratio,
 
     *z_ratio = 0.0f;
     *x_ratio = 0.0f;
-
-    Camera2_GetBorder(play, &x0, &x1, &z0, &z1);
 
     x_center = (x0 + x1) * 0.5f;
     x_r = x_center - x1;
@@ -424,14 +432,41 @@ static void Camera2_Get_PosBlockRatio(GAME_PLAY* play, xyz_t* pos, f32* x_ratio,
     }
 }
 
-static void Camera2_Normal_Swing(GAME_PLAY* play, f32* distance, s_xyz* dir) {
-    xyz_t* pos = &get_player_actor_withoutCheck(play)->actor_class.eye.position;
+static void Camera2_Get_PosBlockRatio(GAME_PLAY* play, xyz_t* pos, f32* x_ratio, f32* z_ratio) {
+    f32 x0;
+    f32 x1;
+    f32 z1;
+    f32 z0;
+
+    Camera2_GetBorder(play, &x0, &x1, &z0, &z1);
+    Camera2_Get_PosBlockRatioCalc(x0, x1, z0, z1, pos, x_ratio, z_ratio);
+}
+
+/* Same ratios for one player's own block, used by the split view's swing. */
+static void Camera2_Get_PosBlockRatio_forPlayer(GAME_PLAY* play, PLAYER_ACTOR* player, f32* x_ratio, f32* z_ratio) {
+    xyz_t* pos = &player->actor_class.eye.position;
+    int block_x;
+    int block_z;
+    f32 scale;
+    f32 x0;
+    f32 x1;
+    f32 z0;
+    f32 z1;
+
+    mFI_Wpos2BlockNum(&block_x, &block_z, *pos);
+    Camera2_GetLongBorderScale(play, &scale);
+    Camera2_GetBorderScaleForBlock(play, block_x, block_z, block_x, scale, &x0, &x1, &z0, &z1);
+    Camera2_Get_PosBlockRatioCalc(x0, x1, z0, z1, pos, x_ratio, z_ratio);
+}
+
+static void Camera2_Normal_Swing(GAME_PLAY* play, PLAYER_ACTOR* player, f32* distance, s_xyz* dir) {
+    xyz_t* pos = &player->actor_class.eye.position;
     f32 x_ratio;
     f32 z_ratio;
     int block_x;
     int block_z;
 
-    Camera2_Get_PosBlockRatio(play, pos, &x_ratio, &z_ratio);
+    Camera2_Get_PosBlockRatio_forPlayer(play, player, &x_ratio, &z_ratio);
     mFI_Wpos2BlockNum(&block_x, &block_z, *pos);
 
     if (block_z == 1 && z_ratio < 0.0f) {
@@ -453,7 +488,8 @@ static const s16 add_directionX_array[3] = {
     DEG2SHORT_ANGLE(19.12f)   // 3480
 };
 
-static void Camera2_Get_GoalDistanceAndDirection(GAME_PLAY* play, f32* dist, s_xyz* dir) {
+static void Camera2_Get_GoalDistanceAndDirection_forPlayer(GAME_PLAY* play, PLAYER_ACTOR* player, f32* dist,
+                                                           s_xyz* dir) {
     static const f32 distance_array[CAMERA2_PROCESS_NUM] = {
         620.0f, /* CAMERA2_PROCESS_STOP */
         620.0f, /* CAMERA2_PROCESS_NORMAL */
@@ -520,11 +556,22 @@ static void Camera2_Get_GoalDistanceAndDirection(GAME_PLAY* play, f32* dist, s_x
 
     if (main_index == CAMERA2_PROCESS_NORMAL || main_index == CAMERA2_PROCESS_WADE) {
         if (Camera2_InDoorCheck() == FALSE && (!mPlib_IsWadeDisabled() && (camera->flags & 1) == 0)) {
-            Camera2_Normal_Swing(play, dist, dir);
+            Camera2_Normal_Swing(play, player, dist, dir);
         }
     }
 
     Camera2_main_Normal_AdjustDistanceAndDirection(play, dist, dir);
+}
+
+static void Camera2_Get_GoalDistanceAndDirection(GAME_PLAY* play, f32* dist, s_xyz* dir) {
+    Camera2_Get_GoalDistanceAndDirection_forPlayer(play, get_player_actor_withoutCheck(play), dist, dir);
+}
+
+/* Goal distance and direction for one player, including its own top-edge swing.
+ * The split camera springs these per guest so one half never inherits the
+ * other's camera. */
+extern void Camera2_GetNormalFollowGoal(GAME_PLAY* play, PLAYER_ACTOR* player, f32* dist, s_xyz* dir) {
+    Camera2_Get_GoalDistanceAndDirection_forPlayer(play, player, dist, dir);
 }
 
 static void Camera2_SetPos_fromStartEnd(GAME_PLAY* play, const xyz_t* start, const xyz_t* end, f32 now_time,
@@ -608,29 +655,29 @@ static void Camera2_ChangeCameraPos_inBlock(GAME_PLAY* play, const xyz_t* pos, x
     *end_pos = *pos;
 
     if (pos->x < x1) {
-        if (pos->x < x1 - scale * Camera2_BorderSize(play)) {
-            end_pos->x = x1 - (scale + 1.0f) * Camera2_BorderSize(play);
+        if (pos->x < x1 - scale * Camera2_BorderSize(play, play->block_table.block_x)) {
+            end_pos->x = x1 - (scale + 1.0f) * Camera2_BorderSize(play, play->block_table.block_x);
         } else if (end_pos->x < x01) {
             end_pos->x = x01;
         }
     } else if (pos->x > x0) {
-        if (pos->x > x0 + scale * Camera2_BorderSize(play)) {
-            end_pos->x = x0 + (scale + 1.0f) * Camera2_BorderSize(play);
+        if (pos->x > x0 + scale * Camera2_BorderSize(play, play->block_table.block_x)) {
+            end_pos->x = x0 + (scale + 1.0f) * Camera2_BorderSize(play, play->block_table.block_x);
         } else if (end_pos->x > x00) {
             end_pos->x = x00;
         }
     }
 
     if (pos->z < z1) {
-        if (pos->z < z1 - scale * (Camera2_BorderSize(play) + mFI_UT_WORLDSIZE_Z_F)) {
-            end_pos->z = (z1 - ((scale + 1.0f) * Camera2_BorderSize(play)) - (scale * mFI_UT_WORLDSIZE_Z_F)) -
+        if (pos->z < z1 - scale * (Camera2_BorderSize(play, play->block_table.block_x) + mFI_UT_WORLDSIZE_Z_F)) {
+            end_pos->z = (z1 - ((scale + 1.0f) * Camera2_BorderSize(play, play->block_table.block_x)) - (scale * mFI_UT_WORLDSIZE_Z_F)) -
                          Camera2_GetUnderBorderAdjust();
         } else if (end_pos->z < z01) {
             end_pos->z = z01;
         }
     } else if (pos->z > z0) {
-        if (pos->z > scale * (Camera2_BorderSize(play) + Camera2_GetUnderBorderAdjust() + z0)) {
-            end_pos->z = (z0 + (scale + 1.0f) * Camera2_BorderSize(play) + mFI_UT_WORLDSIZE_Z_F) +
+        if (pos->z > scale * (Camera2_BorderSize(play, play->block_table.block_x) + Camera2_GetUnderBorderAdjust() + z0)) {
+            end_pos->z = (z0 + (scale + 1.0f) * Camera2_BorderSize(play, play->block_table.block_x) + mFI_UT_WORLDSIZE_Z_F) +
                          scale * Camera2_GetUnderBorderAdjust();
         } else if (end_pos->z > z00) {
             end_pos->z = z00;
@@ -1306,15 +1353,13 @@ static void Camera2_main_Talk(GAME_PLAY* play) {
     Camera2_change_main_index(play);
 }
 
-static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_t* end_center_pos) {
-    PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+static void Camera2_main_Normal_SetEndCenterPos_forPlayer(GAME_PLAY* play, PLAYER_ACTOR* player, int block_x, int block_z,
+                                                          int wade_block_x, xyz_t* end_center_pos) {
     f32 border_x0;
     f32 border_x1;
     f32 border_z1;
     f32 border_z0;
     f32 scale;
-    int block_x;
-    int block_z;
 
     Camera2_GetLongBorderScale(play, &scale);
 
@@ -1336,16 +1381,14 @@ static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_
         }
     }
 
-    Camera2_GetBorderScale(play, scale, &border_x0, &border_x1, &border_z0, &border_z1);
+    Camera2_GetBorderScaleForBlock(play, block_x, block_z, wade_block_x, scale, &border_x0, &border_x1, &border_z0, &border_z1);
     *end_center_pos = player->actor_class.eye.position;
 
-    if (mPlib_get_player_actor_main_index((GAME*)play) == mPlayer_INDEX_DEMO_GETON_BOAT_WAIT) {
-        if (mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position)) {
-            if (block_x == 5) {
-                if (block_z == 7) {
-                    /* Extra Z distance when travelling in Kapp'n's boat below the dock. */
-                    end_center_pos->z += 55.0f;
-                }
+    if (player->now_main_index == mPlayer_INDEX_DEMO_GETON_BOAT_WAIT) {
+        if (block_x == 5) {
+            if (block_z == 7) {
+                /* Extra Z distance when travelling in Kapp'n's boat below the dock. */
+                end_center_pos->z += 55.0f;
             }
         }
     }
@@ -1364,7 +1407,7 @@ static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_
         end_center_pos->z = z_midpoint + (z_scale * z_left) * 0.25f;
     }
 
-    if (!mPlib_IsWadeDisabled() || play->block_table.block_x == 1 || play->block_table.block_x == FG_BLOCK_X_NUM) {
+    if (!mPlib_IsWadeDisabled() || wade_block_x == 1 || wade_block_x == FG_BLOCK_X_NUM) {
         if (mFI_GetBlockWidth() < scale * 330.0f || border_x0 < border_x1) {
             end_center_pos->x = (border_x0 + border_x1) * 0.5f;
         } else if (end_center_pos->x > border_x0) {
@@ -1387,6 +1430,38 @@ static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_
     if (Camera2_InDoorCheck()) {
         end_center_pos->y = 73.0f;
     }
+}
+
+static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_t* end_center_pos) {
+    PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+    int block_x;
+    int block_z;
+
+    if (mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
+        block_x = play->block_table.block_x;
+        block_z = play->block_table.block_z;
+    }
+
+    Camera2_main_Normal_SetEndCenterPos_forPlayer(play, player, block_x, block_z, block_x, end_center_pos);
+}
+
+/* Goal centre for one player's normal follow. The split camera runs the same
+ * spring per guest so each view keeps the retail feel without inheriting the
+ * selected resident's camera. */
+extern void Camera2_GetNormalCenterGoal(GAME_PLAY* play, PLAYER_ACTOR* player, xyz_t* end_center_pos) {
+    int block_x;
+    int block_z;
+
+    if (player == NULL) {
+        return;
+    }
+
+    if (mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
+        *end_center_pos = player->actor_class.eye.position;
+        return;
+    }
+
+    Camera2_main_Normal_SetEndCenterPos_forPlayer(play, player, block_x, block_z, block_x, end_center_pos);
 }
 
 static int Camera2_MoveVparamCenter(GAME_PLAY* play, xyz_t* pos) {
@@ -2058,7 +2133,7 @@ extern void Camera2_main_Simple_AngleDistStd(GAME_PLAY* play, s_xyz* angle, f32*
     *dist = 620.0f;
 
     if (Camera2_InDoorCheck() == FALSE && (play->camera.flags & 1) == 0) {
-        Camera2_Normal_Swing(play, dist, angle);
+        Camera2_Normal_Swing(play, get_player_actor_withoutCheck(play), dist, angle);
     }
 }
 

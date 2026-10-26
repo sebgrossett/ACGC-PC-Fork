@@ -271,8 +271,14 @@ Checkpoint 4, signs (built and playtested 2026-10-25):
 
 Scope out: collision/data (already per block, no window), actor spawn, shells/mushrooms/block-kind frame state (stay on the selected resident), 3-4 player validation.
 
+**Player camera** (built and playtested 2026-10-25, branch `feature/player-camera` off `feature/field-window-per-view`). Each split view follows its own player with the retail normal-camera response.
+- Cause of the residual shift: the guest eye was the host's live eye shifted by (guest − host), so the host's spring moved it; and the normal camera's border size (borderless-acres setting) plus the top-row pitch swing both keyed off `play->block_table.block_x`, which is whichever player crossed a block last.
+- `src/game/m_camera2.c`: `Camera2_BorderSize`, `Camera2_GetBorderScaleForBlock`, `Camera2_Normal_Swing` and the goal distance/direction math take a player/block. New `Camera2_GetNormalCenterGoal` (centre clamp from the player's block), `Camera2_GetNormalFollowGoal` (base angle/distance, shared C-stick additions, the player's own swing) and `Camera2_SetEyePos_fromFollow`. The host normal camera uses its own block instead of `play->block_table`, so a guest crossing an edge no longer moves it.
+- `src/game/m_play.c`: per-pad `s_guest_center`, `s_guest_dir`, `s_guest_dist` sprung with retail's constants (`add_calc` 0.13397461/8.75/0.25; `add_calc_short_angle2` 0.051316679, 100/75/150). Door and talk cameras keep the last normal offset relative to the guest.
+- Playtest: no shift when the players alternate at opposite map edges, each half stable while the other moves, follow feel matches, single player unchanged. C-stick input stays shared by design.
+- Open: none for 2 players; 3-4 player validation still waits on two more residents.
+
 Also open after this slice (paths in section 4):
-- Guest camera follows the host's live offset: `play_guest_camera` (`src/game/m_play.c`) shifts the host's current eye/centre by (guest − host) every normal frame, so the host's spring and follow changes move the guest's view while the guest stands still. Proper fix is camera state per player (`Camera2` per resident view), not a small change.
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
 - Join/leave queue, including joins waited out through a host event
