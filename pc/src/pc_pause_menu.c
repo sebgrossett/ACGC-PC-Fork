@@ -12,6 +12,7 @@
 #include "m_play.h"
 #include "m_demo.h"
 #include "m_msg.h"
+#include "m_trademark.h"
 #include "graph.h"
 #include "main.h"       /* SCREEN_WIDTH_F */
 
@@ -40,14 +41,15 @@ int g_pc_pause_input_drain = 0;
 typedef enum {
     PAGE_MAIN = 0,
     PAGE_SETTINGS = 1,
-    PAGE_CONFIRM_QUIT = 2,
+    PAGE_CONFIRM_TITLE = 2,
+    PAGE_CONFIRM_QUIT = 3,
 } PauseMenuPage;
 
-#define MAIN_ITEM_COUNT     3
+#define MAIN_ITEM_COUNT     4
 #define CONFIRM_ITEM_COUNT  2
 
 static PauseMenuPage cur_page = PAGE_MAIN;
-static int main_sel = 0;    /* 0=Resume, 1=Settings, 2=Quit Game */
+static int main_sel = 0;    /* 0=Resume, 1=Settings, 2=Return to Title, 3=Quit Game */
 static int confirm_sel = 0; /* 0=No (default), 1=Yes */
 
 /* A co-op conversation owns the player's input and the message window. Do not
@@ -96,10 +98,46 @@ static void main_activate(void) {
             cur_page = PAGE_SETTINGS;
             pc_settings_menu_enter();
             break;
-        case 2: /* Quit Game -> confirm page (default to No) */
+        case 2: /* Return to Title -> confirm page (default to No) */
+            cur_page = PAGE_CONFIRM_TITLE;
+            confirm_sel = 0;
+            break;
+        case 3: /* Quit Game -> confirm page (default to No) */
             cur_page = PAGE_CONFIRM_QUIT;
             confirm_sel = 0;
             break;
+    }
+}
+
+/* Return to the title without saving. The play fade goes through the same
+ * FADE_TYPE_OUT_RETURN_TITLE path the RTC reset uses, then trademark -> title.
+ * Non-play scenes can switch directly. */
+static void return_to_title(void) {
+    g_pc_paused = 0;
+    g_pc_pause_input_drain = 1;
+    pc_session_menu_close_all();
+
+    if (gamePT == NULL) {
+        return;
+    }
+
+    if (gamePT->exec == play_main) {
+        GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+        play->fb_wipe_type = WIPE_TYPE_FADE_BLACK;
+        play->fb_fade_type = FADE_TYPE_OUT_RETURN_TITLE;
+    } else {
+        GAME_GOTO_NEXT(gamePT, trademark, TRADEMARK);
+    }
+}
+
+static void title_confirm_activate(void) {
+    if (confirm_sel == 1) {
+        printf("[PAUSE] Return to Title confirmed\n");
+        return_to_title();
+    } else {
+        cur_page = PAGE_MAIN;
+        main_sel = 0;
     }
 }
 
@@ -143,7 +181,7 @@ static void handle_action(MenuAction act) {
         return;
     }
 
-    /* Pages owned here (Main, Quit-confirm). */
+    /* Pages owned here (Main, Return-confirm, Quit-confirm). */
     {
         int item_count = (cur_page == PAGE_MAIN) ? MAIN_ITEM_COUNT : CONFIRM_ITEM_COUNT;
         int* sel       = (cur_page == PAGE_MAIN) ? &main_sel : &confirm_sel;
@@ -158,12 +196,13 @@ static void handle_action(MenuAction act) {
                 *sel = (*sel + 1) % item_count;
                 break;
             case ACT_CONFIRM:
-                if (cur_page == PAGE_MAIN)              main_activate();
-                else if (cur_page == PAGE_CONFIRM_QUIT) confirm_activate();
+                if (cur_page == PAGE_MAIN)                 main_activate();
+                else if (cur_page == PAGE_CONFIRM_TITLE)   title_confirm_activate();
+                else if (cur_page == PAGE_CONFIRM_QUIT)    confirm_activate();
                 break;
             case ACT_CANCEL:
-                if (cur_page == PAGE_CONFIRM_QUIT) cur_page = PAGE_MAIN;
-                else                               pc_pause_menu_toggle();
+                if (cur_page == PAGE_CONFIRM_TITLE || cur_page == PAGE_CONFIRM_QUIT) cur_page = PAGE_MAIN;
+                else                                                                  pc_pause_menu_toggle();
                 break;
             default: break;
         }
@@ -245,7 +284,7 @@ int pc_pause_menu_handle_event(const SDL_Event* e) {
 /* Drawing */
 
 static void draw_main_page(struct game_s* game) {
-    static const char* items[MAIN_ITEM_COUNT] = { "Resume", "Settings", "Quit Game" };
+    static const char* items[MAIN_ITEM_COUNT] = { "Resume", "Settings", "Return to Title", "Quit Game" };
 
     pc_menu_draw_centered(game, "- Paused -", 80.0f, 255, 255, 255, 255, 1.0f);
 
@@ -258,6 +297,13 @@ static void draw_main_page(struct game_s* game) {
         pc_menu_draw_centered(game, items[i], y + i * line_h, r, g, b, a,
                               selected ? PC_MENU_SCALE_SELECTED : 1.0f);
     }
+}
+
+static void draw_confirm_title_page(struct game_s* game) {
+    pc_menu_draw_centered(game, "- Return to Title -", 80.0f, 255, 255, 255, 255, 1.0f);
+    pc_menu_draw_centered(game, "Unsaved progress will be lost.",
+                          115.0f, 230, 230, 230, 255, 1.0f);
+    pc_menu_draw_two_choice(game, "No", "Yes", confirm_sel, 150.0f);
 }
 
 static void draw_confirm_page(struct game_s* game) {
@@ -284,8 +330,9 @@ void pc_pause_menu_draw(struct game_s* game) {
         if (!pc_settings_menu_active()) cur_page = PAGE_MAIN;
     } else {
         pc_menu_dim_rect(game->graph, 180);
-        if (cur_page == PAGE_MAIN)              draw_main_page(game);
-        else if (cur_page == PAGE_CONFIRM_QUIT) draw_confirm_page(game);
+        if (cur_page == PAGE_MAIN)                draw_main_page(game);
+        else if (cur_page == PAGE_CONFIRM_TITLE)  draw_confirm_title_page(game);
+        else if (cur_page == PAGE_CONFIRM_QUIT)   draw_confirm_page(game);
     }
 
     mFont_UnSetMatrix(game->graph, mFont_MODE_FONT);
