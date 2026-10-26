@@ -42,12 +42,17 @@ extern void mPlib_change_player_face(GAME* game);
  * A bound actor, set around the guest resident's ct/move/draw, wins over that. */
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player);
 extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player);
-extern void mPlib_queue_guest_slot(int slot);
+/* Pad channel per resident slot. The pad is the Controls row (0 host, 1-3 guests). */
+extern void mPlib_register_player_pad(int slot, int pad);
+extern int mPlib_pad_for_player_slot(int slot);
+extern void mPlib_queue_guest_slot(int slot, int pad);
 extern int mPlib_guest_slot_ready(void);
 extern int mPlib_take_guest_slot(void);
 extern int mPlib_player_slot_of(PLAYER_ACTOR* player);
 extern int mPlib_any_player_actor(void);
-extern PLAYER_ACTOR* mPlib_other_player_actor(void);
+/* Extra players in pad order (Controls rows 1-3), excluding the selected resident. */
+extern int mPlib_extra_player_count(void);
+extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
 extern Private_c* mPlib_private_for_slot(int slot);
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);

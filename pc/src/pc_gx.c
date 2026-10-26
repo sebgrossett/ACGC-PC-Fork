@@ -382,8 +382,10 @@ int pc_gx_keep_framebuffer;
 /* Set from the menu depth noops while a display list is running. */
 int pc_gx_menu_no_depth;
 
-/* Set while the co-op menu is drawn into the opener's half. */
-int pc_gx_menu_half;
+/* Menu layout mode while the co-op menu is drawn. 0 = none (single player),
+ * 1 = a half, 2 = a quadrant. Menus lay out for 320x240; both co-op rects are
+ * 1x, so `mSM_change_view` halves its retail coordinates in either mode. */
+int pc_gx_menu_mode;
 
 /* Set while the per-half HUD (clock) is drawn. */
 int pc_gx_hud_half;
