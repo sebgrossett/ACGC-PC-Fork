@@ -73,6 +73,15 @@ static void Player_actor_Demo_Outdoor_Demo_ct(ACTOR* actor) {
 static int Player_actor_Request_Demo_Outdoor(ACTOR* actor) {
     PLAYER_ACTOR* player = (PLAYER_ACTOR*)actor;
 
+#ifdef TARGET_PC
+    /* The walk-out plays on this actor. A guest must not take the one demo
+     * or the host camera to do it. */
+    if ((mPlib_player_slot_of(player) >= 0) && (mPlib_player_slot_of(player) != (int)Common_Get(player_no))) {
+        player->main_data.outdoor.is_demo = TRUE;
+        return TRUE;
+    }
+#endif
+
     if (player->main_data.outdoor.is_demo == FALSE) {
         if (mDemo_Check(mDemo_TYPE_OUTDOOR, actor)) {
             player->main_data.outdoor.is_demo = TRUE;

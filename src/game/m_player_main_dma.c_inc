@@ -51,7 +51,13 @@ static void Player_actor_request_proc_index_fromDma(ACTOR* actorx, GAME* game) {
                     Player_actor_request_main_intro_all(game, mPlayer_REQUEST_PRIORITY_43);
                 }
             }
-            Camera2_request_main_normal(play, 1, 1);
+#ifdef TARGET_PC
+            /* This is the host camera. A guest walk-out must not snap it. */
+            if (mPlib_player_slot_of(actor) == (int)Common_Get(player_no))
+#endif
+            {
+                Camera2_request_main_normal(play, 1, 1);
+            }
         }
     }
 }

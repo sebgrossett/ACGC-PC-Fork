@@ -703,6 +703,18 @@ extern void Player_actor_dt(ACTOR* actorx, GAME* game) {
                 break;
         }
     }
+
+#ifdef TARGET_PC
+    /* Each join creates a balloon and retail never destroys the player, so a
+     * guest leave used to leave that actor in the list. Scene teardown deletes
+     * players before BG actors, and this unlink happens first. */
+    if ((guest != FALSE) && (player->balloon_actor != NULL)) {
+        ACTOR* balloon = player->balloon_actor;
+
+        player->balloon_actor = NULL;
+        Actor_info_delete(&((GAME_PLAY*)game)->actor_info, balloon, game);
+    }
+#endif
 }
 
 typedef void (*mPlayer_REQUEST_MAIN_CHANGE_FROM_SUBMENU_PROC)(ACTOR*, GAME*);

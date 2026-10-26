@@ -23,6 +23,7 @@
 #include "pc_settings.h"
 #include "m_private.h"
 #include "m_controller.h"
+#include "m_house.h"
 #endif
 
 #ifdef MUST_MATCH
@@ -434,6 +435,62 @@ static const f32 s_guest_ofs[PLAYER_NUM - 1][2] = {
     { 0.0f, -80.0f },
 };
 
+/* Outdoor spot in front of this resident's door, in the shared town.
+ * A living house actor has already applied the ac_my_house.c shift, and its
+ * fg entry is RSV_NO, so the actor is checked first. aMHS_rewrite_pl_out_data
+ * then stands the player restartX and +48.29z from that, facing out. */
+static int Actor_info_resident_door(GAME* game, int slot, f32* x, f32* z, s16* angle_y) {
+    static const f32 s_restart_x[2] = { 48.29f, -48.29f };
+    static const f32 s_unit_x[2] = { 20.0f + 48.29f, -20.0f - 48.29f };
+    int house;
+    int side;
+    ACTOR* house_actor;
+    int bx_max;
+    int bz_max;
+    int bx;
+    int bz;
+    int ut_x;
+    int ut_z;
+    xyz_t center;
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    house = mHS_get_arrange_idx(slot);
+    if ((house < 0) || (house >= mHS_HOUSE_NUM)) {
+        return FALSE;
+    }
+
+    side = house & 1;
+    *angle_y = (side == 0) ? DEG2SHORT_ANGLE(45.0f) : DEG2SHORT_ANGLE(-45.0f);
+
+    house_actor = Actor_info_fgName_search(&((GAME_PLAY*)game)->actor_info, (mActor_name_t)(HOUSE0 + house),
+                                           ACTOR_PART_ITEM);
+    if (house_actor != NULL) {
+        *x = house_actor->world.position.x + s_restart_x[side];
+        *z = house_actor->world.position.z + 48.29f;
+        return TRUE;
+    }
+
+    bx_max = (int)mFI_GetBlockXMax();
+    bz_max = (int)mFI_GetBlockZMax();
+    for (bz = 0; bz < bz_max; bz++) {
+        for (bx = 0; bx < bx_max; bx++) {
+            if (mFI_SearchFGInBlock(&ut_x, &ut_z, (mActor_name_t)(HOUSE0 + house), bx, bz) == FALSE) {
+                continue;
+            }
+
+            mFI_BkandUtNum2CenterWpos(&center, bx, bz, ut_x, ut_z);
+            *x = center.x + s_unit_x[side];
+            *z = center.z + 20.0f + 48.29f;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_data* player_data) {
     int session;
     int row;
@@ -490,13 +547,18 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
         mPlib_queue_guest_slot(slot, row);
         /* arg 0 means "no door transition": the low three bits of actor_specific
          * select the spawn state in Player_actor_request_proc_index_fromDma, and
-         * 1-3 replay the host's own door-exit animation. A guest has no door of
-         * its own until scene instancing, so it stands (INTRO -> WAIT) instead. */
-        actor = Actor_info_make_actor(actor_info, game, player_data->profile,
-                                      player_data->position.x + s_guest_ofs[row - 1][0],
-                                      player_data->position.y, player_data->position.z + s_guest_ofs[row - 1][1],
-                                      player_data->rotation.x, player_data->rotation.y, player_data->rotation.z, -1,
-                                      -1, -1, EMPTY_NO, 0, -1, -1);
+         * 1-3 replay the host's own door-exit animation. The guest stands
+         * (INTRO -> WAIT) at their own outdoor door. */
+        {
+            f32 door_x = player_data->position.x + s_guest_ofs[row - 1][0];
+            f32 door_z = player_data->position.z + s_guest_ofs[row - 1][1];
+            s16 door_angle = player_data->rotation.y;
+
+            Actor_info_resident_door(game, slot, &door_x, &door_z, &door_angle);
+            actor = Actor_info_make_actor(actor_info, game, player_data->profile, door_x, player_data->position.y,
+                                          door_z, player_data->rotation.x, door_angle, player_data->rotation.z, -1, -1,
+                                          -1, EMPTY_NO, 0, -1, -1);
+        }
         if (actor == NULL) {
             mPlib_queue_guest_slot(-1, -1);
             return;
@@ -507,8 +569,10 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
 }
 
 /* Mid-game join for one Controls row. The caller has already accepted that
- * row's Start and only calls this on a safe frame. Spawn is beside the
- * selected resident. The town file is not written. */
+ * row's Start and only calls this on a safe frame. Spawn is at that
+ * resident's outdoor door, and arg 2 plays the outdoor walk-out from frame
+ * 25, matching the door's out clip. The town file is not written. A scene
+ * reload keeps arg 0 so a returning guest just stands. */
 extern int Actor_info_join_guest_pad(GAME* game, int pad) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     PLAYER_ACTOR* host;
@@ -584,12 +648,19 @@ extern int Actor_info_join_guest_pad(GAME* game, int pad) {
     }
 
     mPlib_queue_guest_slot(slot, pad);
-    actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER,
-                                  host->actor_class.world.position.x + s_guest_ofs[pad - 1][0],
-                                  host->actor_class.world.position.y,
-                                  host->actor_class.world.position.z + s_guest_ofs[pad - 1][1],
-                                  host->actor_class.world.angle.x, host->actor_class.world.angle.y,
-                                  host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 0, -1, -1);
+    {
+        f32 door_x = host->actor_class.world.position.x + s_guest_ofs[pad - 1][0];
+        f32 door_z = host->actor_class.world.position.z + s_guest_ofs[pad - 1][1];
+        s16 door_angle = host->actor_class.world.angle.y;
+
+        Actor_info_resident_door(game, slot, &door_x, &door_z, &door_angle);
+        /* arg 2: GO_OUT_O1 from frame 25. Frame 1 is the indoor half of the
+         * walk, so playing it at this outdoor spot starts the body inside the
+         * door. The house opens its out clip from the same frame. */
+        actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER, door_x,
+                                      host->actor_class.world.position.y, door_z, host->actor_class.world.angle.x,
+                                      door_angle, host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 2, -1, -1);
+    }
     if (actor == NULL) {
         mPlib_queue_guest_slot(-1, -1);
         return FALSE;

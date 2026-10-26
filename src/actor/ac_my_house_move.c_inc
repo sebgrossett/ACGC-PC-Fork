@@ -116,6 +116,17 @@ static void aMHS_setup_animation(STRUCTURE_ACTOR* my_house, f32 speed) {
     int season = my_house->season == mTM_SEASON_WINTER;
     int dir = 0;
 
+    /* arg2_f is a direction, and it indexes these four frame pairs. A value
+     * past the table reads off into the keyframe data, and cKF_KeyCalc then
+     * walks keys forever. */
+    if ((type < 0) || (type >= mHm_HOMESIZE_NUM - 1)) {
+        type = 0;
+    }
+
+    if ((size < 0) || (size >= mHm_HOMESIZE_NUM - 1)) {
+        size = 0;
+    }
+
     if (type != 0 && type != 3) {
         dir = 1;
     }
@@ -358,7 +369,59 @@ static int aMHS_light_ctrl(STRUCTURE_ACTOR* my_house) {
     return mRmTp_Index2LightSwitchStatus((my_house->action & 3) * 2) != FALSE;
 }
 
+#ifdef TARGET_PC
+/* Set while this house is playing a guest's outdoor exit. The finish must
+ * return to WAIT: arg2_f 0 loads the indoor scene for the whole play, and a
+ * door demo never ends on its own. */
+static s8 s_pc_exit_opened[mHS_HOUSE_NUM];
+static s8 s_pc_guest_open[mHS_HOUSE_NUM];
+
+/* Guests only. The selected resident's exit still goes through structure
+ * control, which will not overwrite a request_type we already took. */
+static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house) {
+    int owner = mHS_get_pl_no(my_house->action & 3);
+    int i;
+    int count = mPlib_extra_player_count();
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+        if ((guest != NULL) && (mPlib_player_slot_of(guest) == owner) &&
+            (guest->now_main_index == mPlayer_INDEX_OUTDOOR)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+#endif
+
 static void aMHS_wait(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
+#ifdef TARGET_PC
+    int house_idx = my_house->action & 3;
+
+    if (aMHS_guest_walking_out(my_house) != FALSE) {
+        if (s_pc_exit_opened[house_idx] == FALSE) {
+            s_pc_exit_opened[house_idx] = TRUE;
+            s_pc_guest_open[house_idx] = TRUE;
+            /* request_type is copied into arg2_f at the start of the next
+             * move. setup_animation reads arg2_f now, so set the outdoor
+             * direction first: SOUTH_EAST is the out clip from frame 25,
+             * the same frame join arg 2 starts the player on. */
+            my_house->request_type = 4;
+            my_house->arg2_f = (f32)mSc_DIRECT_SOUTH_EAST;
+            aMHS_setup_animation(my_house, 0.5f);
+            aMHS_setup_action(my_house, aMHS_ACTION_OPEN_DOOR);
+        }
+
+        /* Stay out of the retail enter check while the guest is still
+         * walking out. That check requests a door demo, and the demo does
+         * not end unless this finish takes the indoor branch. */
+        return;
+    }
+
+    s_pc_exit_opened[house_idx] = FALSE;
+#endif
     switch (aMHS_check_player(my_house, play)) {
         case 1:
             aMHS_setup_action(my_house, aMHS_ACTION_OPEN_DOOR_WAIT);
@@ -388,6 +451,21 @@ static void aMHS_open_door(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
         void* demo_class;
         INTRO_DEMO_ACTOR* intro_demo;
         int next_act;
+
+#ifdef TARGET_PC
+        {
+            int house_idx = my_house->action & 3;
+
+            if (s_pc_guest_open[house_idx] != FALSE) {
+                s_pc_guest_open[house_idx] = FALSE;
+                mDemo_End((ACTOR*)my_house);
+                aMHS_setup_action(my_house, aMHS_ACTION_WAIT);
+                my_house->arg2_f = 0;
+                my_house->request_type = 0;
+                return;
+            }
+        }
+#endif
 
         if (my_house->arg2_f == 3) {
             if (my_house->actor_class.world.angle.z == 0) {
@@ -455,6 +533,13 @@ static void aMHS_actor_move(ACTOR* actorx, GAME* game) {
     STRUCTURE_ACTOR* my_house = (STRUCTURE_ACTOR*)actorx;
     GAME_PLAY* play = (GAME_PLAY*)game;
 
+#ifdef TARGET_PC
+    /* drtbl has seven entries. Past that, arg2_f becomes a wild animation
+     * index and the keyframe walk does not return. */
+    if ((my_house->request_type < 0) || (my_house->request_type > 6)) {
+        my_house->request_type = 0;
+    }
+#endif
     my_house->arg2_f = drtbl[my_house->request_type];
     aMHS_set_door_SE(my_house);
     actorx->actor_specific -= (s16)(mEnv_GetWindPowerF() * 1000.0f * (f32)game->graph->dt_num_60fps_frames);
