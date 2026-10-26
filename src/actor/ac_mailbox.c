@@ -181,10 +181,24 @@ static void aMBX_actor_draw(ACTOR* actorx, GAME* game) {
         _texture_z_light_fog_prim(graph);
 
         if (actor->anim_idx1 == aMBX_ANIME_FLAG_UP_WAIT) {
-            static f32 mbx_se_accum = 0.0f;
+            /* Per-mailbox ping timing, keyed by the home index. Retail used one
+             * static accumulator shared by every mailbox draw call; in co-op a
+             * mailbox draws once per view that can see it, which advanced the
+             * shared accumulator several times per frame and doubled the ping
+             * rate. The frame guard keeps the timing to one advance per game
+             * frame. */
+            static f32 mbx_se_accum[PLAYER_NUM];
+            static u8 mbx_se_frame[PLAYER_NUM];
+            int mbx_idx = actor->arrange_idx & (PLAYER_NUM - 1);
+
             Evw_Anime_Set(play, evw_table[Common_Get(time.season) == mTM_SEASON_WINTER]);
-            if (Common_Get(player_no) == mHS_get_pl_no(actor->arrange_idx) &&
-                graph_dt_period_elapsed(game, &mbx_se_accum, (f32)FRAMES_PER_SECOND)) {
+            /* The ping belongs to the mailbox's owner. Retail gated it on the
+             * selected resident; in co-op any active resident's mailbox pings,
+             * positionally. */
+            if (mPlib_pad_for_player_slot(mHS_get_pl_no(actor->arrange_idx)) >= 0 &&
+                game_GameFrame != mbx_se_frame[mbx_idx] &&
+                graph_dt_period_elapsed(game, &mbx_se_accum[mbx_idx], (f32)FRAMES_PER_SECOND)) {
+                mbx_se_frame[mbx_idx] = game_GameFrame;
                 sAdo_OngenTrgStart(0x43B, &actorx->world.position);
             }
         } else {
