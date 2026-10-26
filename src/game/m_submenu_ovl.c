@@ -167,10 +167,11 @@ static void mSM_change_view(GRAPH* graph, f32 eye_dist, f32 y_lookAt, f32 vp_x, 
          * the window is resized. `vp_x` is twice the box's left edge, so the
          * centre (twice left + width) is what follows the panel; the box width
          * stays as it is because the squeezed projection already scales the
-         * model drawn inside it. */
-        centre_x = vp_x + (f32)width;
+         * model drawn inside it. The squeeze is local to the panel, so the view
+         * origin (`x_ofs`) is added after it rather than scaled with it. */
+        centre_x = vp_x - x_ofs + (f32)width;
         centre_x = 320.0f + (centre_x - 320.0f) * pc_gx_aspect_factor();
-        vp_x = centre_x - (f32)width;
+        vp_x = centre_x - (f32)width + x_ofs;
     }
 #endif
 
