@@ -35,6 +35,10 @@ typedef struct {
 
 extern PCSettings g_pc_settings;
 
+/* Session mode chosen on the title screen. 0 = single player, 1 = co-op.
+ * Not persisted: the title always sets it before a session starts. */
+extern int g_pc_coop_session;
+
 void pc_settings_load(void);
 void pc_settings_save(void);
 void pc_settings_apply(void);

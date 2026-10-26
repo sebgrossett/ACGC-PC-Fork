@@ -28,6 +28,8 @@ PCSettings g_pc_settings = {
     },
 };
 
+int g_pc_coop_session = 0;
+
 static const char* SETTINGS_FILE = "settings.ini";
 
 static const char* DEFAULT_SETTINGS =

@@ -433,6 +433,12 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
         return;
     }
 
+    /* Single Player never spawns guests, even when other Controls rows are
+     * configured. Co-op spawns every other resident that has a device row. */
+    if (g_pc_coop_session == 0) {
+        return;
+    }
+
     if (Save_Get(scene_no) != SCENE_FG) {
         return;
     }
