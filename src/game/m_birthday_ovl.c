@@ -4,7 +4,8 @@
 #include "m_font.h"
 #include "sys_matrix.h"
 
-static mBR_Ovl_c birthday_ovl_data;
+static mBR_Ovl_c birthday_ovl_data_slot[mSM_SLOT_NUM];
+#define birthday_ovl_data birthday_ovl_data_slot[mSM_cur_slot()]
 
 static void mBR_window_close(Submenu* submenu, mSM_MenuInfo_c* menu_info, mBR_Ovl_c* birthday_ovl) {
   u16* data_p = birthday_ovl->birthday_data;

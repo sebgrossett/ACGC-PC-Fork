@@ -54,6 +54,10 @@ static void aRSV_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
             continue;
         }
 
+        if (player->actor_class.world.position.z < actor->actor_class.world.position.z) {
+            continue;
+        }
+
         if (i == 0) {
             angle = ABS(actor->actor_class.player_angle_y);
         } else {

@@ -20,7 +20,8 @@ enum {
     mDI_MOVE_NUM
 };
 
-static mDI_Ovl_c diary_ovl_data;
+static mDI_Ovl_c diary_ovl_data_slot[mSM_SLOT_NUM];
+#define diary_ovl_data diary_ovl_data_slot[mSM_cur_slot()]
 static rgba_t letter_color = { 60, 60, 85, 255 };
 
 static void mDI_end_diary(Submenu* submenu, mSM_MenuInfo_c* menu_info);

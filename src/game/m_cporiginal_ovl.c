@@ -11,7 +11,8 @@
 #include "m_hand_ovl.h"
 #include "m_malloc.h"
 
-static mCO_Ovl_c co_ovl_data;
+static mCO_Ovl_c co_ovl_data_slot[mSM_SLOT_NUM];
+#define co_ovl_data co_ovl_data_slot[mSM_cur_slot()]
 
 // clang-format off
 static rgb8_t env_table[mCO_PAGE_NUM] = {
@@ -99,7 +100,8 @@ extern void mCO_clear_hide_flg(Submenu* submenu) {
     }
 }
 
-static f32 mCO_page_accum = 0.0f;
+static f32 mCO_page_accum_slot[mSM_SLOT_NUM];
+#define mCO_page_accum mCO_page_accum_slot[mSM_cur_slot()]
 
 static f32 mCO_page_pos_y(f32 timer) {
     return 100.0f * sinf_table(timer * DEG2RAD(4.5f));

@@ -2610,7 +2610,8 @@ static void mED_editor_ovl_init(Submenu* submenu) {
     }
 }
 
-static mED_Ovl_c edit_ovl_data;
+static mED_Ovl_c edit_ovl_data_slot[mSM_SLOT_NUM];
+#define edit_ovl_data edit_ovl_data_slot[mSM_cur_slot()]
 
 extern void mED_editor_ovl_construct(Submenu* submenu) {
     Submenu_Overlay_c* overlay = submenu->overlay;

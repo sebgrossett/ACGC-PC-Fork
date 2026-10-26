@@ -238,7 +238,8 @@ u8 mDE_paint_mask_cat_mask[0x400] = {
 };
 // clang-format on
 
-mDE_Ovl_c de_ovl_data;
+static mDE_Ovl_c de_ovl_data_slot[mSM_SLOT_NUM];
+#define de_ovl_data de_ovl_data_slot[mSM_cur_slot()]
 
 #define MDE_SIN(x) (mDE_SinCosTBL[(x)])
 #define MDE_COS(x) (mDE_SinCosTBL[(x) + 0x40])

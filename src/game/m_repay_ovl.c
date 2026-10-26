@@ -6,7 +6,8 @@
 #include "m_player_lib.h"
 #include "sys_matrix.h"
 
-static mRP_Ovl_c rp_ovl_data;
+static mRP_Ovl_c rp_ovl_data_slot[mSM_SLOT_NUM];
+#define rp_ovl_data rp_ovl_data_slot[mSM_cur_slot()]
 static mActor_name_t mRP_money_name[MONEY_NUM] = { ITM_MONEY_100, ITM_MONEY_1000, ITM_MONEY_10000, ITM_MONEY_30000 };
 static u32 mRP_money_amount[MONEY_NUM] = { 100, 1000, 10000, 30000 };
 

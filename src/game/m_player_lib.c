@@ -1550,30 +1550,62 @@ extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
  * toward 3-4 concurrent menus): while it is open, the submenu update and draw
  * run with this player's pad and private data instead of the selected
  * resident's. */
-static PLAYER_ACTOR* s_menu_opener = NULL;
-static int s_menu_opener_pad = 0;
-static int s_menu_opener_slot = -1;
+static PLAYER_ACTOR* s_menu_opener_slot_tbl[mSM_SLOT_NUM];
+static int s_menu_opener_pad_tbl[mSM_SLOT_NUM];
+static int s_menu_opener_priv_tbl[mSM_SLOT_NUM];
+
+extern void mPlib_set_menu_opener_for_slot(int menu_slot, PLAYER_ACTOR* player, int pad, int slot) {
+    if (menu_slot < 0 || menu_slot >= mSM_SLOT_NUM) {
+        return;
+    }
+
+    s_menu_opener_slot_tbl[menu_slot] = player;
+    s_menu_opener_pad_tbl[menu_slot] = pad;
+    s_menu_opener_priv_tbl[menu_slot] = slot;
+}
 
 extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot) {
-    s_menu_opener = player;
-    s_menu_opener_pad = pad;
-    s_menu_opener_slot = slot;
+    mPlib_set_menu_opener_for_slot(0, player, pad, slot);
+}
+
+extern PLAYER_ACTOR* mPlib_menu_opener_for_slot(int menu_slot) {
+    if (menu_slot < 0 || menu_slot >= mSM_SLOT_NUM) {
+        return NULL;
+    }
+
+    return s_menu_opener_slot_tbl[menu_slot];
+}
+
+extern int mPlib_menu_opener_pad_for_slot(int menu_slot) {
+    if (menu_slot < 0 || menu_slot >= mSM_SLOT_NUM) {
+        return 0;
+    }
+
+    return s_menu_opener_pad_tbl[menu_slot];
+}
+
+extern int mPlib_menu_opener_priv_for_slot(int menu_slot) {
+    if (menu_slot < 0 || menu_slot >= mSM_SLOT_NUM) {
+        return -1;
+    }
+
+    return s_menu_opener_priv_tbl[menu_slot];
 }
 
 extern PLAYER_ACTOR* mPlib_menu_opener(void) {
-    return s_menu_opener;
+    return mPlib_menu_opener_for_slot(0);
 }
 
 extern int mPlib_menu_opener_pad(void) {
-    return s_menu_opener_pad;
+    return mPlib_menu_opener_pad_for_slot(0);
 }
 
 extern int mPlib_menu_opener_slot(void) {
-    return s_menu_opener_slot;
+    return mPlib_menu_opener_priv_for_slot(0);
 }
 
 extern int mPlib_menu_opener_is_guest(void) {
-    int slot = mPlib_player_slot_of(s_menu_opener);
+    int slot = mPlib_player_slot_of(mPlib_menu_opener());
 
     return (slot >= 0) && (slot != (int)Common_Get(player_no));
 }
@@ -2992,6 +3024,29 @@ static int mPlib_CheckScene_AbleSubmenu(void) {
     }
 
     return GET_PLAYER_ACTOR_GAME(gamePT)->CheckScene_AbleSubmenu_proc();
+}
+
+/* Per-player gate for opening a Start/Y menu: every check runs against the
+ * given player's own state, so a guest can open while the host's menu is open
+ * and vice versa. The retail procs read the selected resident (see
+ * m_player_common.c_inc), so the player-explicit forms are used here. The
+ * scene check uses the scene table only: the retail wrapper also demands the
+ * player overlay area, which on PC just means "no primary menu is open" and
+ * would wrongly block a guest's side slot. The warp check stays global. */
+extern int mPlib_able_submenu_type1_player(GAME* game, PLAYER_ACTOR* player) {
+    int res = FALSE;
+
+    if (player != NULL &&
+        Player_actor_check_request_main_priority_for(player, mPlayer_REQUEST_PRIORITY_19) > 0 &&
+        mPlib_Check_SetOrderSubmenu() == FALSE &&
+        Player_actor_check_request_change_item_for(player) < 0 &&
+        mPlib_check_player_warp_forEvent() == FALSE &&
+        Player_actor_able_submenu_request_main_index_for(player) != FALSE &&
+        player->CheckScene_AbleSubmenu_proc() != FALSE) {
+        res = TRUE;
+    }
+
+    return res;
 }
 
 extern int mPlib_able_submenu_type1(GAME* game) {

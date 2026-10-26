@@ -5,7 +5,8 @@
 #include "m_common_data.h"
 #include "m_font.h"
 
-static mCW_Ovl_c cpwarning_ovl_data;
+static mCW_Ovl_c cpwarning_ovl_data_slot[mSM_SLOT_NUM];
+#define cpwarning_ovl_data cpwarning_ovl_data_slot[mSM_cur_slot()]
 
 static u8 mCW_mes0[18] = "Do you want to let";
 static u8 mCW_mes1[27] = "anyone else see this diary?";

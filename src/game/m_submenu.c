@@ -12,11 +12,71 @@
 #include "m_museum_display.h"
 #endif
 
-static mSM_dlftbl_c SubmenuArea_dlftbl[mSM_DLF_NUM] = { { NULL, 0, 0, 0, 0, 0, "submenu_ovl" },
-                                                        { NULL, 0, 0, 0, 0, 0, "player_actor" } };
+static int s_submenu_cur_slot = 0;
 
-static mSM_dlftbl_c* SubmenuArea_visit = NULL;
+extern int mSM_cur_slot(void) {
+    return s_submenu_cur_slot;
+}
+
+extern void mSM_set_cur_slot(int slot) {
+    s_submenu_cur_slot = (slot >= 0 && slot < mSM_SLOT_NUM) ? slot : 0;
+}
+
+/* Side slots: one Submenu per guest Controls row (slots 1-3). A side slot's
+ * state is copied into the primary `play->submenu` for its move/draw and
+ * copied back afterwards, so the retail code keeps operating on the one
+ * working struct. `item_p` points into its own struct's `items` array, so it
+ * is re-pointed after every copy. While a side slot runs, the primary's state
+ * is held in the backup so a host menu and a guest menu can both be open. */
+static Submenu s_submenu_side_slot[mSM_SLOT_NUM];
+static Submenu s_submenu_primary_backup;
+
+extern Submenu* mSM_side_slot_p(int slot) {
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return NULL;
+    }
+
+    return &s_submenu_side_slot[slot];
+}
+
+extern void mSM_side_slot_begin(int slot) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return; /* slot 0 is the primary and runs in place */
+    }
+
+    s_submenu_primary_backup = play->submenu;
+    play->submenu = s_submenu_side_slot[slot];
+    play->submenu.item_p = &play->submenu.items[0];
+    mSM_set_cur_slot(slot);
+}
+
+extern void mSM_side_slot_end(int slot) {
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+    if (slot <= 0 || slot >= mSM_SLOT_NUM) {
+        return;
+    }
+
+    s_submenu_side_slot[slot] = play->submenu;
+    s_submenu_side_slot[slot].item_p = &s_submenu_side_slot[slot].items[0];
+    mSM_set_cur_slot(0);
+    play->submenu = s_submenu_primary_backup;
+}
+
+#define mSM_DLFTBL_INIT \
+    { { NULL, 0, 0, 0, 0, 0, "submenu_ovl" }, { NULL, 0, 0, 0, 0, 0, "player_actor" } }
+
+/* Area link state is per menu slot; the primary menu is slot 0. */
+static mSM_dlftbl_c SubmenuArea_dlftbl_slot[mSM_SLOT_NUM][mSM_DLF_NUM] = {
+    mSM_DLFTBL_INIT, mSM_DLFTBL_INIT, mSM_DLFTBL_INIT, mSM_DLFTBL_INIT
+};
+static mSM_dlftbl_c* SubmenuArea_visit_slot[mSM_SLOT_NUM];
 static void* SubmenuArea_allocp = NULL;
+
+#define SubmenuArea_dlftbl SubmenuArea_dlftbl_slot[s_submenu_cur_slot]
+#define SubmenuArea_visit SubmenuArea_visit_slot[s_submenu_cur_slot]
 
 extern int mSM_COLLECT_INSECT_GET(int idx) {
     u32 ftr_idx = (0x2F2 << 2) + (idx << 2);
@@ -148,16 +208,47 @@ extern void* mSM_ovlptr_dllcnv(void* proc, Submenu* submenu, int dlf_idx) {
 }
 
 extern void mSM_submenu_ovlptr_init(GAME_PLAY* play) {
+    int i;
+
     SubmenuArea_allocp = (void*)1;
-    SubmenuArea_visit = NULL;
+    s_submenu_cur_slot = 0;
+    for (i = 0; i < mSM_SLOT_NUM; i++) {
+        SubmenuArea_visit_slot[i] = NULL;
+    }
+}
+
+/* Side slots keep their state across the copy-in/copy-out swap; reset them so
+ * a scene change cannot leave a stale open menu. This deliberately does not go
+ * through mSM_submenu_ct: the submenu_disabled one-shot belongs to the
+ * primary's ct at play_init, not to a side-slot reset here. */
+static void mSM_side_slot_reset(Submenu* submenu) {
+    bzero(submenu, sizeof(Submenu));
+    submenu->process_status = mSM_PROCESS_WAIT;
+    submenu->wait_timer = 0;
+    submenu->move_proc = (SUBMENU_PROC)&none_proc1;
+    submenu->draw_proc = (SUBMENU_GAME_PROC)&none_proc1;
 }
 
 extern void mSM_submenu_ovlptr_cleanup(Submenu* submenu) {
-    if (SubmenuArea_visit != NULL) {
-        SubmenuArea_DoUnlink(SubmenuArea_visit, submenu);
-        SubmenuArea_visit = NULL;
+    int i;
+
+    for (i = 0; i < mSM_SLOT_NUM; i++) {
+        mSM_dlftbl_c* visit = SubmenuArea_visit_slot[i];
+
+        if (visit != NULL) {
+            s_submenu_cur_slot = i;
+            SubmenuArea_DoUnlink(visit, submenu);
+            SubmenuArea_visit_slot[i] = NULL;
+        }
     }
 
+    /* Side slots keep their state across the copy-in/copy-out swap; reset them
+     * with the primary so a scene change cannot leave a stale open menu. */
+    for (i = 1; i < mSM_SLOT_NUM; i++) {
+        mSM_side_slot_reset(&s_submenu_side_slot[i]);
+    }
+
+    s_submenu_cur_slot = 0;
     SubmenuArea_allocp = NULL;
 }
 
@@ -256,14 +347,36 @@ static int mSM_check_open_map_new(GAME_PLAY* play) {
     return mFI_CheckBlockKind_OR(bx, bz, mRF_BLOCKKIND_OCEAN) == FALSE;
 }
 
-extern void mSM_submenu_ctrl(GAME_PLAY* play) {
-    Submenu* submenu = &play->submenu;
-    int open_inventory;
+/* First active player pressing Start/Y, in controller-index order (ties go to
+ * the lower index). */
+static int mSM_find_inventory_press(GAME_PLAY* play, PLAYER_ACTOR** out_player, int* out_pad) {
+    int count = 1 + mPlib_extra_player_count();
     int i;
 
-    if (submenu->process_status != mSM_PROCESS_WAIT) {
-        return;
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
+        int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(player));
+
+        if ((player == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
+            continue;
+        }
+
+        if (chkTrigger_pad(pad, mSM_INV_BUTTON_0) || chkTrigger_pad(pad, mSM_INV_BUTTON_1)) {
+            *out_player = player;
+            *out_pad = pad;
+            return TRUE;
+        }
     }
+
+    return FALSE;
+}
+
+extern void mSM_submenu_ctrl(GAME_PLAY* play) {
+    Submenu* submenu = &play->submenu;
+    PLAYER_ACTOR* press_player = NULL;
+    int press_pad = -1;
+    int open_inventory;
+    int i;
 
     if (play->fb_fade_type != FADE_TYPE_NONE) {
         return;
@@ -276,31 +389,41 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
     /* Default opener: the selected resident. Skip it while an actor is already
      * opening a menu (menu_type is set but process_status is still WAIT for one
      * frame), otherwise it overwrites the actor's opener. */
-    if (submenu->menu_type == mSM_OVL_NONE) {
+    if (submenu->process_status == mSM_PROCESS_WAIT && submenu->menu_type == mSM_OVL_NONE) {
         mPlib_set_menu_opener(GET_PLAYER_ACTOR(play), 0, (int)Common_Get(player_no));
     }
 
-    open_inventory = FALSE;
-    for (i = 0; i < (1 + mPlib_extra_player_count()); i++) {
-        PLAYER_ACTOR* opener = (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
-        int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(opener));
+    open_inventory = mSM_find_inventory_press(play, &press_player, &press_pad);
 
-        if ((opener == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
-            continue;
+    if (open_inventory && press_pad > 0) {
+        /* A guest opens its own side slot. Only that slot's state and that
+         * player's own request state gate it; the primary being busy, or the
+         * host's refuse flags, do not. */
+        Submenu* side = mSM_side_slot_p(press_pad);
+
+        if (side != NULL && side->process_status == mSM_PROCESS_WAIT && side->menu_type == mSM_OVL_NONE &&
+            Common_Get(reset_flag) == FALSE && side->start_refuse == FALSE && side->start_refuse_timer == 0 &&
+            mEv_CheckFirstIntro() == FALSE && mPlib_able_submenu_type1_player((GAME*)play, press_player)) {
+            mPlib_set_menu_opener_for_slot(press_pad, press_player, press_pad, mPlib_player_slot_of(press_player));
+            mSM_open_submenu(side, mSM_OVL_INVENTORY, 0, 0);
+            press_player->a_btn_triggers_submenu = TRUE;
+            side->process_status = mSM_PROCESS_PREWAIT;
+            side->mode = mSM_MODE_PRERENDER_INIT;
+            SetGameFrame(1);
         }
 
-        if (chkTrigger_pad(pad, mSM_INV_BUTTON_0) || chkTrigger_pad(pad, mSM_INV_BUTTON_1)) {
-            mPlib_set_menu_opener(opener, pad, mPlib_player_slot_of(opener));
-            open_inventory = TRUE;
-            break;
-        }
+        /* A guest press never opens the primary inventory; fall through to the
+         * board loop, like a refused press used to. */
+        open_inventory = FALSE;
     }
 
     if (((open_inventory && Common_Get(reset_flag) == FALSE) ||
          (mSM_check_open_map_new(play) == TRUE && Common_Get(reset_flag) == FALSE)) &&
+        submenu->process_status == mSM_PROCESS_WAIT &&
         submenu->start_refuse == FALSE && submenu->start_refuse_timer == 0 && mPlib_able_submenu_type1((GAME*)play) &&
         mEv_CheckFirstIntro() == FALSE) {
         if (open_inventory) {
+            mPlib_set_menu_opener(press_player, press_pad, mPlib_player_slot_of(press_player));
             mSM_open_submenu(submenu, mSM_OVL_INVENTORY, 0, 0);
         } else {
             mSM_open_submenu(submenu, mSM_OVL_MAP, 1, 0);
@@ -314,11 +437,13 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
             PLAYER_ACTOR* player =
                 (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
             int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(player));
+            Submenu* target = (pad == 0) ? submenu : mSM_side_slot_p(pad);
+            int menu_slot = (pad == 0) ? 0 : pad;
             s16 y_dir;
             int dir;
             int opened = FALSE;
 
-            if ((player == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
+            if ((player == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS) || (target == NULL)) {
                 continue;
             }
 
@@ -326,8 +451,10 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
                 continue;
             }
 
-            if ((Common_Get(reset_flag) != FALSE) || (submenu->start_refuse != FALSE) ||
-                (submenu->start_refuse_timer != 0) || (mPlib_able_submenu_type1((GAME*)play) == FALSE)) {
+            if ((Common_Get(reset_flag) != FALSE) || (target->process_status != mSM_PROCESS_WAIT) ||
+                (target->start_refuse != FALSE) ||
+                (target->start_refuse_timer != 0) ||
+                (mPlib_able_submenu_type1_player((GAME*)play, player) == FALSE)) {
                 continue;
             }
 
@@ -339,15 +466,15 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
                 switch (player->item_in_front) {
                     case MESSAGE_BOARD1:
                     case MESSAGE_BOARD0:
-                        mPlib_set_menu_opener(player, pad, mPlib_player_slot_of(player));
-                        mSM_open_submenu(submenu, mSM_OVL_NOTICE, 0, 0);
+                        mPlib_set_menu_opener_for_slot(menu_slot, player, pad, mPlib_player_slot_of(player));
+                        mSM_open_submenu(target, mSM_OVL_NOTICE, 0, 0);
                         mSM_Reset_player_btn(player);
                         opened = TRUE;
                         break;
                     case MAP_BOARD1:
                     case MAP_BOARD0:
-                        mPlib_set_menu_opener(player, pad, mPlib_player_slot_of(player));
-                        mSM_open_submenu(submenu, mSM_OVL_MAP, 0, 0);
+                        mPlib_set_menu_opener_for_slot(menu_slot, player, pad, mPlib_player_slot_of(player));
+                        mSM_open_submenu(target, mSM_OVL_MAP, 0, 0);
                         mSM_Reset_player_btn(player);
                         opened = TRUE;
                         break;
@@ -355,12 +482,22 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
             }
 
             if (opened != FALSE) {
+                /* Side slots promote here; the primary is promoted by the
+                 * trailing block (which also handles the actor-open window). */
+                if (menu_slot != 0) {
+                    target->process_status = mSM_PROCESS_PREWAIT;
+                    target->mode = mSM_MODE_PRERENDER_INIT;
+                    SetGameFrame(1);
+                }
                 break;
             }
         }
     }
 
-    if (submenu->menu_type != mSM_OVL_NONE) {
+    /* Promote a menu that an actor just opened (it set menu_type during the
+     * actor move while process_status was still WAIT). The WAIT check keeps
+     * this from re-promoting a menu that is already running. */
+    if (submenu->process_status == mSM_PROCESS_WAIT && submenu->menu_type != mSM_OVL_NONE) {
         submenu->process_status = mSM_PROCESS_PREWAIT;
         submenu->mode = mSM_MODE_PRERENDER_INIT;
         SetGameFrame(1);
@@ -368,8 +505,8 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
 }
 
 static void mSM_move_Wait(Submenu* submenu) {
-    static float wait_accum = 0.0f;
-    int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum);
+    static float wait_accum[mSM_SLOT_NUM];
+    int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum[s_submenu_cur_slot]);
 
     if (submenu->wait_timer != 0) {
         submenu->wait_timer -= ticks;

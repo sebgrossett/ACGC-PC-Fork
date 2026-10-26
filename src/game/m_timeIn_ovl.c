@@ -4,7 +4,8 @@
 #include "m_font.h"
 #include "sys_matrix.h"
 
-static mTI_Ovl_c ti_ovl_data;
+static mTI_Ovl_c ti_ovl_data_slot[mSM_SLOT_NUM];
+#define ti_ovl_data ti_ovl_data_slot[mSM_cur_slot()]
 
 static int mTI_col_type0[] = { 255,  0,   0 };
 static int mTI_col_type1[] = {  60, 90, 255 };

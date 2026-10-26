@@ -46,7 +46,8 @@ enum {
     mTG_QSTR_TYPE_NUM
 };
 
-static mTG_Ovl_c tag_ovl_data;
+static mTG_Ovl_c tag_ovl_data_slot[mSM_SLOT_NUM];
+#define tag_ovl_data tag_ovl_data_slot[mSM_cur_slot()]
 
 typedef struct tag_word_s {
     u8 str[mTG_TAG_STR_LEN];
@@ -7851,8 +7852,8 @@ static void mTG_move_base_cporiginal(Submenu* submenu, mSM_MenuInfo_c* menu_info
 
 static void mTG_move_delete(Submenu* submenu, mTG_tag_c* tag) {
     mIV_Ovl_c* inv_ovl = submenu->overlay->inventory_ovl;
-    static f32 remove_accum = 0.0f;
-    int ticks = graph_dt_60hz_ticks(gamePT, &remove_accum);
+    static f32 remove_accum[mSM_SLOT_NUM];
+    int ticks = graph_dt_60hz_ticks(gamePT, &remove_accum[mSM_cur_slot()]);
 
     if (ticks > 0) {
         inv_ovl->remove_timer -= ticks;
@@ -8065,8 +8066,8 @@ static void mTG_move_func(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     }
 
     if (hand_ovl->info.wait_timer > 0 && inv_ovl != NULL) {
-        static f32 wait_accum = 0.0f;
-        int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum);
+        static f32 wait_accum[mSM_SLOT_NUM];
+        int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum[mSM_cur_slot()]);
 
         if (ticks > 0) {
             hand_ovl->info.wait_timer -= ticks;

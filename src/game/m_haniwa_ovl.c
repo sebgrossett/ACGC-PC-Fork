@@ -10,7 +10,8 @@
 #include "m_font.h"
 #include "m_haniwaPortrait_ovl.h"
 
-static mHW_Ovl_c haniwa_ovl_data;
+static mHW_Ovl_c haniwa_ovl_data_slot[mSM_SLOT_NUM];
+#define haniwa_ovl_data haniwa_ovl_data_slot[mSM_cur_slot()]
 
 static void mHW_set_interrupt_message(Submenu* submenu, mTG_tag_c* tag, int msg_idx) {
     mHW_Ovl_c* haniwa_ovl = submenu->overlay->haniwa_ovl;

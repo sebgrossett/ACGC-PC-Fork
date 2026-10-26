@@ -10,6 +10,7 @@
 #include "m_font.h"
 #include "m_rcp.h"
 #include "m_play.h"
+#include "m_player_lib.h"
 #include "m_demo.h"
 #include "m_msg.h"
 #include "m_trademark.h"
@@ -64,11 +65,14 @@ static int pc_coop_dialogue_active(void) {
     if (mDemo_CheckDemo() != FALSE) return 1;
     if (mDemo_side_player() != NULL) return 1;
     if (play->fb_mode != FBDEMO_MODE_NONE) return 1;
-    /* Any game menu (inventory, notice board, map board, ...) owns the screen
-     * in co-op; do not put the pause overlay on top of it. */
-    if (play->submenu.process_status != mSM_PROCESS_WAIT) return 1;
-    if (play->submenu.menu_type != mSM_OVL_NONE) return 1;
-    if (play->submenu.mode != mSM_MODE_IDLE) return 1;
+    /* Only the host's own game menu blocks the pause. A guest's menu keeps
+     * running (the world does not freeze under a guest menu), so it must not
+     * hold the host's pause hostage; pausing simply freezes it mid-edit. */
+    if (mPlib_menu_opener_for_slot(0) == mPlib_host_player_actor()) {
+        if (play->submenu.process_status != mSM_PROCESS_WAIT) return 1;
+        if (play->submenu.menu_type != mSM_OVL_NONE) return 1;
+        if (play->submenu.mode != mSM_MODE_IDLE) return 1;
+    }
     if (mMsg_Get_base_window_p() != NULL && mMsg_Get_base_window_p()->draw_flag != FALSE) return 1;
     if (mMsg_side_window_p() != NULL && mMsg_side_window_p()->draw_flag != FALSE) return 1;
     return 0;

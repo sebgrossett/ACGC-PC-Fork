@@ -471,7 +471,8 @@ extern void mWR_warning_ovl_init(Submenu* submenu) {
   warning_ovl->state = mWR_STATE_IN;
 }
 
-static mWR_Ovl_c wr_ovl_data;
+static mWR_Ovl_c wr_ovl_data_slot[mSM_SLOT_NUM];
+#define wr_ovl_data wr_ovl_data_slot[mSM_cur_slot()]
 
 extern void mWR_warning_ovl_construct(Submenu* submenu) {
   Submenu_Overlay_c* overlay = submenu->overlay;

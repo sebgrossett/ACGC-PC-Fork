@@ -13,7 +13,8 @@
 #include "sys_matrix.h"
 #include "m_rcp.h"
 
-static mHD_Ovl_c hand_ovl_data;
+static mHD_Ovl_c hand_ovl_data_slot[mSM_SLOT_NUM];
+#define hand_ovl_data hand_ovl_data_slot[mSM_cur_slot()]
 
 extern cKF_Animation_R_c cKF_ba_r_hnd_sasu;
 extern cKF_Animation_R_c cKF_ba_r_hnd_side;

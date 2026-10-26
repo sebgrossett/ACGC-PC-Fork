@@ -6,7 +6,8 @@
 #include "m_font.h"
 #include "sys_matrix.h"
 
-mPC_Ovl_c pc_ovl_data;
+static mPC_Ovl_c pc_ovl_data_slot[mSM_SLOT_NUM];
+#define pc_ovl_data pc_ovl_data_slot[mSM_cur_slot()]
 
 static void mPC_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
   (*submenu->overlay->move_Move_proc)(submenu, menu_info);

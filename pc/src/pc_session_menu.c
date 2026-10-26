@@ -38,24 +38,70 @@ static int message_window_active(mMsg_Window_c* msg) {
     return (msg != NULL) && (msg->draw_flag != FALSE);
 }
 
-static int session_menu_can_open(void) {
+/* The player actor that owns this Controls row (NULL when none). */
+static PLAYER_ACTOR* session_menu_pad_player(int pad) {
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    for (i = 1; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
+
+        if (guest != NULL && mPlib_pad_for_player(guest) == pad) {
+            return guest;
+        }
+    }
+
+    return NULL;
+}
+
+static int session_menu_can_open(int pad) {
     GAME_PLAY* play = (GAME_PLAY*)gamePT;
+    PLAYER_ACTOR* me;
+    PLAYER_ACTOR* talker;
+    ACTOR* side_talker;
+    Submenu* side;
 
     if (g_pc_paused || gamePT == NULL || gamePT->exec != play_main) return 0;
-    if (play->submenu.process_status != mSM_PROCESS_WAIT) return 0;
-    if (play->submenu.menu_type != mSM_OVL_NONE) return 0;
-    if (play->submenu.mode != mSM_MODE_IDLE) return 0;
-    if (mPlib_menu_opener_is_guest() != FALSE) return 0;
+
+    me = session_menu_pad_player(pad);
+    if (me == NULL) return 0;
+
+    /* Only this player's own game menu blocks their session menu. The primary
+     * can be busy because another player opened something; that does not hold
+     * this session menu hostage. */
+    if (play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE ||
+        play->submenu.mode != mSM_MODE_IDLE) {
+        if (mPlib_menu_opener_for_slot(0) == me) return 0;
+    }
+
+    /* The requesting player's own side-slot menu (their inventory) blocks
+     * their session menu. */
+    side = mSM_side_slot_p(pad);
+    if (side != NULL && (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE ||
+                         side->mode != mSM_MODE_IDLE)) {
+        return 0;
+    }
+
     if (play->fb_wipe_mode != WIPE_MODE_NONE || play->fb_fade_type != FADE_TYPE_NONE) return 0;
     if (play->fb_mode != FBDEMO_MODE_NONE) return 0;
-    if (mDemo_CheckDemo() != FALSE || mEv_CheckFirstIntro() != FALSE) return 0;
-    if (mDemo_side_player() != NULL) return 0;
-    if (message_window_active(mMsg_Get_base_window_p()) || message_window_active(mMsg_side_window_p())) return 0;
+    if (mEv_CheckFirstIntro() != FALSE) return 0;
+
+    /* Only this player's own conversation blocks it. An active demo or window
+     * with no attributable owner blocks everyone (conservative). */
+    talker = mPlib_demo_talker();
+    side_talker = mDemo_side_player();
+    if (mDemo_CheckDemo() != FALSE && (talker == me || talker == NULL)) return 0;
+    if (side_talker != NULL && (PLAYER_ACTOR*)side_talker == me) return 0;
+    if (message_window_active(mMsg_Get_base_window_p()) && (talker == me || talker == NULL)) return 0;
+    if (message_window_active(mMsg_side_window_p()) &&
+        (side_talker == NULL || (PLAYER_ACTOR*)side_talker == me)) {
+        return 0;
+    }
     return 1;
 }
 
 static void session_menu_open(int pad) {
-    if (!guest_row_active(pad) || !session_menu_can_open()) return;
+    if (!guest_row_active(pad) || !session_menu_can_open(pad)) return;
     s_menu[pad].open = 1;
     s_menu[pad].sel = 0;
     s_menu[pad].stick_latch = 0;
@@ -195,7 +241,7 @@ int pc_session_menu_handle_event(const SDL_Event* e) {
     /* A menu that is already open consumes its owner's input first. */
     if (session_menu_handle_open(pad, e)) return 1;
 
-    if (!guest_row_active(pad) || !session_menu_can_open()) return 0;
+    if (!guest_row_active(pad) || !session_menu_can_open(pad)) return 0;
 
     if ((e->type == SDL_CONTROLLERBUTTONDOWN && e->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) ||
         (e->type == SDL_KEYDOWN && !e->key.repeat && e->key.keysym.sym == SDLK_ESCAPE)) {

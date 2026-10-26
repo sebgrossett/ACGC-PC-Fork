@@ -10,7 +10,8 @@
 #include "sys_matrix.h"
 #include "libc/math.h"
 
-static mNT_Ovl_c notice_ovl_data;
+static mNT_Ovl_c notice_ovl_data_slot[mSM_SLOT_NUM];
+#define notice_ovl_data notice_ovl_data_slot[mSM_cur_slot()]
 
 static f32 mNT_add_calc_dt(f32* value, f32 target, f32 rate, f32 max_step, f32 min_step) {
     f32 dt = (f32)gamePT->graph->dt_num_60fps_frames;
