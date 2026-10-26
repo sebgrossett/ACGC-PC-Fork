@@ -282,6 +282,8 @@ Also open after this slice (paths in section 4):
 - Per-player `Now_Private`, `player_actor_exists`, held item, and menu state
 - Per-player HUD for players 3 and 4: covered by the approved "per-player actors" slice above (quadrant viewport + retail HUD ortho). Two residents draw the clock once per half.
 - Join/leave queue, including joins waited out through a host event
+- Per-player menus, long term: one menu at a time in the menu slice's checkpoint 1 is a stepping stone only. 3-4 player co-op needs simultaneous menus, which means per-player submenu state (mode, overlay, item pointer, opener pad) and drawing each menu in its opener's view instead of one global `play->submenu`.
+- Spawn at own house: long-term goal after per-player inventory/state. Each resident should appear at their own house door, not at a fixed offset from the selected resident. Needs per-player identity, door/scene transitions and per-world instancing (the same dependency as Player 2 indoors).
 
 Open after the 2026-10-25 playtest of `feature/per-player-hud`. Paths are in section 4. Do not re-search them.
 - Mailbox and notice board in co-op: done. Both panels draw in the opener's half (band `l=0 r=160 top=60 bottom=180`), colours/textures match single player, and the hand plus the player model sit on the panel at any window size. Two fixes carried it: `load_player` no longer steals `SubmenuArea_visit` while a menu is open, and `mSM_change_view` now maps 3D viewport centres through the same aspect squeeze the 2D panel gets. Details in section 4, "Split menu catch-up". Do not retry alpha, blend, or cull.
