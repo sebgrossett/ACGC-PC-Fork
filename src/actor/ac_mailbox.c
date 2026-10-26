@@ -5,7 +5,6 @@
 #include "m_rcp.h"
 #include "m_house.h"
 #include "m_player_lib.h"
-#include <stdio.h> /* PROBE */
 
 enum {
     aMBX_ACT_WAIT,
@@ -194,20 +193,6 @@ static void aMBX_actor_draw(ACTOR* actorx, GAME* game) {
             int mbx_idx = actor->arrange_idx & (PLAYER_NUM - 1);
 
             Evw_Anime_Set(play, evw_table[Common_Get(time.season) == mTM_SEASON_WINTER]);
-            /* PROBE: mailbox ping trace (remove after diagnosis) */
-            {
-                static int probe_n = 0;
-                if (probe_n < 500) {
-                    FILE* f = fopen("probe_log.txt", "a");
-                    if (f != NULL) {
-                        fprintf(f, "mbx: gf=%u idx=%d gate=%d frame_ok=%d accum=%.2f\n", play->game_frame, mbx_idx,
-                                Common_Get(player_no) == mHS_get_pl_no(actor->arrange_idx),
-                                play->game_frame != mbx_se_frame[mbx_idx], mbx_se_accum[mbx_idx]);
-                        fclose(f);
-                        probe_n++;
-                    }
-                }
-            }
             /* The ping belongs to the selected resident only (retail gate): with
              * one audio listener, every active resident's mailbox pinging just
              * reads as a double ping. The per-home accumulator and frame guard
