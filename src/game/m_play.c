@@ -758,24 +758,49 @@ static void play_set_view_player(GAME_PLAY* play, int index, int count) {
     setScissorView(&play->view, &view_rect);
 }
 
-/* The opener is Player 1, so the menu rect is the left half (2 players) or the
- * top-left quadrant (3-4). The half is 160x240, so a 4:3 band keeps the panel
- * and its 3D hand cursor in one undistorted space; a quadrant is already 4:3. */
-static void play_set_view_menu(GAME_PLAY* play, int count) {
+/* Menu rect: the opener's view. At two players that is its half with a 4:3
+ * band so the panel and its 3D hand share one undistorted space; a quadrant at
+ * three or four players is already 4:3. */
+static void play_set_view_menu(GAME_PLAY* play, int count, int index) {
     rect band;
 
-    band.l = 0;
-    band.r = SCREEN_WIDTH / 2;
+    play_view_rect(index, count, &band);
 
     if (count <= 2) {
         band.top = (SCREEN_HEIGHT - (SCREEN_HEIGHT / 2)) / 2;
         band.bottom = band.top + (SCREEN_HEIGHT / 2);
-    } else {
-        band.top = 0;
-        band.bottom = SCREEN_HEIGHT / 2;
     }
 
     setScissorView(&play->view, &band);
+}
+
+/* View slot of the player whose menu is open (0 = selected resident). */
+static int play_menu_view_index(GAME_PLAY* play) {
+    PLAYER_ACTOR* opener = mPlib_menu_opener();
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    if (opener == NULL) {
+        return 0;
+    }
+
+    for (i = 1; i < count; i++) {
+        if (mPlib_extra_player_at(i - 1) == opener) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+/* pc_gx_menu_mode for the opener's view: 1/2 = two-player left/right band,
+ * 3-6 = quadrant top-left, top-right, bottom-left, bottom-right. */
+static int play_menu_mode(int count, int index) {
+    if (count <= 2) {
+        return (index == 0) ? 1 : 2;
+    }
+
+    return 3 + index;
 }
 
 /* One player, or the selected resident plus one per extra pad. */
@@ -1182,11 +1207,12 @@ static void Game_play_draw(GAME_PLAY* play) {
                     pc_gx_hud_half = FALSE;
                 }
 
-                /* The player who opened the menu is view 0 (pads[0]). Show the
-                 * town first. The panel then gets its own list. One list cannot
-                 * hold a town and this UI. */
+                /* The opener's view gets the menu. Show the town first. The panel
+                 * then gets its own list. One list cannot hold a town and this UI. */
                 if (play->submenu.process_status != mSM_PROCESS_WAIT &&
                     play->submenu.mode >= mSM_MODE_PRERENDER_DONE) {
+                    int opener_index = play_menu_view_index(play);
+
                     pc_graph_flush_world(graph);
                     play_restart_disp(play, graph);
                     /* The town pass leaves the texture cache full. The panel's
@@ -1194,13 +1220,13 @@ static void Game_play_draw(GAME_PLAY* play) {
                     emu64_refresh();
                     /* Menu geometry and its 3D hand both read this flag while
                      * the lists are built, so it is a host flag, not a noop. */
-                    play_set_view_menu(play, count);
+                    play_set_view_menu(play, count, opener_index);
                     showSplitHudView(&play->view);
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
                     CLOSE_DISP(graph);
-                    pc_gx_menu_mode = (count == 2) ? 1 : 2;
+                    pc_gx_menu_mode = play_menu_mode(count, opener_index);
                     mPlib_menu_context_begin(play);
                     mSM_submenu_draw(&play->submenu, (GAME*)play);
                     mPlib_menu_context_end(play);
