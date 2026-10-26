@@ -3,6 +3,25 @@ static void mMsg_Main_Hide(mMsg_Window_c* msg_p, GAME* game) {
 }
 
 static void mMsg_MainSetup_Hide(mMsg_Window_c* msg_p, GAME* game) {
+#ifdef TARGET_PC
+  /* Retail re-inits the one global window. A second window must hide itself
+   * or this wipes the conversation that is still open and never leaves the
+   * close animation. */
+  if (msg_p != &mMsg_window) {
+    msg_p->main_index = mMsg_INDEX_HIDE;
+    msg_p->requested_main_index = -1;
+    msg_p->requested_priority = 0;
+    msg_p->draw_flag = FALSE;
+    msg_p->window_scale = 0.0f;
+    msg_p->text_scale = 0.0f;
+    msg_p->timer = 0.0f;
+    msg_p->data_loaded = FALSE;
+    if (msg_p->msg_data != NULL) {
+      msg_p->msg_data->data_loaded = FALSE;
+    }
+    return;
+  }
+#endif
   mMsg_init(game);
   emu64_refresh();
 }

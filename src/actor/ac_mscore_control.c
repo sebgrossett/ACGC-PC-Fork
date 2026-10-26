@@ -56,30 +56,45 @@ static void aMSC_actor_ct(ACTOR* actorx, GAME* game) {
 }
 
 static void aMSC_menu_open_wait(MSCORE_CONTROL_ACTOR* mscore_ctrl, GAME_PLAY* play) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-    int angle_y;
+    int count = 1 + mPlib_extra_player_count();
+    int i;
 
-    if (player != NULL) {
+    /* Any active player facing the board can open it. The menu owner is set to
+     * that player so the panel draws and reads input in their view. */
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
         Submenu* submenu = &play->submenu;
+        int angle_y;
+        int item;
 
-        if (player->a_btn_pressed == TRUE && !Common_Get(reset_flag) && !submenu->start_refuse &&
-            submenu->start_refuse_timer == 0 && mPlib_able_submenu_type1((GAME*)play)) {
-            angle_y = DEG2SHORT_ANGLE2(180.0f) + player->actor_class.shape_info.rotation.y;
-
-            if (ABS((s16)angle_y) < DEG2SHORT_ANGLE2(45.0f)) {
-                int item = player->item_in_front;
-
-                if (!(item < (MUSIC_BOARD1 + 1) && item >= MUSIC_BOARD0)) {
-                    return;
-                }
-
-                mMld_GetMelody(mscore_ctrl->melody);
-                mSM_open_submenu_new2(submenu, mSM_OVL_MSCORE, 0, 0, mscore_ctrl, (int)mscore_ctrl->melody);
-                player->a_btn_pressed = FALSE;
-                player->a_btn_triggers_submenu = TRUE;
-                aMSC_setupAction(mscore_ctrl, aMSC_ACT_MENU_CLOSE_WAIT);
-            }
+        if (player == NULL) {
+            continue;
         }
+
+        if (player->a_btn_pressed != TRUE || Common_Get(reset_flag) || submenu->start_refuse ||
+            submenu->start_refuse_timer != 0 || mPlib_able_submenu_type1((GAME*)play) == FALSE) {
+            continue;
+        }
+
+        angle_y = DEG2SHORT_ANGLE2(180.0f) + player->actor_class.shape_info.rotation.y;
+
+        if (ABS((s16)angle_y) >= DEG2SHORT_ANGLE2(45.0f)) {
+            continue;
+        }
+
+        item = player->item_in_front;
+
+        if (!(item < (MUSIC_BOARD1 + 1) && item >= MUSIC_BOARD0)) {
+            continue;
+        }
+
+        mMld_GetMelody(mscore_ctrl->melody);
+        mPlib_set_menu_opener(player, mPlib_pad_for_player(player), mPlib_player_slot_of(player));
+        mSM_open_submenu_new2(submenu, mSM_OVL_MSCORE, 0, 0, mscore_ctrl, (int)mscore_ctrl->melody);
+        player->a_btn_pressed = FALSE;
+        player->a_btn_triggers_submenu = TRUE;
+        aMSC_setupAction(mscore_ctrl, aMSC_ACT_MENU_CLOSE_WAIT);
+        return;
     }
 }
 

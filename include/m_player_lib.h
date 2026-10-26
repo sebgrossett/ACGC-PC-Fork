@@ -45,6 +45,7 @@ extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player);
 /* Pad channel per resident slot. The pad is the Controls row (0 host, 1-3 guests). */
 extern void mPlib_register_player_pad(int slot, int pad);
 extern int mPlib_pad_for_player_slot(int slot);
+extern int mPlib_pad_for_player(PLAYER_ACTOR* player);
 extern void mPlib_queue_guest_slot(int slot, int pad);
 extern int mPlib_guest_slot_ready(void);
 extern int mPlib_take_guest_slot(void);
@@ -59,6 +60,36 @@ extern void mPlib_unbind_player_actor(void);
 /* Player whose split view is being drawn. NULL falls back to the selected resident. */
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
+#ifdef TARGET_PC
+/* Co-op menu opener: the player whose menu is open, its Controls pad and save
+ * slot. Cleared when the menu closes. */
+extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot);
+extern PLAYER_ACTOR* mPlib_menu_opener(void);
+extern int mPlib_menu_opener_pad(void);
+extern int mPlib_menu_opener_slot(void);
+extern int mPlib_menu_opener_is_guest(void);
+/* Run the submenu update/draw with the opener's pad and private data. */
+extern void mPlib_menu_context_begin(GAME_PLAY* play);
+extern void mPlib_menu_context_end(GAME_PLAY* play);
+/* Co-op talk/speak talker: the demo runs with this player's pad and private
+ * data. Set right before the demo request; cleared when the demo ends. */
+extern void mPlib_set_demo_talker(PLAYER_ACTOR* player);
+extern void mPlib_set_demo_talker_by_slot(int slot);
+extern void mPlib_clear_demo_talker(void);
+extern PLAYER_ACTOR* mPlib_demo_talker(void);
+extern int mPlib_demo_talker_pad(void);
+extern int mPlib_demo_talker_slot(void);
+extern int mPlib_demo_talker_is_guest(void);
+extern void mPlib_demo_context_begin(GAME_PLAY* play);
+extern void mPlib_demo_context_end(GAME_PLAY* play);
+/* Who the next mDemo_Request belongs to. Does not replace the active talker. */
+extern void mPlib_set_request_owner(PLAYER_ACTOR* player);
+extern void mPlib_clear_request_owner(void);
+extern PLAYER_ACTOR* mPlib_request_owner(void);
+/* Pad and private data for one slot, without touching the active talker. */
+extern void mPlib_slot_context_begin(GAME_PLAY* play, int slot, int pad);
+extern void mPlib_slot_context_end(GAME_PLAY* play);
+#endif
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index);
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play);
 extern int mPlib_get_player_actor_main_index(GAME* game);
@@ -70,6 +101,7 @@ extern void mPlib_change_player_cloth_info(mPr_cloth_c* cloth_p, mActor_name_t i
 extern void mPlib_change_player_cloth_info_lv2(Private_c* priv, mActor_name_t item);
 extern void mPlib_Load_PlayerTexAndPallet(void* tex_p, void* pal_p, int idx);
 extern mPlayer_change_data_from_submenu_c* mPlib_Get_change_data_from_submenu_p(void);
+extern int mPlib_change_data_owner(void);
 extern void mPlib_Clear_change_data_from_submenu(void);
 extern void mPlib_request_main_give_from_submenu(mActor_name_t item, int after_mode, int present_flag,
                                                  int surface_flag);

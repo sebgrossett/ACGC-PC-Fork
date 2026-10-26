@@ -126,22 +126,38 @@ static void mSM_change_view(GRAPH* graph, f32 eye_dist, f32 y_lookAt, f32 vp_x, 
 
 #ifdef TARGET_PC
     /* Callers place this viewport in retail 320x240 screen coordinates, which
-     * are drawn at 2x. In co-op the menu is a 1x rect in the opener's view (a
-     * 4:3 band in the left half at two players, the 4:3 top-left quadrant at
-     * three or four), so the panel and the hand have to share that space or the
-     * hand walks off the rect while the panel stays put. Halve the box as well,
-     * or 3D items keep their full-screen size against a half-size panel. */
+     * are drawn at 2x. In co-op the menu is a 1x rect in the opener's view (its
+     * half at two players, its quadrant at three or four), so the panel and the
+     * hand have to share that space or the hand walks off the rect while the
+     * panel stays put. Halve the box as well, or 3D items keep their full-screen
+     * size against a half-size panel. Modes 1/2 are the two-player left/right
+     * band, 3-6 the quadrant top-left, top-right, bottom-left, bottom-right. */
     if (pc_gx_menu_mode) {
         f32 centre_x;
+        f32 x_ofs = 0.0f;
+        f32 y_ofs = 0.0f;
 
         vp_x *= 0.5f;
-        if (pc_gx_menu_mode == 1) {
-            /* Left half: the band starts 60 content units down. */
+        if (pc_gx_menu_mode <= 2) {
+            /* Band starts 60 content units down; the right half is one half
+             * across. After the halving vp_x is 2*X - width, so moving the box
+             * one half (320 EFB) means +640 here. */
             vp_y = 240.0f + vp_y * 0.5f;
+            if (pc_gx_menu_mode == 2) {
+                x_ofs = 640.0f;
+            }
         } else {
-            /* Top-left quadrant: the view starts at the window's top-left. */
+            /* Quadrant: origin at its own corner (320 EFB across, 240 down). */
             vp_y *= 0.5f;
+            if ((pc_gx_menu_mode == 4) || (pc_gx_menu_mode == 6)) {
+                x_ofs = 640.0f;
+            }
+            if (pc_gx_menu_mode >= 5) {
+                y_ofs = 480.0f;
+            }
         }
+        vp_x += x_ofs;
+        vp_y += y_ofs;
         width /= 2;
         height /= 2;
         /* The 2D panel goes through the GX layer's aspect correction, which
@@ -151,10 +167,11 @@ static void mSM_change_view(GRAPH* graph, f32 eye_dist, f32 y_lookAt, f32 vp_x, 
          * the window is resized. `vp_x` is twice the box's left edge, so the
          * centre (twice left + width) is what follows the panel; the box width
          * stays as it is because the squeezed projection already scales the
-         * model drawn inside it. */
-        centre_x = vp_x + (f32)width;
+         * model drawn inside it. The squeeze is local to the panel, so the view
+         * origin (`x_ofs`) is added after it rather than scaled with it. */
+        centre_x = vp_x - x_ofs + (f32)width;
         centre_x = 320.0f + (centre_x - 320.0f) * pc_gx_aspect_factor();
-        vp_x = centre_x - (f32)width;
+        vp_x = centre_x - (f32)width + x_ofs;
     }
 #endif
 

@@ -285,7 +285,7 @@ static int aSIGN_actor_BkandUtNum_formal(int* bz_p, int* bx_p, int* ut_z_p, int*
     return *bz_p >= 0 && *bz_p < bz_max && *bx_p >= 0 && *bx_p < bx_max;
 }
 
-static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
+static int aSIGN_actor_set_target_for_player(SIGN_ACTOR* sign, ACTOR* player_actor, f32* dist_p) {
     xyz_t sign_pos;
     int base_bz;
     int base_bx;
@@ -295,13 +295,9 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
     int bx;
     int ut_z;
     int ut_x;
-    ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
     f32 min_dist = FLT_MAX;
     int z;
     int x;
-    int i;
-    int j;
-    aSIGN_draw_c* draw_p;
     int res = FALSE;
 
     if (mFI_Wpos2BkandUtNuminBlock(&base_bx, &base_bz, &base_ut_x, &base_ut_z, player_actor->world.position)) {
@@ -315,10 +311,14 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
                 ut_z = base_ut_z + z;
 
                 if (aSIGN_actor_BkandUtNum_formal(&bz, &bx, &ut_z, &ut_x)) {
-                    for (i = 0, draw_p = sign->draw; i < 2; i++) {
-                        for (j = 0; j < 2; j++) {
-                            if (draw_p->block.z == bz && draw_p->block.x == bx &&
-                                (draw_p->exist_bitfield[ut_z] & (1 << ut_x)) != 0) {
+                    mActor_name_t* fg_p = mFI_BkNumtoUtFGTop(bx, bz);
+                    mActor_name_t item;
+
+                    if (fg_p != NULL) {
+                        item = fg_p[ut_z * UT_X_NUM + ut_x];
+
+                        if (ITEM_NAME_GET_TYPE(item) == NAME_TYPE_ITEM0 && ITEM_NAME_GET_CAT(item) == ITEM0_CAT_SIGN &&
+                            aSIGN_draw_anime_check(sign, ut_z, ut_x) == FALSE) {
                                 mFI_BkandUtNum2CenterWpos(&sign_pos, bx, bz, ut_x, ut_z);
                                 sign_pos.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(sign_pos, 0.0f);
                                 if (player_actor->world.position.z > sign_pos.z) {
@@ -355,15 +355,13 @@ static int aSIGN_actor_set_target(SIGN_ACTOR* sign, GAME* game) {
                                     }
                                 }
                             }
-
-                            draw_p++;
                         }
                     }
                 }
             }
         }
-    }
 
+    *dist_p = res ? min_dist : FLT_MAX;
     return res;
 }
 
@@ -509,12 +507,40 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
 
     if (mDemo_Check(mDemo_TYPE_SPEAK, &sign->actor_class)) {
         ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
-        s_xyz player_angle = player_actor->shape_info.rotation;
-        s16 target_y = search_position_angleY(&player_actor->world.position, &sign->target_pos);
+        s_xyz player_angle;
+        s16 target_y;
+#ifdef TARGET_PC
+        PLAYER_ACTOR* reader = NULL;
+        int side = mDemo_side_is_actor(&sign->actor_class);
+
+        /* Turn the reader, not whoever the actor move thinks is the player.
+         * A second sign uses its own window so the choice is not the NPC's. */
+        if (side) {
+            mMsg_set_use_window(mMsg_side_window_p());
+            msg_p = mMsg_side_window_p();
+            reader = (PLAYER_ACTOR*)mDemo_side_player();
+        } else {
+            reader = mPlib_demo_talker();
+        }
+
+        if (reader != NULL) {
+            player_actor = (ACTOR*)reader;
+        }
+#endif
+        player_angle = player_actor->shape_info.rotation;
+        target_y = search_position_angleY(&player_actor->world.position, &sign->target_pos);
 
         add_calc_short_angle2(&player_angle.y, target_y, 0.3f, DEG2SHORT_ANGLE2(22.5f), DEG2SHORT_ANGLE2(1.40625f));
-        GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &player_angle,
-                                                              mPlayer_FORCE_POSITION_ANGLE_ROTY);
+#ifdef TARGET_PC
+        if (reader != NULL) {
+            reader->force_angle.y = player_angle.y;
+            reader->force_position_angle_flag |= mPlayer_FORCE_POSITION_ANGLE_ROTY;
+        } else
+#endif
+        {
+            GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &player_angle,
+                                                                  mPlayer_FORCE_POSITION_ANGLE_ROTY);
+        }
 
         if (mMsg_Check_MainNormalContinue(msg_p) == TRUE) {
             switch (mChoice_GET_CHOSENUM()) {
@@ -529,23 +555,81 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
                     break;
             }
         }
+#ifdef TARGET_PC
+        if (side) {
+            mMsg_set_use_window(NULL);
+        }
+#endif
     } else {
         aSIGN_setup_action(sign, aSIGN_ACTION_WAIT);
     }
 }
 
 static void aSIGN_talk_end(SIGN_ACTOR* sign, GAME* game) {
+#ifdef TARGET_PC
+    int side = mDemo_side_is_actor(&sign->actor_class);
+
+    if (side) {
+        mMsg_set_use_window(mMsg_side_window_p());
+    }
+#endif
     if (mMsg_CHECK_MAIN_WAIT()) {
         aSIGN_setup_action(sign, aSIGN_ACTION_WAIT);
         mMsg_request_main_forceoff();
     }
+#ifdef TARGET_PC
+    if (side) {
+        mMsg_set_use_window(NULL);
+    }
+#endif
 }
 
 static void aSIGN_wait(SIGN_ACTOR* sign, GAME* game) {
-    if (mDemo_Get_talk_actor() == NULL && aSIGN_actor_set_target(sign, game) && chkTrigger(BUTTON_A) &&
-        mDemo_Get_talk_actor() == NULL) {
-        mDemo_Request(mDemo_TYPE_SPEAK, &sign->actor_class, &aSIGN_set_talk_info);
-        aSIGN_setup_action(sign, aSIGN_ACTION_TALK);
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    if (mDemo_Check(mDemo_TYPE_SPEAK, &sign->actor_class)) {
+        return;
+    }
+
+    /* Any active player facing the sign can read it, with their own A press.
+     * Someone already in a talk stays there; this request does not become them. */
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+        f32 dist = FLT_MAX;
+        int pad;
+        int slot;
+
+        if (player == NULL) {
+            continue;
+        }
+
+        slot = mPlib_player_slot_of(player);
+
+        if (mDemo_player_in_talk(slot)) {
+            continue;
+        }
+
+        if (aSIGN_actor_set_target_for_player(sign, (ACTOR*)player, &dist) == FALSE) {
+            continue;
+        }
+
+        pad = mPlib_pad_for_player(player);
+
+        if (chkTrigger_pad(pad, BUTTON_A) == FALSE) {
+            continue;
+        }
+
+        mPlib_set_request_owner(player);
+        mDemo_Set_next_request_no_a_gate(TRUE);
+
+        if (mDemo_Request(mDemo_TYPE_SPEAK, &sign->actor_class, &aSIGN_set_talk_info) != FALSE) {
+            aSIGN_setup_action(sign, aSIGN_ACTION_TALK);
+        }
+
+        mPlib_clear_request_owner();
+        return;
     }
 }
 

@@ -512,7 +512,17 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
         game->doing_point = 2;
+#ifdef TARGET_PC
+        mPlib_demo_context_begin(play);
+#endif
         mDemo_Main(play);
+#ifdef TARGET_PC
+        mPlib_demo_context_end(play);
+        mDemo_side_sync_player(play);
+        if (mDemo_CheckDemo() == FALSE) {
+            mPlib_clear_demo_talker();
+        }
+#endif
         game->doing_point = 3;
         mEv_run(&play->event);
     }
@@ -522,7 +532,13 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     game->doing_point = 5;
     mSc_dmacopy_data_bank(&play->object_exchange);
     game->doing_point = 6;
+#ifdef TARGET_PC
+    mPlib_menu_context_begin(play);
+#endif
     mSM_submenu_move(&play->submenu);
+#ifdef TARGET_PC
+    mPlib_menu_context_end(play);
+#endif
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
         play->game_frame++;
@@ -540,13 +556,39 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 1;
         mCoBG_CalcTimerDecalCircle();
         game->doing_point = 2;
+#ifdef TARGET_PC
+        mPlib_demo_context_begin(play);
+#endif
         mMsg_Main(game);
+#ifdef TARGET_PC
+        mPlib_demo_context_end(play);
+        mDemo_side_msg(play);
+#endif
     } else {
         mVibctl_set_force_stop(2);
 #ifdef TARGET_PC
-        /* The selected resident stays in the menu. Every other resident keeps
-         * walking, including the same collision pass as a normal frame. */
-        {
+        if (mPlib_menu_opener_is_guest()) {
+            /* A guest's menu is open: the selected resident and the other
+             * players keep a normal frame, and the opener waits. */
+            play->game_frame++;
+            CollisionCheck_OC(game, &play->collision_check);
+            CollisionCheck_clear(game, &play->collision_check);
+            Actor_info_set_wait_actor((ACTOR*)mPlib_menu_opener());
+            Actor_info_call_actor(play, &play->actor_info);
+            Actor_info_set_wait_actor(NULL);
+            mCoBG_CalcTimerDecalCircle();
+#ifdef TARGET_PC
+            mPlib_demo_context_begin(play);
+#endif
+            mMsg_Main(game);
+#ifdef TARGET_PC
+            mPlib_demo_context_end(play);
+            mDemo_side_msg(play);
+#endif
+        } else {
+            /* The selected resident stays in the menu. Every other resident
+             * keeps walking, including the same collision pass as a normal
+             * frame. */
             int extras = mPlib_extra_player_count();
             int i;
 
@@ -613,7 +655,11 @@ static void Game_play_move(GAME* game) {
         }
     }
 
-    if (play->submenu.process_status == mSM_PROCESS_WAIT) {
+    if (play->submenu.process_status == mSM_PROCESS_WAIT
+#ifdef TARGET_PC
+        || mPlib_menu_opener_is_guest()
+#endif
+    ) {
         evw_anime_add_scroll_phase(&play->game);
         game->doing_point = 0;
         game->doing_point_specific = 0x92;
@@ -736,24 +782,102 @@ static void play_set_view_player(GAME_PLAY* play, int index, int count) {
     setScissorView(&play->view, &view_rect);
 }
 
-/* The opener is Player 1, so the menu rect is the left half (2 players) or the
- * top-left quadrant (3-4). The half is 160x240, so a 4:3 band keeps the panel
- * and its 3D hand cursor in one undistorted space; a quadrant is already 4:3. */
-static void play_set_view_menu(GAME_PLAY* play, int count) {
+/* View slot of an actor (0 = selected resident). */
+static int play_actor_view_index(GAME_PLAY* play, PLAYER_ACTOR* actor) {
+    int count = 1 + mPlib_extra_player_count();
+    int i;
+
+    (void)play;
+
+    if (actor == NULL) {
+        return 0;
+    }
+
+    for (i = 1; i < count; i++) {
+        if (mPlib_extra_player_at(i - 1) == actor) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+/* Menu rect: the opener's view. At two players that is its half with a 4:3
+ * band so the panel and its 3D hand share one undistorted space; a quadrant at
+ * three or four players is already 4:3. */
+static void play_set_view_menu(GAME_PLAY* play, int count, int index) {
     rect band;
 
-    band.l = 0;
-    band.r = SCREEN_WIDTH / 2;
+    play_view_rect(index, count, &band);
 
     if (count <= 2) {
         band.top = (SCREEN_HEIGHT - (SCREEN_HEIGHT / 2)) / 2;
         band.bottom = band.top + (SCREEN_HEIGHT / 2);
-    } else {
-        band.top = 0;
-        band.bottom = SCREEN_HEIGHT / 2;
     }
 
     setScissorView(&play->view, &band);
+}
+
+/* Talk message: the retail window is almost the full 320 width and sits on the
+ * bottom. Map that whole layout into the bottom 4:3 of the talker's half so it
+ * stays in their view instead of crossing the split. A quadrant is already
+ * 4:3. */
+static void play_set_view_talk(GAME_PLAY* play, int count, int index) {
+    rect band;
+
+    play_view_rect(index, count, &band);
+
+    if (count <= 2) {
+        band.top = SCREEN_HEIGHT / 2;
+        band.bottom = SCREEN_HEIGHT;
+    }
+
+    setScissorView(&play->view, &band);
+}
+
+#ifdef TARGET_PC
+/* One message window into one player's bottom band. */
+static void play_draw_talk_msg(GAME_PLAY* play, mMsg_Window_c* msg, PLAYER_ACTOR* talker) {
+    rect saved;
+    rect full;
+    int count;
+    int index;
+
+    if ((msg == NULL) || (msg->draw_flag == FALSE)) {
+        return;
+    }
+
+    saved = play->view.screen;
+    count = 1 + mPlib_extra_player_count();
+    index = play_actor_view_index(play, talker);
+    play_set_view_talk(play, count, index);
+    showSplitHudView(&play->view);
+    mMsg_set_use_window(msg);
+    mMsg_Draw((GAME*)play);
+    mMsg_set_use_window(NULL);
+    full.top = 0;
+    full.bottom = SCREEN_HEIGHT;
+    full.l = 0;
+    full.r = SCREEN_WIDTH;
+    play->view.screen = saved;
+    setScissorView(&play->view, &full);
+    showSplitHudView(&play->view);
+}
+#endif
+
+/* View slot of the player whose menu is open (0 = selected resident). */
+static int play_menu_view_index(GAME_PLAY* play) {
+    return play_actor_view_index(play, mPlib_menu_opener());
+}
+
+/* pc_gx_menu_mode for the opener's view: 1/2 = two-player left/right band,
+ * 3-6 = quadrant top-left, top-right, bottom-left, bottom-right. */
+static int play_menu_mode(int count, int index) {
+    if (count <= 2) {
+        return (index == 0) ? 1 : 2;
+    }
+
+    return 3 + index;
 }
 
 /* One player, or the selected resident plus one per extra pad. */
@@ -934,6 +1058,9 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     /* One world fills the display-list buffers. Draw every view but the last,
      * showing each and restarting the lists, then build the last view where
      * the right half used to go. A wipe stays one full list. */
+    /* Visibility accumulates over every view: the next move pass runs once for
+     * all players, so an actor seen by any of them must move. */
+    Actor_info_cull_begin(play);
     if (play_split_live(play)) {
         int count = play_player_count();
         xyz_t host_eye = play->view.eye;
@@ -1075,7 +1202,17 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #endif
         PC_DIAG(3, "makeBumpTexture: Actor draw done, Camera2...\n");
         Camera2_draw(play);
-        mMsg_Draw((GAME*)play);
+#ifdef TARGET_PC
+        /* The message is one full-screen font ortho. In a split that draws it
+         * across both views. Put it in the talker's bottom band instead. */
+        if (play_split_live(play)) {
+            play_draw_talk_msg(play, mMsg_Get_base_window_p(), mPlib_demo_talker());
+            play_draw_talk_msg(play, mMsg_side_window_p(), (PLAYER_ACTOR*)mDemo_side_player());
+        } else
+#endif
+        {
+            mMsg_Draw((GAME*)play);
+        }
     }
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 93) != 0)) {
@@ -1160,11 +1297,12 @@ static void Game_play_draw(GAME_PLAY* play) {
                     pc_gx_hud_half = FALSE;
                 }
 
-                /* The player who opened the menu is view 0 (pads[0]). Show the
-                 * town first. The panel then gets its own list. One list cannot
-                 * hold a town and this UI. */
+                /* The opener's view gets the menu. Show the town first. The panel
+                 * then gets its own list. One list cannot hold a town and this UI. */
                 if (play->submenu.process_status != mSM_PROCESS_WAIT &&
                     play->submenu.mode >= mSM_MODE_PRERENDER_DONE) {
+                    int opener_index = play_menu_view_index(play);
+
                     pc_graph_flush_world(graph);
                     play_restart_disp(play, graph);
                     /* The town pass leaves the texture cache full. The panel's
@@ -1172,14 +1310,16 @@ static void Game_play_draw(GAME_PLAY* play) {
                     emu64_refresh();
                     /* Menu geometry and its 3D hand both read this flag while
                      * the lists are built, so it is a host flag, not a noop. */
-                    play_set_view_menu(play, count);
+                    play_set_view_menu(play, count, opener_index);
                     showSplitHudView(&play->view);
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
                     CLOSE_DISP(graph);
-                    pc_gx_menu_mode = (count == 2) ? 1 : 2;
+                    pc_gx_menu_mode = play_menu_mode(count, opener_index);
+                    mPlib_menu_context_begin(play);
                     mSM_submenu_draw(&play->submenu, (GAME*)play);
+                    mPlib_menu_context_end(play);
                     pc_gx_menu_mode = 0;
                     OPEN_DISP(graph);
                     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_ON);
@@ -1190,7 +1330,13 @@ static void Game_play_draw(GAME_PLAY* play) {
 #endif
             {
                 banti_draw(play);
+#ifdef TARGET_PC
+                mPlib_menu_context_begin(play);
+#endif
                 mSM_submenu_draw(&play->submenu, (GAME*)play);
+#ifdef TARGET_PC
+                mPlib_menu_context_end(play);
+#endif
             }
         }
     }

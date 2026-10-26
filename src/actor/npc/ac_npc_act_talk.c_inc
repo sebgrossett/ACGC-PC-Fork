@@ -88,6 +88,14 @@ static void aNPC_act_talk_turn(NPC_ACTOR* nactorx, GAME_PLAY* play) {
 }
 
 static void aNPC_act_talk_wait(NPC_ACTOR* nactorx, GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* The quest start proc overwrites the primary client. The side message is
+     * already up, so this NPC only has to hold the talk pose. */
+    if (mDemo_side_is_actor((ACTOR*)nactorx)) {
+        aNPC_act_talk_chg_step(nactorx, aNPC_ACT_TALK_STEP_TALK);
+        return;
+    }
+#endif
     if (ITEM_NAME_GET_TYPE(nactorx->actor_class.npc_id) == NAME_TYPE_SPNPC) {
         if ((*nactorx->talk_info.talk_init_proc)((ACTOR*)nactorx, (GAME*)play) == TRUE && mDemo_Check_SpeakerAble() == TRUE) {
             mMld_ActorMakeMelody((ACTOR*)nactorx);
@@ -107,6 +115,15 @@ static void aNPC_act_talk_wait(NPC_ACTOR* nactorx, GAME_PLAY* play) {
 }
 
 static void aNPC_act_talk(NPC_ACTOR* nactorx, GAME_PLAY* play) {
+#ifdef TARGET_PC
+    if (mDemo_side_is_actor((ACTOR*)nactorx)) {
+        if (mDemo_side_closing()) {
+            aNPC_setup_talk_end(nactorx);
+            nactorx->action.step = aNPC_ACTION_END_STEP;
+        }
+        return;
+    }
+#endif
     if ((*nactorx->talk_info.talk_end_check_proc)((ACTOR*)nactorx, (GAME*)play) == TRUE) {
         aNPC_setup_talk_end(nactorx);
         nactorx->action.step = aNPC_ACTION_END_STEP;

@@ -317,9 +317,34 @@ static void Actor_cull_check(ACTOR* actor) {
     if (Actor_draw_actor_no_culling_check(actor) == TRUE) {
         actor->state_bitfield |= ACTOR_STATE_NO_CULL;
     } else {
+#ifdef TARGET_PC
+        /* Keep visibility from an earlier split view: the actor move pass runs
+         * once for every view, so an actor seen by any player must move. */
+#else
         actor->state_bitfield &= ~ACTOR_STATE_NO_CULL;
+#endif
     }
 }
+
+#ifdef TARGET_PC
+/* Clear last frame's per-view visibility once, before the view passes. Each
+ * view then only adds actors it can see. */
+extern void Actor_info_cull_begin(GAME_PLAY* play) {
+    Actor_list* list = play->actor_info.list;
+    int i;
+
+    for (i = 0; i < ACTOR_PART_NUM; i++) {
+        ACTOR* actor = list->actor;
+
+        while (actor != NULL) {
+            actor->state_bitfield &= ~ACTOR_STATE_NO_CULL;
+            actor = actor->next_actor;
+        }
+
+        list++;
+    }
+}
+#endif
 
 #ifdef TARGET_PC
 /* Retail keeps actors around one player. In split the other half still needs
@@ -568,6 +593,16 @@ extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play) {
     actor_dlftbls_cleanup();
 }
 
+#ifdef TARGET_PC
+/* The player waiting in their menu: their actor is skipped for one
+ * Actor_info_call_actor pass while the other players keep playing. */
+static ACTOR* s_wait_actor = NULL;
+
+extern void Actor_info_set_wait_actor(ACTOR* actor) {
+    s_wait_actor = actor;
+}
+#endif
+
 extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
     // GAME* game = (GAME*)play;
     PLAYER_ACTOR* player_actor = get_player_actor_withoutCheck(play);
@@ -582,6 +617,12 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
         actor = actor_info->list[i].actor;
 
         while (actor != NULL) {
+#ifdef TARGET_PC
+            if (actor == s_wait_actor) {
+                actor = actor->next_actor;
+                continue;
+            }
+#endif
             play->game.doing_point = actor->id;
             play->game.doing_point_specific = 151;
 

@@ -1343,6 +1343,23 @@ extern int mPlib_pad_for_player_slot(int slot) {
     return s_pad_by_slot[slot];
 }
 
+/* Controls pad of a player actor: 0 for the selected resident, the registered
+ * Controls row for a guest. -1 when the actor is not an active player. */
+extern int mPlib_pad_for_player(PLAYER_ACTOR* player) {
+    int slot;
+
+    if (player == NULL) {
+        return -1;
+    }
+
+    if (player == get_player_actor_withoutCheck((GAME_PLAY*)gamePT)) {
+        return 0;
+    }
+
+    slot = mPlib_player_slot_of(player);
+    return (slot >= 0) ? mPlib_pad_for_player_slot(slot) : -1;
+}
+
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
     if (player == NULL) {
         return;
@@ -1493,6 +1510,97 @@ extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
     return get_player_actor_withoutCheck(play);
 }
 
+/* Co-op menu opener. One menu can be open at a time for now (a stepping stone
+ * toward 3-4 concurrent menus): while it is open, the submenu update and draw
+ * run with this player's pad and private data instead of the selected
+ * resident's. */
+static PLAYER_ACTOR* s_menu_opener = NULL;
+static int s_menu_opener_pad = 0;
+static int s_menu_opener_slot = -1;
+
+extern void mPlib_set_menu_opener(PLAYER_ACTOR* player, int pad, int slot) {
+    s_menu_opener = player;
+    s_menu_opener_pad = pad;
+    s_menu_opener_slot = slot;
+}
+
+extern PLAYER_ACTOR* mPlib_menu_opener(void) {
+    return s_menu_opener;
+}
+
+extern int mPlib_menu_opener_pad(void) {
+    return s_menu_opener_pad;
+}
+
+extern int mPlib_menu_opener_slot(void) {
+    return s_menu_opener_slot;
+}
+
+extern int mPlib_menu_opener_is_guest(void) {
+    int slot = mPlib_player_slot_of(s_menu_opener);
+
+    return (slot >= 0) && (slot != (int)Common_Get(player_no));
+}
+
+/* Co-op talk/speak talker. The demo runs with this player's pad and private
+ * data, so a guest can read a sign or talk to an NPC. */
+static PLAYER_ACTOR* s_demo_talker = NULL;
+static int s_demo_talker_pad = -1;
+static int s_demo_talker_slot = -1;
+
+extern void mPlib_set_demo_talker(PLAYER_ACTOR* player) {
+    s_demo_talker = player;
+    s_demo_talker_pad = mPlib_pad_for_player(player);
+    s_demo_talker_slot = mPlib_player_slot_of(player);
+}
+
+/* Resolve a demo owner from its save slot (host or guest). */
+extern void mPlib_set_demo_talker_by_slot(int slot) {
+    if ((slot >= 0) && (slot < PLAYER_NUM) && (s_player_by_slot[slot] != NULL)) {
+        mPlib_set_demo_talker(s_player_by_slot[slot]);
+    } else {
+        mPlib_clear_demo_talker();
+    }
+}
+
+extern void mPlib_clear_demo_talker(void) {
+    s_demo_talker = NULL;
+    s_demo_talker_pad = -1;
+    s_demo_talker_slot = -1;
+}
+
+extern PLAYER_ACTOR* mPlib_demo_talker(void) {
+    return s_demo_talker;
+}
+
+extern int mPlib_demo_talker_pad(void) {
+    return s_demo_talker_pad;
+}
+
+extern int mPlib_demo_talker_slot(void) {
+    return s_demo_talker_slot;
+}
+
+extern int mPlib_demo_talker_is_guest(void) {
+    return (s_demo_talker != NULL) && (s_demo_talker_pad > 0);
+}
+
+/* Stamped onto the next request only. A sign read must not replace the talker
+ * who already owns the running demo. */
+static PLAYER_ACTOR* s_request_owner = NULL;
+
+extern void mPlib_set_request_owner(PLAYER_ACTOR* player) {
+    s_request_owner = player;
+}
+
+extern void mPlib_clear_request_owner(void) {
+    s_request_owner = NULL;
+}
+
+extern PLAYER_ACTOR* mPlib_request_owner(void) {
+    return s_request_owner;
+}
+
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {
     int i;
     int any = FALSE;
@@ -1641,13 +1749,27 @@ extern void mPlib_Load_PlayerTexAndPallet(void* tex_p, void* pal_p, int idx) {
 }
 
 static mPlayer_change_data_from_submenu_c change_data_from_submenu;
+static int change_data_from_submenu_owner = -1;
 
 extern mPlayer_change_data_from_submenu_c* mPlib_Get_change_data_from_submenu_p(void) {
+    /* The first writer while no order is pending owns it. During a co-op menu
+     * the context already points at the opener's save slot, so a guest's order
+     * is applied by that guest instead of the selected resident. */
+    if (change_data_from_submenu.requested_index_pending == FALSE) {
+        change_data_from_submenu_owner = (int)Common_Get(player_no);
+    }
+
     return &change_data_from_submenu;
+}
+
+/* Save slot that queued the pending submenu order, or -1 when none. */
+extern int mPlib_change_data_owner(void) {
+    return change_data_from_submenu_owner;
 }
 
 extern void mPlib_Clear_change_data_from_submenu(void) {
     bzero(&change_data_from_submenu, sizeof(change_data_from_submenu));
+    change_data_from_submenu_owner = -1;
 }
 
 extern void mPlib_request_main_give_from_submenu(mActor_name_t item, int after_mode, int present_flag,

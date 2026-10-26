@@ -44,6 +44,7 @@ extern void mCon_main(GAME* game);
 extern int chkButton(u16 button);
 extern u16 getButton();
 extern int chkTrigger(u16 button);
+extern int chkTrigger_pad(int pad, u16 button);
 extern u16 getTrigger();
 extern int getJoystick_X();
 extern int getJoystick_Y();

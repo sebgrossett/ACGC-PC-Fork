@@ -1,9 +1,19 @@
 #include "m_demo.h"
 
+#ifdef TARGET_PC
+static int s_request_no_a_gate = FALSE;
+
+/* The next mDemo_Request already saw its player's A press. */
+extern void mDemo_Set_next_request_no_a_gate(int flag) {
+    s_request_no_a_gate = flag;
+}
+#endif
+
 #include "m_common_data.h"
 #include "m_player_lib.h"
 #include "m_choice.h"
 #include "m_msg.h"
+#include "ac_quest_manager.h"
 #include "m_bgm.h"
 #include "m_event.h"
 #include "_mem.h"
@@ -408,7 +418,7 @@ static int set_talk_default() {
     demo->data.talk.window_color.g = mDemo_WINDOW_COLOR_G;
     demo->data.talk.window_color.b = mDemo_WINDOW_COLOR_B;
     demo->data.talk.window_color.a = mDemo_WINDOW_COLOR_A;
-    demo->camera_type = CAMERA2_PROCESS_TALK;
+    demo->camera_type = mPlib_demo_talker_is_guest() ? CAMERA2_PROCESS_NORMAL : CAMERA2_PROCESS_TALK;
     mDemo_Unset_SpeakerAble();
     mDemo_Unset_ListenAble();
     demo->speaker_actor = (ACTOR*)GET_PLAYER_ACTOR_NOW();
@@ -759,6 +769,67 @@ static f32 weight_of_talk_position(ACTOR* actor) {
     }
 }
 
+#ifdef TARGET_PC
+/* Same formula as weight_of_talk_position, measured against one player.
+ * The actor fields are the selected resident, so a guest needs its own. */
+static f32 weight_of_talk_position_for_player(ACTOR* actor, PLAYER_ACTOR* player) {
+    f32 dist_xz;
+    f32 dist_y;
+    s16 diff_y;
+    s16 angle_y;
+    f32 dist_factor;
+    f32 angle_factor;
+
+    if ((actor == NULL) || (player == NULL)) {
+        return -99.0f;
+    }
+
+    dist_xz = search_position_distanceXZ(&actor->world.position, &player->actor_class.world.position);
+    dist_y = player->actor_class.world.position.y - actor->world.position.y;
+
+    if (dist_y < 0.0f) {
+        dist_y = -dist_y;
+    }
+
+    diff_y = (s16)(player->actor_class.shape_info.rotation.y -
+                   search_position_angleY(&actor->world.position, &player->actor_class.world.position));
+    angle_y = diff_y < 0 ? (s16)(diff_y + -0x8000) : (s16)(-diff_y + -0x8000);
+
+    if (dist_xz <= actor->talk_distance && dist_y <= 33.0f && angle_y <= 12530) {
+        dist_factor = 1.0f - (dist_xz / 55.0f);
+
+        if (dist_factor < 0.0f) {
+            dist_factor = 0.0f;
+        }
+
+        angle_factor = 1.0f - ((f32)((int)angle_y) / 12530.0f);
+        return angle_factor * angle_factor * 0.6f + dist_factor * dist_factor * 0.4f;
+    }
+
+    return -99.0f;
+}
+
+static void mDemo_push_talk_request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc, f32 weight, int slot,
+                                    int pad, int no_a_gate) {
+    mDemo_Request_c* req;
+
+    if (demo->request_num >= mDemo_REQUEST_NUM) {
+        return;
+    }
+
+    req = &demo->request[demo->request_num];
+    demo->priority_type = type;
+    req->type = type;
+    req->actor = actor;
+    req->proc = req_proc;
+    req->talk_weight = weight;
+    req->pc_no_a_gate = no_a_gate;
+    req->pc_owner_slot = slot;
+    req->pc_owner_pad = pad;
+    demo->request_num++;
+}
+#endif
+
 static int allways_true() {
     return TRUE;
 }
@@ -816,13 +887,43 @@ static int choice_demo_sub() {
         mDemo_Request_c* request = &demo->request[i];
         int type = request->type;
 
+        int check_ok;
+
+#ifdef TARGET_PC
+        /* A talk request belongs to one player. The priority check has to see
+         * that player, or a guest's A press is accepted and then stuck. */
+        if (type == mDemo_TYPE_TALK) {
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+            mPlib_set_demo_talker_by_slot(request->pc_owner_slot);
+            mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+            check_ok = talk_check() != FALSE;
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        } else {
+            check_ok = (*check_func[type])() != FALSE;
+        }
+#else
+        check_ok = (*check_func[type])() != FALSE;
+#endif
+
         if (((mEv_CheckTitleDemo() == mEv_TITLEDEMO_NONE || type == mDemo_TYPE_SCROLL ||
               (mEv_CheckTitleDemo() == mEv_TITLEDEMO_STAFFROLL && type == mDemo_TYPE_SPEAK && request->actor != NULL &&
                request->actor->id == mAc_PROFILE_NPC_TOTAKEKE)) &&
              (demo->request_save.type != mDemo_TYPE_NONE || type >= demo->priority_type)) &&
-            (*check_func[type])() != FALSE) {
+            check_ok) {
             if (type == mDemo_TYPE_TALK) {
-                if (chkTrigger(BUTTON_A) && request->talk_weight > max_talk_weight) {
+                int talk_pad = request->pc_owner_pad;
+
+#ifdef TARGET_PC
+                /* The actor already saw this player's A press. Still compete
+                 * on weight when more than one player pressed. */
+                if (request->pc_no_a_gate && request->talk_weight > max_talk_weight) {
+                    idx = i;
+                    max_talk_weight = request->talk_weight;
+                }
+#endif
+
+                if ((request->pc_no_a_gate == FALSE) && chkTrigger_pad(talk_pad, BUTTON_A) &&
+                    request->talk_weight > max_talk_weight) {
                     idx = i;
                     max_talk_weight = request->talk_weight;
                 }
@@ -848,6 +949,13 @@ static int choice_demo() {
 
     if (request_idx != -1) {
         memcpy(&demo->current, &demo->request[request_idx], sizeof(mDemo_Request_c));
+#ifdef TARGET_PC
+        /* Run the chosen request's setup as its own player, even if the last
+         * queued request came from the other player. */
+        mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        mPlib_set_demo_talker_by_slot(demo->current.pc_owner_slot);
+        mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+#endif
         (*default_set_func[demo->current.type])();
 
         if (demo->current.proc != NULL) {
@@ -962,6 +1070,11 @@ static void main_proc() {
     if (demo->state == mDemo_STATE_STOP && demo->request_save.type != mDemo_TYPE_NONE &&
         demo->request_save.type != demo->current.type) {
         memcpy(&demo->current, &demo->request_save, sizeof(mDemo_Request_c));
+#ifdef TARGET_PC
+        mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        mPlib_set_demo_talker_by_slot(demo->current.pc_owner_slot);
+        mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+#endif
         demo->state = mDemo_STATE_RUN;
         change_camera(CAMERA2_PROCESS_NUM);
     }
@@ -981,12 +1094,75 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             mDemo_Request_c* req = &demo->request[request_num];
 
             if (type == mDemo_TYPE_TALK) {
-                weight = weight_of_talk_position(actor);
+#ifdef TARGET_PC
+                /* Generic NPC talk does not name a player. Queue whoever is
+                 * actually in front, each with their own pad, even if a talk
+                 * is already running. A stamped owner (signs) keeps the single
+                 * request below. The selected resident still uses the retail
+                 * weight. */
+                if ((mPlib_request_owner() == NULL) && (mPlib_extra_player_count() > 0)) {
+                    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+                    int count = 1 + mPlib_extra_player_count();
+                    int queued = 0;
+                    int no_a_gate = s_request_no_a_gate;
+                    int i;
 
-                if (weight < 0.0f) {
-                    return FALSE;
+                    s_request_no_a_gate = FALSE;
+
+                    for (i = 0; i < count; i++) {
+                        PLAYER_ACTOR* player =
+                            (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+                        f32 player_weight;
+                        int slot;
+
+                        if (player == NULL) {
+                            continue;
+                        }
+
+                        player_weight = (i == 0) ? weight_of_talk_position(actor)
+                                                 : weight_of_talk_position_for_player(actor, player);
+
+                        if (player_weight < 0.0f) {
+                            continue;
+                        }
+
+                        slot = mPlib_player_slot_of(player);
+
+                        if (slot < 0) {
+                            slot = (int)Common_Get(player_no);
+                        }
+
+                        /* Remember this player's A here. The chooser runs next
+                         * frame, and a guest demo has overwritten pads[0] by then. */
+                        mDemo_push_talk_request(type, actor, req_proc, player_weight, slot,
+                                                mPlib_pad_for_player(player),
+                                                no_a_gate ||
+                                                    (chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) != FALSE));
+                        queued++;
+                    }
+
+                    return queued != 0;
                 }
-            } else if (type == mDemo_TYPE_SPEAK && mPlib_Check_able_force_speak_label(gamePT, actor) == FALSE) {
+#endif
+                if (((mPlib_request_owner() != NULL) && (mPlib_pad_for_player(mPlib_request_owner()) > 0)) ||
+                    mPlib_demo_talker_is_guest()) {
+                    /* A guest's request was already checked against that player
+                     * by the actor; the host-based weight cannot see them. */
+                    weight = 1.0f;
+                } else {
+                    weight = weight_of_talk_position(actor);
+
+                    if (weight < 0.0f) {
+                        mPlib_clear_request_owner();
+                        return FALSE;
+                    }
+                }
+            } else if (type == mDemo_TYPE_SPEAK &&
+                       ((mPlib_request_owner() == NULL) || (mPlib_pad_for_player(mPlib_request_owner()) <= 0)) &&
+                       mPlib_Check_able_force_speak_label(gamePT, actor) == FALSE) {
+                /* The label lock lives on the selected resident. A guest sign
+                 * while that resident is already talking must still queue. */
+                mPlib_clear_request_owner();
                 return FALSE;
             }
 
@@ -996,6 +1172,35 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             req->actor = actor;
             req->proc = req_proc;
             req->talk_weight = weight;
+#ifdef TARGET_PC
+            {
+                PLAYER_ACTOR* owner = mPlib_request_owner();
+                int slot;
+
+                if (owner == NULL) {
+                    owner = mPlib_demo_talker();
+                }
+
+                req->pc_no_a_gate = s_request_no_a_gate;
+                s_request_no_a_gate = FALSE;
+
+                if (owner != NULL) {
+                    slot = mPlib_player_slot_of(owner);
+
+                    if (slot < 0) {
+                        slot = (int)Common_Get(player_no);
+                    }
+
+                    req->pc_owner_slot = slot;
+                    req->pc_owner_pad = mPlib_pad_for_player(owner);
+                } else {
+                    req->pc_owner_slot = (int)Common_Get(player_no);
+                    req->pc_owner_pad = 0;
+                }
+
+                mPlib_clear_request_owner();
+            }
+#endif
 
             demo->request_num++;
         }
@@ -1006,10 +1211,275 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
     return FALSE;
 }
 
+#ifdef TARGET_PC
+/* One extra conversation while the primary talk or sign demo is running.
+ * It has its own message window and does not take the demo talker. */
+typedef struct {
+    int active;
+    int closing;
+    int close_next;
+    int needs_npc_setup;
+    int msg_started;
+    int need_talk;
+    int need_end;
+    int type;
+    int slot;
+    int pad;
+    int msg_no;
+    int display_name;
+    int turn;
+    rgba_t color;
+    ACTOR* actor;
+} mDemo_Side_c;
+
+static mDemo_Side_c s_side;
+
+static void mDemo_side_reset(void) {
+    memset(&s_side, 0, sizeof(s_side));
+}
+
+static void mDemo_side_begin_frame(void) {
+    if (s_side.close_next) {
+        mDemo_side_reset();
+        return;
+    }
+
+    if (s_side.closing) {
+        s_side.close_next = TRUE;
+    }
+}
+
+extern int mDemo_player_in_talk(int slot) {
+    if (slot < 0) {
+        return FALSE;
+    }
+
+    if ((mDemo_Check_talk_type() != FALSE) && (demo->current.pc_owner_slot == slot)) {
+        return TRUE;
+    }
+
+    if ((s_side.active != FALSE) && (s_side.slot == slot)) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+extern int mDemo_side_is_actor(ACTOR* actor) {
+    return (s_side.active != FALSE) && (actor != NULL) && (actor == s_side.actor);
+}
+
+extern ACTOR* mDemo_side_player(void) {
+    if ((s_side.active == FALSE) || (s_side.slot < 0)) {
+        return NULL;
+    }
+
+    return (ACTOR*)get_player_actor_by_index((GAME_PLAY*)gamePT, s_side.slot);
+}
+
+extern int mDemo_side_is_player(ACTOR* actor) {
+    ACTOR* player = mDemo_side_player();
+
+    return (player != NULL) && (actor == player);
+}
+
+extern int mDemo_side_closing(void) {
+    return s_side.closing;
+}
+
+extern int mDemo_side_needs_setup(ACTOR* actor) {
+    return (s_side.needs_npc_setup != FALSE) && (mDemo_side_is_actor(actor) != FALSE);
+}
+
+extern void mDemo_side_clear_needs_setup(void) {
+    s_side.needs_npc_setup = FALSE;
+}
+
+/* Run the request proc as the other player, into the side message, then put
+ * the primary quest and talk data back. */
+static void mDemo_side_apply_proc(GAME_PLAY* play, mDemo_Request_c* request) {
+    mDemo_talk_data_c saved_talk = demo->data.talk;
+    aQMgr_talk_snap_c snap;
+    int saved_camera = demo->camera_type;
+    int saved_speaker_able = demo->speaker_able;
+    int saved_listen_able = demo->listen_able;
+    ACTOR* saved_speaker = demo->speaker_actor;
+    ACTOR* saved_listen = demo->listen_actor;
+
+    demo->data.talk.msg_no = 0;
+    demo->data.talk.turn = (request->type == mDemo_TYPE_TALK);
+    demo->data.talk.display_name = TRUE;
+    demo->data.talk.change_player = TRUE;
+    demo->data.talk.window_color.r = mDemo_WINDOW_COLOR_R;
+    demo->data.talk.window_color.g = mDemo_WINDOW_COLOR_G;
+    demo->data.talk.window_color.b = mDemo_WINDOW_COLOR_B;
+    demo->data.talk.window_color.a = mDemo_WINDOW_COLOR_A;
+
+    mPlib_demo_context_end(play);
+    mPlib_slot_context_begin(play, request->pc_owner_slot, request->pc_owner_pad);
+    mMsg_set_use_window(mMsg_side_window_p());
+    aQMgr_talk_snap_save(&snap);
+
+    if (request->proc != NULL) {
+        (*request->proc)(request->actor);
+    }
+
+    s_side.msg_no = demo->data.talk.msg_no;
+    s_side.display_name = demo->data.talk.display_name;
+    s_side.turn = demo->data.talk.turn;
+    s_side.color = demo->data.talk.window_color;
+
+    aQMgr_talk_snap_restore(&snap);
+    mMsg_set_use_window(NULL);
+    mPlib_slot_context_end(play);
+    mPlib_demo_context_begin(play);
+
+    demo->data.talk = saved_talk;
+    demo->camera_type = saved_camera;
+    demo->speaker_able = saved_speaker_able;
+    demo->listen_able = saved_listen_able;
+    demo->speaker_actor = saved_speaker;
+    demo->listen_actor = saved_listen;
+}
+
+static void mDemo_side_try(GAME_PLAY* play) {
+    f32 best_weight = -1.0f;
+    int best = -1;
+    int i;
+
+    if ((s_side.active != FALSE) || (s_side.closing != FALSE) || (s_side.close_next != FALSE)) {
+        return;
+    }
+
+    if ((demo->state == mDemo_STATE_WAIT) || (mDemo_Check_talk_type() == FALSE)) {
+        return;
+    }
+
+    for (i = 0; i < demo->request_num; i++) {
+        mDemo_Request_c* request = &demo->request[i];
+        int pressed;
+
+        if ((request->type != mDemo_TYPE_TALK) && (request->type != mDemo_TYPE_SPEAK)) {
+            continue;
+        }
+
+        if ((request->actor == NULL) || (request->actor == demo->current.actor)) {
+            continue;
+        }
+
+        if (request->pc_owner_slot == demo->current.pc_owner_slot) {
+            continue;
+        }
+
+        /* pads[0] is the guest's pad while their demo context is up, so the
+         * host's A is only the flag stored when the request was queued. */
+        pressed = (request->pc_no_a_gate != FALSE);
+
+        if (pressed == FALSE) {
+            continue;
+        }
+
+        if (request->talk_weight > best_weight) {
+            best = i;
+            best_weight = request->talk_weight;
+        }
+    }
+
+    if (best < 0) {
+        return;
+    }
+
+    mDemo_side_apply_proc(play, &demo->request[best]);
+
+    if (s_side.msg_no == 0) {
+        return;
+    }
+
+    s_side.active = TRUE;
+    s_side.type = demo->request[best].type;
+    s_side.slot = demo->request[best].pc_owner_slot;
+    s_side.pad = demo->request[best].pc_owner_pad;
+    s_side.actor = demo->request[best].actor;
+    s_side.needs_npc_setup = (s_side.actor->part == ACTOR_PART_NPC);
+    s_side.need_talk = TRUE;
+    s_side.msg_started = FALSE;
+}
+
+extern void mDemo_side_sync_player(GAME_PLAY* play) {
+    if (s_side.active == FALSE) {
+        return;
+    }
+
+    if (s_side.need_talk != FALSE) {
+        int started;
+
+        mPlib_slot_context_begin(play, s_side.slot, s_side.pad);
+        started = mPlib_request_main_talk_type1((GAME*)play, s_side.actor, s_side.turn, FALSE);
+        mPlib_slot_context_end(play);
+
+        if (started != FALSE) {
+            s_side.need_talk = FALSE;
+        }
+    }
+
+    if (s_side.need_end != FALSE) {
+        mPlib_slot_context_begin(play, s_side.slot, s_side.pad);
+        mPlib_request_main_talk_end_type1((GAME*)play, FALSE, FALSE);
+        mPlib_slot_context_end(play);
+        s_side.need_end = FALSE;
+    }
+}
+
+extern void mDemo_side_msg(GAME_PLAY* play) {
+    mMsg_Window_c* side;
+
+    if (s_side.active == FALSE) {
+        return;
+    }
+
+    side = mMsg_side_window_p();
+    mPlib_slot_context_begin(play, s_side.slot, s_side.pad);
+    mMsg_set_use_window(side);
+
+    if (s_side.msg_started == FALSE) {
+        if (mMsg_request_main_appear(side, s_side.actor, s_side.display_name, &s_side.color, s_side.msg_no,
+                                     mDemo_MSG_PRIORITY) != FALSE) {
+            s_side.msg_started = TRUE;
+        }
+    }
+
+    /* A greeting ends by asking the quest for the next line. This talk does
+     * not run that quest, so a page with no next line closes on A. */
+    if (mMsg_Check_MainNormalContinue(side) != FALSE) {
+        int next = side->continue_msg_no;
+
+        if ((next < 0) || (next >= MSG_MAX)) {
+            mMsg_Set_CancelNormalContinue(side);
+        }
+    }
+
+    mMsg_Main((GAME*)play);
+
+    if ((s_side.msg_started != FALSE) && (mMsg_Check_main_hide(side) != FALSE) && (s_side.closing == FALSE)) {
+        s_side.closing = TRUE;
+        s_side.need_end = TRUE;
+    }
+
+    mMsg_set_use_window(NULL);
+    mPlib_slot_context_end(play);
+}
+#endif
+
 extern int mDemo_Check(int type, ACTOR* actor) {
     if (type == demo->current.type && actor == demo->current.actor) {
         return TRUE;
     }
+
+#ifdef TARGET_PC
+    if ((s_side.active != FALSE) && (type == s_side.type) && (actor == s_side.actor)) {
+        return TRUE;
+    }
+#endif
 
     return FALSE;
 }
@@ -1033,11 +1503,27 @@ extern int mDemo_End(ACTOR* actor) {
         return TRUE;
     }
 
+#ifdef TARGET_PC
+    if ((s_side.active != FALSE) && (actor == s_side.actor)) {
+        if (s_side.closing == FALSE) {
+            s_side.closing = TRUE;
+            s_side.need_end = TRUE;
+        }
+        return TRUE;
+    }
+#endif
+
     return FALSE;
 }
 
 extern void mDemo_Main(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    mDemo_side_begin_frame();
+#endif
     main_proc();
+#ifdef TARGET_PC
+    mDemo_side_try(play);
+#endif
 }
 
 extern void mDemo_Init(GAME_PLAY* play) {
@@ -1048,6 +1534,9 @@ extern void mDemo_Init(GAME_PLAY* play) {
     mDemo_Init_OrderValue();
     mDemo_Clear_change_player_destiny();
     init_demo();
+#ifdef TARGET_PC
+    mDemo_side_reset();
+#endif
 }
 
 extern int mDemo_CheckDemo() {
