@@ -268,7 +268,8 @@ static void mEE_editEndChk_ovl_init(Submenu* submenu) {
     menu_info->next_proc_status = mSM_OVL_PROC_PLAY;
 }
 
-static mEE_Ovl_c ee_ovl_data;
+static mEE_Ovl_c ee_ovl_data_slot[mSM_SLOT_NUM];
+#define ee_ovl_data ee_ovl_data_slot[mSM_cur_slot()]
 
 extern void mEE_editEndChk_ovl_construct(Submenu* submenu) {
     if (submenu->overlay->editEndChk_ovl == NULL) {

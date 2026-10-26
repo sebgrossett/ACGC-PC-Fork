@@ -7,7 +7,8 @@
 #include "m_tag_ovl.h"
 #include "sys_matrix.h"
 
-static mBD_Ovl_c board_ovl_data;
+static mBD_Ovl_c board_ovl_data_slot[mSM_SLOT_NUM];
+#define board_ovl_data board_ovl_data_slot[mSM_cur_slot()]
 
 extern Gfx lat_letter01_model[];
 extern Gfx lat_letter02_model[];

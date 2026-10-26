@@ -6,7 +6,8 @@
 #include "m_font.h"
 #include "sys_matrix.h"
 
-static mAD_Ovl_c adrs_ovl_data;
+static mAD_Ovl_c adrs_ovl_data_slot[mSM_SLOT_NUM];
+#define adrs_ovl_data adrs_ovl_data_slot[mSM_cur_slot()]
 
 static Vtx lat_atena_v[48] = {
     // Page 0

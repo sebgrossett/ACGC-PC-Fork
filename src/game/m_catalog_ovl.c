@@ -468,8 +468,8 @@ static void mCL_item_data_set(Submenu* submenu, int page_no) {
 
 static void mCL_item_move(mCL_Ovl_c* catalog_ovl) {
     mCL_Item_c* item = catalog_ovl->item_data;
-    static float item_accum = 0.0f;
-    int ticks = graph_dt_60hz_ticks(gamePT, &item_accum);
+    static float item_accum[mSM_SLOT_NUM];
+    int ticks = graph_dt_60hz_ticks(gamePT, &item_accum[mSM_cur_slot()]);
     int i;
 
     for (i = 0; i < mCL_ITEM_DATA_NUM; i++) {
@@ -531,7 +531,8 @@ static void mCL_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     submenu->overlay->move_Move_proc(submenu, menu_info);
 }
 
-static f32 mCL_page_accum = 0.0f;
+static f32 mCL_page_accum_slot[mSM_SLOT_NUM];
+#define mCL_page_accum mCL_page_accum_slot[mSM_cur_slot()]
 
 static f32 mCL_page_pos_y(f32 timer) {
     return 100.0f * sinf_table(timer * 0.078539819f);

@@ -12,11 +12,28 @@
 #include "m_museum_display.h"
 #endif
 
-static mSM_dlftbl_c SubmenuArea_dlftbl[mSM_DLF_NUM] = { { NULL, 0, 0, 0, 0, 0, "submenu_ovl" },
-                                                        { NULL, 0, 0, 0, 0, 0, "player_actor" } };
+static int s_submenu_cur_slot = 0;
 
-static mSM_dlftbl_c* SubmenuArea_visit = NULL;
+extern int mSM_cur_slot(void) {
+    return s_submenu_cur_slot;
+}
+
+extern void mSM_set_cur_slot(int slot) {
+    s_submenu_cur_slot = (slot >= 0 && slot < mSM_SLOT_NUM) ? slot : 0;
+}
+
+#define mSM_DLFTBL_INIT \
+    { { NULL, 0, 0, 0, 0, 0, "submenu_ovl" }, { NULL, 0, 0, 0, 0, 0, "player_actor" } }
+
+/* Area link state is per menu slot; the primary menu is slot 0. */
+static mSM_dlftbl_c SubmenuArea_dlftbl_slot[mSM_SLOT_NUM][mSM_DLF_NUM] = {
+    mSM_DLFTBL_INIT, mSM_DLFTBL_INIT, mSM_DLFTBL_INIT, mSM_DLFTBL_INIT
+};
+static mSM_dlftbl_c* SubmenuArea_visit_slot[mSM_SLOT_NUM];
 static void* SubmenuArea_allocp = NULL;
+
+#define SubmenuArea_dlftbl SubmenuArea_dlftbl_slot[s_submenu_cur_slot]
+#define SubmenuArea_visit SubmenuArea_visit_slot[s_submenu_cur_slot]
 
 extern int mSM_COLLECT_INSECT_GET(int idx) {
     u32 ftr_idx = (0x2F2 << 2) + (idx << 2);
@@ -148,16 +165,29 @@ extern void* mSM_ovlptr_dllcnv(void* proc, Submenu* submenu, int dlf_idx) {
 }
 
 extern void mSM_submenu_ovlptr_init(GAME_PLAY* play) {
+    int i;
+
     SubmenuArea_allocp = (void*)1;
-    SubmenuArea_visit = NULL;
+    s_submenu_cur_slot = 0;
+    for (i = 0; i < mSM_SLOT_NUM; i++) {
+        SubmenuArea_visit_slot[i] = NULL;
+    }
 }
 
 extern void mSM_submenu_ovlptr_cleanup(Submenu* submenu) {
-    if (SubmenuArea_visit != NULL) {
-        SubmenuArea_DoUnlink(SubmenuArea_visit, submenu);
-        SubmenuArea_visit = NULL;
+    int i;
+
+    for (i = 0; i < mSM_SLOT_NUM; i++) {
+        mSM_dlftbl_c* visit = SubmenuArea_visit_slot[i];
+
+        if (visit != NULL) {
+            s_submenu_cur_slot = i;
+            SubmenuArea_DoUnlink(visit, submenu);
+            SubmenuArea_visit_slot[i] = NULL;
+        }
     }
 
+    s_submenu_cur_slot = 0;
     SubmenuArea_allocp = NULL;
 }
 
@@ -368,8 +398,8 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
 }
 
 static void mSM_move_Wait(Submenu* submenu) {
-    static float wait_accum = 0.0f;
-    int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum);
+    static float wait_accum[mSM_SLOT_NUM];
+    int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum[s_submenu_cur_slot]);
 
     if (submenu->wait_timer != 0) {
         submenu->wait_timer -= ticks;

@@ -45,7 +45,8 @@
 #include "m_hand_ovl.h"
 #include "m_haniwaPortrait_ovl.h"
 
-static Submenu_Overlay_c ovl_base;
+static Submenu_Overlay_c ovl_base_slot[mSM_SLOT_NUM];
+#define ovl_base ovl_base_slot[mSM_cur_slot()]
 
 static f32 mSM_dt_triangle(int period) {
     f32 frame_per = ((f32)graph_dt_frame_phase(gamePT, period) / (f32)period) * 2.0f;
@@ -2122,7 +2123,8 @@ typedef struct submenu_ovl_start_data_s {
     f32 speed_y;
 } mSM_ovl_start_data_c;
 
-static f32 mSM_move_accum[mSM_OVL_NUM];
+static f32 mSM_move_accum_slot[mSM_SLOT_NUM][mSM_OVL_NUM];
+#define mSM_move_accum mSM_move_accum_slot[mSM_cur_slot()]
 
 static void mSM_set_new_start_data(Submenu* submenu) {
     // clang-format off
@@ -2215,8 +2217,8 @@ static void mSM_make_trigger_data(Submenu* submenu) {
     }
 
     if (trigger == control->last_trigger) {
-        static f32 repeat_accum = 0.0f;
-        int ticks = graph_dt_60hz_ticks(gamePT, &repeat_accum);
+        static f32 repeat_accum[mSM_SLOT_NUM];
+        int ticks = graph_dt_60hz_ticks(gamePT, &repeat_accum[mSM_cur_slot()]);
         if (control->repeat_timer > 0) {
             control->repeat_timer -= ticks;
             if (control->repeat_timer < 0) control->repeat_timer = 0;

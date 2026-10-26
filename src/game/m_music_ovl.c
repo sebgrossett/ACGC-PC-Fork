@@ -8,7 +8,8 @@
 #include "m_msg.h"
 #include "sys_matrix.h"
 
-static mMU_Ovl_c music_ovl_data;
+static mMU_Ovl_c music_ovl_data_slot[mSM_SLOT_NUM];
+#define music_ovl_data music_ovl_data_slot[mSM_cur_slot()]
 
 static void mMU_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
   (*submenu->overlay->move_Move_proc)(submenu, menu_info);

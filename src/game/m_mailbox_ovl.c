@@ -7,7 +7,8 @@
 #include "m_inventory_ovl.h"
 #include "m_hand_ovl.h"
 
-static mMB_Ovl_c mail_ovl_data;
+static mMB_Ovl_c mail_ovl_data_slot[mSM_SLOT_NUM];
+#define mail_ovl_data mail_ovl_data_slot[mSM_cur_slot()]
 
 static int mMB_get_last_mail_idx(void) {
     Mail_c* mail = &Common_Get(now_home)->mailbox[HOME_MAILBOX_SIZE];

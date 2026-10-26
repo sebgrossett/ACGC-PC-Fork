@@ -6,7 +6,8 @@
 extern cKF_Skeleton_R_c cKF_bs_r_hnw;
 extern cKF_Animation_R_c cKF_ba_r_hnw_move;
 
-static mHP_Ovl_c hp_ovl_data;
+static mHP_Ovl_c hp_ovl_data_slot[mSM_SLOT_NUM];
+#define hp_ovl_data hp_ovl_data_slot[mSM_cur_slot()]
 
 static void mHP_haniwaPortrait_shape_init(Submenu* submenu) {
   mHP_Ovl_c* haniwaPortrait_ovl = submenu->overlay->hanwiaPortrait_ovl;

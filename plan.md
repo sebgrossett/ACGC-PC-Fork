@@ -340,6 +340,28 @@ Checkpoint 2, per-player session menus and join/leave (built 2026-10-26, playtes
 - Yes calls `return_to_title`: clears `g_pc_paused`, sets `g_pc_pause_input_drain`, closes guest session menus, and for a play scene sets `fb_wipe_type = WIPE_TYPE_FADE_BLACK` and `fb_fade_type = FADE_TYPE_OUT_RETURN_TITLE`, which the existing `Game_play_fbdemo` path sends to trademark -> title. A non-play scene switches to trademark directly. No save is written; the title's save reload discards the session.
 - Playtest: single player, co-op without P2, and co-op with P2; confirm Yes returns to title, unsaved furniture/mail changes revert, and guest session menus never show the entry.
 
+**Simultaneous submenus** (branch `feature/simultaneous-menus` off `master`, approved 2026-10-26). Phase 4. Two or more players have their own Start/Y inventory or map open at once, each drawn in the opener's view, without freezing each other.
+
+Decisions (2026-10-26):
+- In co-op with guests present, P1's own menu stops freezing the world and works like a guest's. Single player keeps the retail freeze.
+- Checkpoint 1 is Start/Y inventory and map only. Actor-opened menus (mailbox, boards, shops, NPC give/sell, music board) stay on the primary `play->submenu`, one at a time.
+
+Design (mirrors guest NPC talk: primary plus side slots, owner stamped at open, context swapped around that slot's move/draw, closing one never resets the others):
+- Slot = Controls pad (0-3), `mSM_SLOT_NUM` 4. Slot 0 is `play->submenu`. Pads 1-3 get a side `Submenu` copied into `play->submenu` for their own move/draw and copied back, with `item_p` re-pointed at the copy's `items[0]` (it points into its own struct).
+- Overlay state is all static and single-instance, so it is per slot: `ovl_base`, every `*_ovl_data`, `SubmenuArea_dlftbl`/`SubmenuArea_visit`, and the tick accumulators. `graph_dt_60hz_ticks` adds `dt` per call, so two open menus sharing one accumulator would each run at double speed.
+- `mSM_cur_slot()` / `mSM_set_cur_slot()` (`m_submenu.c`) pick the slot. Overlay statics are `X_slot[mSM_SLOT_NUM]` behind `#define X X_slot[mSM_cur_slot()]`, so the overlay code itself is unchanged.
+
+Steps:
+1. Per-slot overlay data and area link state (built 2026-10-26, MINGW32 clean, committed). The slot is always 0, so single player is unchanged by construction. Per-slot: `ovl_base`, 26 `*_ovl_data` statics, `SubmenuArea_dlftbl`/`visit`, and the accumulators in `m_submenu.c`, `m_submenu_ovl.c`, tag, mscore, inventory, cporiginal, cpmail and catalog. Overlays that already `zelda_malloc` their data (map, catalog, calendar, gba, needlework) follow `ovl_base`. Not made per slot (out of scope): `mLE_md_name`, `mLE_npc_end_word_edit`, `gb_ovl_change_flg`, the `m_map_ovl.c` model-pointer caches.
+2. Side-slot storage and the copy-in/copy-out helper, with the `item_p` fix.
+3. Route a guest's (and, in co-op, P1's) Start/Y into that player's own slot; fix `mPlib_able_submenu_type1` and `start_refuse`, which check host state.
+4. Run each slot's move/draw in its opener's context, one menu per slot per frame. Check `mSM_move_End`'s `mSc_dmacopy_all_exchange_bank`: one menu closing may reload object banks another open menu still uses.
+5. Per-slot wait list and a live world while any menu is open (P1's menu included, co-op only).
+6. Draw each menu in its opener's view (`play_set_view_menu` already does this); keep close paths independent.
+7. Update the `pc_session_menu.c` gate, which blocks while any game menu is open.
+
+Verification: MINGW32 `./build_pc.sh`; single player inventory, mailbox and board unchanged; P1 and P2 inventories open at once, each editing their own items; one closes while the other stays; resize with the hand on the item; a menu open during the other player's NPC talk; 3-4 players once the save has four residents.
+
 Open after the 2026-10-25 playtest of `feature/per-player-hud`. Paths are in section 4. Do not re-search them.
 - Mailbox and notice board in co-op: done. Both panels draw in the opener's half (band `l=0 r=160 top=60 bottom=180`), colours/textures match single player, and the hand plus the player model sit on the panel at any window size. Two fixes carried it: `load_player` no longer steals `SubmenuArea_visit` while a menu is open, and `mSM_change_view` now maps 3D viewport centres through the same aspect squeeze the 2D panel gets. Details in section 4, "Split menu catch-up". Do not retry alpha, blend, or cull.
 - Player 2 indoors: Player 1 entering their own house removes Player 2's half. Required: Player 2 keeps their outdoor state while Player 1 is inside. Guest spawn is `SCENE_FG` only, from `Actor_info_ct` (`src/game/m_actor.c`). The indoor scene is not `SCENE_FG`, so that actor is destroyed on the way in and created again on the way out. Player 2's camera during the door zoom is already correct. Another resident's house used to go black and stop answering. `play_split_live` keeps a wipe on one list. Not retested since Player 1's own house started working. **Deferred: needs dual/multi-world instancing** (2026-10-25).

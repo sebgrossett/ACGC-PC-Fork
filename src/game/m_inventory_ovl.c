@@ -65,7 +65,8 @@ enum {
     mIV_ITEM_KIND_NUM
 };
 
-static mIV_Ovl_c inv_ovl_data;
+static mIV_Ovl_c inv_ovl_data_slot[mSM_SLOT_NUM];
+#define inv_ovl_data inv_ovl_data_slot[mSM_cur_slot()]
 
 // clang-format off
 #define F(n) aGYO_TYPE_##n
@@ -539,8 +540,8 @@ static void mIV_pl_shape_move(Submenu* submenu) {
     }
 
     if (seg->player_anime_timer > 0) {
-        static float player_anime_accum = 0.0f;
-        int ticks = graph_dt_60hz_ticks(gamePT, &player_anime_accum);
+        static float player_anime_accum[mSM_SLOT_NUM];
+        int ticks = graph_dt_60hz_ticks(gamePT, &player_anime_accum[mSM_cur_slot()]);
         seg->player_anime_timer -= ticks;
         if (seg->player_anime_timer < 0) {
             seg->player_anime_timer = 0;
@@ -1228,7 +1229,8 @@ static void mIV_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     submenu->overlay->move_Move_proc(submenu, menu_info);
 }
 
-static f32 mIV_page_move_accum = 0.0f;
+static f32 mIV_page_move_accum_slot[mSM_SLOT_NUM];
+#define mIV_page_move_accum mIV_page_move_accum_slot[mSM_cur_slot()]
 
 static f32 mIV_page_pos_y(f32 timer) {
     return 100.0f * sinf_table(timer * 0.078539819f);

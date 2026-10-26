@@ -2,7 +2,8 @@
 
 #include "m_submenu_ovl.h"
 
-static mCE_Ovl_c cpedit_ovl_data;
+static mCE_Ovl_c cpedit_ovl_data_slot[mSM_SLOT_NUM];
+#define cpedit_ovl_data cpedit_ovl_data_slot[mSM_cur_slot()]
 
 static void mCE_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     submenu->overlay->move_Move_proc(submenu, menu_info);

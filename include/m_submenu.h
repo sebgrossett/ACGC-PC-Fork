@@ -14,6 +14,13 @@ extern "C" {
 
 typedef struct submenu_s Submenu;
 
+/* Menu slots: one per Controls row. Slot 0 is the primary `play->submenu`.
+ * Overlay statics are arrays indexed by the current slot, so the slot must be
+ * set (mSM_set_cur_slot) around any move/draw of a non-primary menu. */
+#define mSM_SLOT_NUM 4
+extern int mSM_cur_slot(void);
+extern void mSM_set_cur_slot(int slot);
+
 #define mSM_MAP_BUTTON BUTTON_X
 #define mSM_INV_BUTTON_0 BUTTON_START
 #define mSM_INV_BUTTON_1 BUTTON_Y

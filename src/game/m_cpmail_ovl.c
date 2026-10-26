@@ -13,7 +13,8 @@
 #include "m_common_data.h"
 #include "m_malloc.h"
 
-static mCM_Ovl_c cpmail_ovl_data;
+static mCM_Ovl_c cpmail_ovl_data_slot[mSM_SLOT_NUM];
+#define cpmail_ovl_data cpmail_ovl_data_slot[mSM_cur_slot()]
 
 typedef struct {
     Gfx* tag_gfx;
@@ -71,7 +72,8 @@ static void mCM_move_Move(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     submenu->overlay->move_Move_proc(submenu, menu_info);
 }
 
-static f32 mCM_page_move_accum = 0.0f;
+static f32 mCM_page_move_accum_slot[mSM_SLOT_NUM];
+#define mCM_page_move_accum mCM_page_move_accum_slot[mSM_cur_slot()]
 
 static f32 mCM_page_pos_y(f32 timer) {
     return 100.0f * sinf_table(timer * DEG2RAD(4.5f));

@@ -9,7 +9,8 @@
 #include "m_font.h"
 #include "m_bgm.h"
 
-static mMS_Ovl_c mscore_ovl_data;
+static mMS_Ovl_c mscore_ovl_data_slot[mSM_SLOT_NUM];
+#define mscore_ovl_data mscore_ovl_data_slot[mSM_cur_slot()]
 
 enum {
     mMS_SCALE_IN,
@@ -157,9 +158,9 @@ static void mMS_move_Play(Submenu* submenu, mSM_MenuInfo_c* menu_info) {
     }
 
     if (mscore_ovl->wait_timer > 0) {
-        static float wait_accum = 0.0f;
+        static float wait_accum_slot[mSM_SLOT_NUM];
         int old_timer = mscore_ovl->wait_timer;
-        int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum);
+        int ticks = graph_dt_60hz_ticks(gamePT, &wait_accum_slot[mSM_cur_slot()]);
         mscore_ovl->wait_timer -= ticks;
         if (mscore_ovl->wait_timer < 0) {
             mscore_ovl->wait_timer = 0;

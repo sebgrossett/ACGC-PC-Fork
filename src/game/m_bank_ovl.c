@@ -374,7 +374,8 @@ static void mBN_bank_ovl_init(Submenu* submenu) {
     bank_ovl->cursol = 0;
 }
 
-static mBN_Ovl_c bn_ovl_data;
+static mBN_Ovl_c bn_ovl_data_slot[mSM_SLOT_NUM];
+#define bn_ovl_data bn_ovl_data_slot[mSM_cur_slot()]
 
 extern void mBN_bank_ovl_construct(Submenu* submenu) {
     Submenu_Overlay_c* overlay = submenu->overlay;
