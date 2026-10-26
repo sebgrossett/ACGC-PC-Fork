@@ -1304,6 +1304,7 @@ static Private_c* s_private_by_slot[PLAYER_NUM];
 static int s_pad_by_slot[PLAYER_NUM] = { -1, -1, -1, -1 };
 static int s_guest_slot = -1;
 static PLAYER_ACTOR* s_bound_actor = NULL;
+static PLAYER_ACTOR* s_view_player_actor = NULL;
 
 extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player) {
     int i;
@@ -1478,6 +1479,18 @@ extern void mPlib_bind_player_actor(PLAYER_ACTOR* player) {
 
 extern void mPlib_unbind_player_actor(void) {
     s_bound_actor = NULL;
+}
+
+extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player) {
+    s_view_player_actor = player;
+}
+
+extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
+    if (s_view_player_actor != NULL) {
+        return s_view_player_actor;
+    }
+
+    return get_player_actor_withoutCheck(play);
 }
 
 extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index) {

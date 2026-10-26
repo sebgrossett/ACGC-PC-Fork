@@ -761,6 +761,21 @@ static int play_player_count(void) {
     return 1 + mPlib_extra_player_count();
 }
 
+/* The actor a split view belongs to: view 0 is the selected resident. */
+static PLAYER_ACTOR* play_view_player(GAME_PLAY* play, int index) {
+    PLAYER_ACTOR* player;
+
+    if (index > 0) {
+        player = mPlib_extra_player_at(index - 1);
+
+        if (player != NULL) {
+            return player;
+        }
+    }
+
+    return get_player_actor_withoutCheck(play);
+}
+
 static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int count, xyz_t* eye, xyz_t* center) {
     play_set_view_player(play, index, count);
     if ((eye != NULL) && (center != NULL)) {
@@ -770,7 +785,10 @@ static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int c
     setupFog(play, graph);
     setupViewer(play);
     setupViewMatrix(play, graph, graph);
+    /* Field draw follows the view's own player instead of the selected resident. */
+    mPlib_set_view_player_actor(play_view_player(play, index));
     Actor_info_draw_actor(play, &play->actor_info);
+    mPlib_set_view_player_actor(NULL);
 }
 
 /* Last normal follow offset from the selected resident, per pad (Controls row).

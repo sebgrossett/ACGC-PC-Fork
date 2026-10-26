@@ -1570,6 +1570,71 @@ extern int mFI_GetItemTable(mFI_item_table_c* item_table, xyz_t wpos, char* file
     return mFI_GetItemTable_NoReset(item_table, wpos);
 }
 
+static void mFI_AddViewItemBlock(mFI_item_table_c* item_table, int block_x, int block_z) {
+    if ((item_table->count >= mFM_VISIBLE_BLOCK_NUM) || (mFI_BlockCheck(block_x, block_z) == FALSE)) {
+        return;
+    }
+
+    mFI_SetBlockTable(&item_table->block_info_tbl[item_table->count], block_x, block_z);
+    item_table->count++;
+}
+
+/* Blocks retail would show around one position: the block the position is in
+ * plus the nearest blocks toward the edges the position is near. Mirrors the
+ * choice in mFI_BGDisplayListRefresh, but reads block item data directly, so a
+ * split view can build its own prop table without touching the DMA window or
+ * the selected resident's tables. */
+extern int mFI_GetViewItemTable(mFI_item_table_c* item_table, xyz_t wpos) {
+    u8 where_bitfield = 0;
+    int block_x = 0;
+    int block_z = 0;
+    int i;
+
+    item_table->count = 0;
+
+    if (mFI_Wpos2BlockNum(&block_x, &block_z, wpos) == FALSE) {
+        return FALSE;
+    }
+
+    mFI_WhereisInBlock(&where_bitfield, wpos);
+
+    if (g_fdinfo->block_info[mFI_GetBlockNum(block_x, block_z)].bg_info.bg_id.combination_type != BG_TYPE_292) {
+        mFI_AddViewItemBlock(item_table, block_x, block_z);
+    }
+
+    if ((where_bitfield & 1) != 0) {
+        mFI_AddViewItemBlock(item_table, block_x - 1, block_z);
+    } else if (((where_bitfield >> 2) & 1) != 0) {
+        mFI_AddViewItemBlock(item_table, block_x + 1, block_z);
+    }
+
+    if (((where_bitfield >> 3) & 1) != 0) {
+        mFI_AddViewItemBlock(item_table, block_x, block_z - 1);
+
+        if ((where_bitfield & 1) != 0) {
+            mFI_AddViewItemBlock(item_table, block_x - 1, block_z - 1);
+        } else if (((where_bitfield >> 2) & 1) != 0) {
+            mFI_AddViewItemBlock(item_table, block_x + 1, block_z - 1);
+        }
+    } else if (((where_bitfield >> 5) & 1) != 0) {
+        mFI_AddViewItemBlock(item_table, block_x, block_z + 1);
+
+        if ((where_bitfield & 1) != 0) {
+            mFI_AddViewItemBlock(item_table, block_x - 1, block_z + 1);
+        } else if (((where_bitfield >> 2) & 1) != 0) {
+            mFI_AddViewItemBlock(item_table, block_x + 1, block_z + 1);
+        }
+    }
+
+    for (i = item_table->count; i < mFM_VISIBLE_BLOCK_NUM; i++) {
+        item_table->block_info_tbl[i].block_x = 0xFF;
+        item_table->block_info_tbl[i].block_z = 0xFF;
+        item_table->block_info_tbl[i].items = NULL;
+    }
+
+    return TRUE;
+}
+
 extern int mFI_FGisUpDate() {
     if (mFI_CheckFieldData()) {
         return g_fdinfo->update_fg & 1;

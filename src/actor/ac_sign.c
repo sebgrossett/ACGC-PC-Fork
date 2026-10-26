@@ -182,13 +182,11 @@ static void aSIGN_draw_set(SIGN_ACTOR* sign, aSIGN_draw_c* draw, GAME_PLAY* play
     }
 }
 
-static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
-    xyz_t* camera_center_pos_p = Camera2_getCenterPos_p();
+static void aSIGN_actor_set_draw_tables(SIGN_ACTOR* sign, GAME_PLAY* play, xyz_t pos, aSIGN_draw_c* draw_tbl) {
     int bz_max = mFI_GetBlockZMax();
     int bx_max = mFI_GetBlockXMax();
     int bz0;
     int bx0;
-    xyz_t pos;
     int ut_z;
     int ut_x;
     int t_bz;
@@ -203,22 +201,11 @@ static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
     int j;
     aSIGN_draw_c* draw_p;
 
-    for (i = 0, draw_p = sign->draw; i < 2; i++) {
+    for (i = 0, draw_p = draw_tbl; i < 2; i++) {
         for (j = 0; j < 2; j++) {
             bzero(draw_p->exist_bitfield, sizeof(draw_p->exist_bitfield));
             draw_p++;
         }
-    }
-
-    pos = *camera_center_pos_p;
-    if (mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DOOR) {
-        pos.z -= mFI_UT_WORLDSIZE_Z_F;
-    }
-
-    if (GETREG(NMREG, 4)) {
-        pos.z -= (f32)GETREG(NMREG, 4);
-    } else {
-        pos.z -= 2 * mFI_UT_WORLDSIZE_Z_F;
     }
 
     if (mFI_Wpos2BkandUtNuminBlock(&bx0, &bz0, &ut_x, &ut_z, pos)) {
@@ -240,12 +227,12 @@ static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
 
         bz = t_bz;
         base_ut_z = t_base_ut_z;
-        for (i = 0, draw_p = sign->draw; i < 2; i++) {
+        for (i = 0, draw_p = draw_tbl; i < 2; i++) {
             bx = t_bx;
             base_ut_x = t_base_ut_x;
             for (j = 0; j < 2; j++) {
                 if (bz >= 0 && bz < bz_max && bx >= 0 && bx < bx_max) {
-                    aSIGN_draw_set(sign, draw_p, (GAME_PLAY*)game, bz, bx, base_ut_z, base_ut_x);
+                    aSIGN_draw_set(sign, draw_p, play, bz, bx, base_ut_z, base_ut_x);
                 }
 
                 bx++;
@@ -257,6 +244,22 @@ static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
             base_ut_z -= UT_Z_NUM;
         }
     }
+}
+
+static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
+    xyz_t pos = *Camera2_getCenterPos_p();
+
+    if (mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DOOR) {
+        pos.z -= mFI_UT_WORLDSIZE_Z_F;
+    }
+
+    if (GETREG(NMREG, 4)) {
+        pos.z -= (f32)GETREG(NMREG, 4);
+    } else {
+        pos.z -= 2 * mFI_UT_WORLDSIZE_Z_F;
+    }
+
+    aSIGN_actor_set_draw_tables(sign, (GAME_PLAY*)game, pos, sign->draw);
 }
 
 static int aSIGN_actor_BkandUtNum_formal(int* bz_p, int* bx_p, int* ut_z_p, int* ut_x_p) {
@@ -874,9 +877,13 @@ static void aSIGN_single_all_draw(SIGN_ACTOR* sign, GAME* game) {
 
 static void aSIGN_actor_draw(ACTOR* actorx, GAME* game) {
     static Gfx* mdl[] = { obj_sign_s_model, obj_sign_w_model };
+    /* Split views build their own table around that view's camera centre. */
+    static aSIGN_draw_c view_draw[mFM_VISIBLE_BLOCK_NUM];
 
     GRAPH* graph = game->graph;
     SIGN_ACTOR* sign = (SIGN_ACTOR*)actorx;
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    PLAYER_ACTOR* view_player = mPlib_view_player_actor(play);
     MtxF* mtxf = get_Matrix_now();
     mActor_name_t* fg_p;
     int ut_z;
@@ -891,6 +898,14 @@ static void aSIGN_actor_draw(ACTOR* actorx, GAME* game) {
     _texture_z_light_fog_prim_npc(graph);
 
     draw_p = sign->draw;
+
+    if ((view_player != NULL) && (view_player != get_player_actor_withoutCheck(play))) {
+        xyz_t pos = play->view.center;
+
+        pos.z -= 2 * mFI_UT_WORLDSIZE_Z_F;
+        aSIGN_actor_set_draw_tables(sign, play, pos, view_draw);
+        draw_p = view_draw;
+    }
 
     OPEN_DISP(graph);
     gDPSetTextureAdjustMode(NEXT_POLY_OPA_DISP, G_TA_DOLPHIN);

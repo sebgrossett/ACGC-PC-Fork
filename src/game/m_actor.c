@@ -321,6 +321,48 @@ static void Actor_cull_check(ACTOR* actor) {
     }
 }
 
+#ifdef TARGET_PC
+/* Retail keeps actors around one player. In split the other half still needs
+ * them, so an actor is only deleted when it is far from every active player's
+ * block. Falls back to the field block table when no player is available
+ * (title demo). */
+extern int Actor_is_near_active_player(GAME_PLAY* play, ACTOR* actor, int keep_range) {
+    PLAYER_ACTOR* player;
+    int block_x;
+    int block_z;
+    int count = 1 + mPlib_extra_player_count();
+    int checked = FALSE;
+    int i;
+
+    if (count > 1) {
+        /* A view can see one block past its player, so a guest keeps the
+         * actors around it alive even when the selected resident is far. */
+        keep_range = 1;
+    }
+
+    for (i = 0; i < count; i++) {
+        player = (i == 0) ? get_player_actor_withoutCheck(play) : mPlib_extra_player_at(i - 1);
+
+        if (player == NULL || mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
+            continue;
+        }
+
+        checked = TRUE;
+
+        if (ABS(actor->block_x - block_x) <= keep_range && ABS(actor->block_z - block_z) <= keep_range) {
+            return TRUE;
+        }
+    }
+
+    if (checked == FALSE) {
+        return ABS(actor->block_x - play->block_table.block_x) <= keep_range &&
+               ABS(actor->block_z - play->block_table.block_z) <= keep_range;
+    }
+
+    return FALSE;
+}
+#endif
+
 static void Actor_delete_check(ACTOR* actor, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
@@ -328,13 +370,19 @@ static void Actor_delete_check(ACTOR* actor, GAME* game) {
          (ACTOR_STATE_NO_MOVE_WHILE_CULLED | ACTOR_STATE_NO_DRAW_WHILE_CULLED | ACTOR_STATE_NO_CULL)) == 0) {
         if (actor->npc_id != EMPTY_NO) {
             if (actor->block_x >= 0 && actor->block_z >= 0) {
+                int keep_range = g_mPlib_wade_disabled ? 1 : 0;
+#ifdef TARGET_PC
+                if (Actor_is_near_active_player(play, actor, keep_range) == FALSE) {
+                    Actor_delete(actor);
+                }
+#else
                 int dx = ABS(actor->block_x - play->block_table.block_x);
                 int dz = ABS(actor->block_z - play->block_table.block_z);
-                int keep_range = g_mPlib_wade_disabled ? 1 : 0;
 
                 if (dx > keep_range || dz > keep_range) {
                     Actor_delete(actor);
                 }
+#endif
             }
         }
     }
