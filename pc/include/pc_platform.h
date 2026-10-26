@@ -136,6 +136,12 @@ extern int pc_gx_draw_call_count;
 
 /* --- Audio --- */
 extern int pc_save_loaded;
+/* Write the current save to the GCI file (co-op join/leave, reset codes). */
+int  pc_save_commit(void);
+/* Which Controls row owns the keyboard / a given SDL controller. -1 when
+ * nobody does. Used to route the per-player session menus. */
+int  pc_pad_keyboard_row(void);
+int  pc_pad_row_for_instance(SDL_JoystickID id);
 int  pc_audio_get_buffer_fill(void);
 int  pc_audio_is_active(void);
 void pc_audio_set_paused(int paused);

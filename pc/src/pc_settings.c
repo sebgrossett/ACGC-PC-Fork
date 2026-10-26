@@ -29,6 +29,8 @@ PCSettings g_pc_settings = {
 };
 
 int g_pc_coop_session = 0;
+int g_pc_coop_joined[PC_PLAYER_COUNT] = { 0, 0, 0, 0 };
+int g_pc_coop_guest_slot[PC_PLAYER_COUNT] = { -1, -1, -1, -1 };
 
 static const char* SETTINGS_FILE = "settings.ini";
 

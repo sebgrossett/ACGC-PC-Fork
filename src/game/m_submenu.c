@@ -215,9 +215,7 @@ extern void mSM_open_submenu_new2(Submenu* submenu, int type, int arg0, int arg1
     submenu->param3 = arg3;
 }
 
-static void mSM_Reset_player_btn_type1(GAME_PLAY* play) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-
+static void mSM_Reset_player_btn(PLAYER_ACTOR* player) {
     if (player != NULL) {
         player->a_btn_pressed = FALSE;
         player->a_btn_triggers_submenu = TRUE;
@@ -310,14 +308,30 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
 
         mSM_Reset_player_btn_type2(play);
     } else {
-        PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+        int count = 1 + mPlib_extra_player_count();
 
-        if (player != NULL && player->a_btn_pressed == TRUE && Common_Get(reset_flag) == FALSE &&
-            submenu->start_refuse == FALSE && submenu->start_refuse_timer == 0 &&
-            mPlib_able_submenu_type1((GAME*)play)) {
-            s16 y_dir = player->actor_class.shape_info.rotation.y;
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* player =
+                (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
+            int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(player));
+            s16 y_dir;
             int dir;
+            int opened = FALSE;
 
+            if ((player == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
+                continue;
+            }
+
+            if ((player->a_btn_pressed == FALSE) && (chkTrigger_pad(pad, BUTTON_A) == FALSE)) {
+                continue;
+            }
+
+            if ((Common_Get(reset_flag) != FALSE) || (submenu->start_refuse != FALSE) ||
+                (submenu->start_refuse_timer != 0) || (mPlib_able_submenu_type1((GAME*)play) == FALSE)) {
+                continue;
+            }
+
+            y_dir = player->actor_class.shape_info.rotation.y;
             y_dir -= -0x8000;
             dir = ABS(y_dir);
 
@@ -325,15 +339,23 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
                 switch (player->item_in_front) {
                     case MESSAGE_BOARD1:
                     case MESSAGE_BOARD0:
+                        mPlib_set_menu_opener(player, pad, mPlib_player_slot_of(player));
                         mSM_open_submenu(submenu, mSM_OVL_NOTICE, 0, 0);
-                        mSM_Reset_player_btn_type1(play);
+                        mSM_Reset_player_btn(player);
+                        opened = TRUE;
                         break;
                     case MAP_BOARD1:
                     case MAP_BOARD0:
+                        mPlib_set_menu_opener(player, pad, mPlib_player_slot_of(player));
                         mSM_open_submenu(submenu, mSM_OVL_MAP, 0, 0);
-                        mSM_Reset_player_btn_type1(play);
+                        mSM_Reset_player_btn(player);
+                        opened = TRUE;
                         break;
                 }
+            }
+
+            if (opened != FALSE) {
+                break;
             }
         }
     }

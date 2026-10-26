@@ -38,6 +38,14 @@ extern PCSettings g_pc_settings;
 /* Session mode chosen on the title screen. 0 = single player, 1 = co-op.
  * Not persisted: the title always sets it before a session starts. */
 extern int g_pc_coop_session;
+/* Session-only membership per Controls row: 0 = that row has left or was not
+ * configured when Co-op started. A joined row respawns on the next outdoor
+ * scene load; a row that left does not come back until it presses Start. */
+extern int g_pc_coop_joined[PC_PLAYER_COUNT];
+/* Session-only resident save slot controlled by each Controls row. -1 when
+ * that row has no resident. Kept across scene reloads so a guest keeps their
+ * own resident even when another guest has left. */
+extern int g_pc_coop_guest_slot[PC_PLAYER_COUNT];
 
 void pc_settings_load(void);
 void pc_settings_save(void);

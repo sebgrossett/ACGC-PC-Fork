@@ -199,6 +199,68 @@ static void sample_pad(SDL_GameController* controller, u16* buttons,
     *triggerRight = pad_trigger_value(controller, pb->r);
 }
 
+/* Controls row that owns the keyboard, matching PADRead's kb_taken rule. */
+int pc_pad_keyboard_row(void) {
+    int player;
+
+    for (player = 0; player < PC_PLAYER_COUNT; player++) {
+        int mode = player_mode(player);
+
+        if (mode == PC_PLAYER_INPUT_KEYBOARD || mode == PC_PLAYER_INPUT_KEY_AND_PAD) {
+            return player;
+        }
+    }
+
+    return -1;
+}
+
+/* Controls row whose device is this SDL controller. Mirrors PADRead's
+ * kb_taken/pad_taken ownership, so a shared controller maps to one row only. */
+int pc_pad_row_for_instance(SDL_JoystickID id) {
+    int pad_taken[PC_PLAYER_INPUT_PAD_COUNT] = { 0, 0, 0, 0 };
+    int kb_taken = 0;
+    int player;
+
+    for (player = 0; player < PC_PLAYER_COUNT; player++) {
+        int mode = player_mode(player);
+        int use_kb = 0;
+        int pad_index = -1;
+
+        if (mode == PC_PLAYER_INPUT_NONE) continue;
+
+        if (mode == PC_PLAYER_INPUT_KEYBOARD || mode == PC_PLAYER_INPUT_KEY_AND_PAD) {
+            if (!kb_taken) {
+                use_kb = 1;
+                kb_taken = 1;
+            }
+        }
+
+        if (mode == PC_PLAYER_INPUT_KEY_AND_PAD) {
+            pad_index = 0;
+        } else if (mode >= PC_PLAYER_INPUT_PAD1 &&
+                   mode < PC_PLAYER_INPUT_PAD1 + PC_PLAYER_INPUT_PAD_COUNT) {
+            pad_index = mode - PC_PLAYER_INPUT_PAD1;
+        }
+
+        if (pad_index >= 0) {
+            if (pad_taken[pad_index]) pad_index = -1;
+            else pad_taken[pad_index] = 1;
+        }
+
+        if (!use_kb && pad_index < 0) continue;
+
+        if (pad_index >= 0 && g_controllers[pad_index] != NULL) {
+            SDL_Joystick* joystick = SDL_GameControllerGetJoystick(g_controllers[pad_index]);
+
+            if (joystick != NULL && SDL_JoystickInstanceID(joystick) == id) {
+                return player;
+            }
+        }
+    }
+
+    return -1;
+}
+
 BOOL PADInit(void) {
     controllers_refresh();
     return TRUE;

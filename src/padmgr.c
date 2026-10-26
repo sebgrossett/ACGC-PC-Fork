@@ -6,6 +6,7 @@
 
 #ifdef TARGET_PC
 #include "dolphin/pad.h"
+#include "pc_session_menu.h"
 #endif
 
 static int frame = 0;
@@ -372,6 +373,16 @@ static void padmgr_UpdatePC(void) {
         }
         if (suppress) {
             for (i = 0; i < MAXCONTROLLERS; i++) {
+                this->cur_pads[i].button = 0;
+                this->cur_pads[i].stick_x = 0;
+                this->cur_pads[i].stick_y = 0;
+            }
+        }
+
+        /* A guest's live session menu owns that row's input. The menu itself
+         * reads SDL events, so the game must not also see them. */
+        for (i = 0; i < MAXCONTROLLERS; i++) {
+            if (pc_session_menu_is_open(i)) {
                 this->cur_pads[i].button = 0;
                 this->cur_pads[i].stick_x = 0;
                 this->cur_pads[i].stick_y = 0;

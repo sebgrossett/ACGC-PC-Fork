@@ -418,7 +418,15 @@ static void aAL_pc_game_start_wait(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
         break;
       case 1: /* Co-op */
         if (start_ok) {
+          int i;
+
           g_pc_coop_session = 1;
+          /* Full screen until a guest presses Start. A joined row is marked
+           * when it joins; the load-time spawn only restores joined rows. */
+          for (i = 0; i < PC_PLAYER_COUNT; i++) {
+            g_pc_coop_joined[i] = 0;
+            g_pc_coop_guest_slot[i] = -1;
+          }
           aAL_setupAction(actor, game, aAL_ACTION_FADE_OUT_START);
         }
         break;

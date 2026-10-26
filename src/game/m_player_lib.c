@@ -1470,6 +1470,42 @@ extern PLAYER_ACTOR* mPlib_extra_player_at(int index) {
     return NULL;
 }
 
+extern int mPlib_player_slot_in_use(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    return s_player_by_slot[slot] != NULL;
+}
+
+extern PLAYER_ACTOR* mPlib_host_player_actor(void) {
+    int slot;
+
+    for (slot = 0; slot < PLAYER_NUM; slot++) {
+        if ((s_player_by_slot[slot] != NULL) && (s_pad_by_slot[slot] == 0)) {
+            return s_player_by_slot[slot];
+        }
+    }
+
+    return NULL;
+}
+
+extern int mPlib_pad_in_use(int pad) {
+    int slot;
+
+    if ((pad < 0) || (pad >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    for (slot = 0; slot < PLAYER_NUM; slot++) {
+        if ((s_player_by_slot[slot] != NULL) && (s_pad_by_slot[slot] == pad)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 extern int mPlib_any_player_actor(void) {
     int i;
 

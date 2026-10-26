@@ -1,11 +1,17 @@
 #include "pc_platform.h"
 #include "pc_pause_menu.h"
+#include "pc_session_menu.h"
+#include "pc_settings.h"
 #include "pc_settings_menu.h"
 #include "pc_menu_util.h"
 #include "pc_text_draw.h"
 
+#include "game.h"
 #include "m_font.h"
 #include "m_rcp.h"
+#include "m_play.h"
+#include "m_demo.h"
+#include "m_msg.h"
 #include "graph.h"
 #include "main.h"       /* SCREEN_WIDTH_F */
 
@@ -13,6 +19,14 @@
 #include <string.h>
 
 int g_pc_paused = 0;
+
+/* Set when this frame's play draw already drew the pause overlay in P1's
+ * view, so graph_main's post-game fallback does not draw it again fullscreen. */
+static int s_drawn_this_frame = 0;
+
+void pc_pause_menu_begin_frame(void) {
+    s_drawn_this_frame = 0;
+}
 
 /* Pausing is blocked while either is set: main menu (set by ac_animal_logo)
  * or NES running (its own pause, and pausing it crashes the game). */
@@ -36,8 +50,31 @@ static PauseMenuPage cur_page = PAGE_MAIN;
 static int main_sel = 0;    /* 0=Resume, 1=Settings, 2=Quit Game */
 static int confirm_sel = 0; /* 0=No (default), 1=Yes */
 
+/* A co-op conversation owns the player's input and the message window. Do not
+ * freeze the world under it; the host can pause after the dialog. */
+static int pc_coop_dialogue_active(void) {
+    GAME_PLAY* play;
+
+    if (g_pc_coop_session == 0) return 0;
+    if (gamePT == NULL || gamePT->exec != play_main) return 0;
+
+    play = (GAME_PLAY*)gamePT;
+    if (mDemo_CheckDemo() != FALSE) return 1;
+    if (mDemo_side_player() != NULL) return 1;
+    if (play->fb_mode != FBDEMO_MODE_NONE) return 1;
+    /* Any game menu (inventory, notice board, map board, ...) owns the screen
+     * in co-op; do not put the pause overlay on top of it. */
+    if (play->submenu.process_status != mSM_PROCESS_WAIT) return 1;
+    if (play->submenu.menu_type != mSM_OVL_NONE) return 1;
+    if (play->submenu.mode != mSM_MODE_IDLE) return 1;
+    if (mMsg_Get_base_window_p() != NULL && mMsg_Get_base_window_p()->draw_flag != FALSE) return 1;
+    if (mMsg_side_window_p() != NULL && mMsg_side_window_p()->draw_flag != FALSE) return 1;
+    return 0;
+}
+
 void pc_pause_menu_toggle(void) {
     if (!g_pc_paused && (g_pc_title_main_menu_visible || g_pc_nes_active)) return;
+    if (!g_pc_paused && pc_coop_dialogue_active()) return;
 
     g_pc_paused = !g_pc_paused;
     if (g_pc_paused) {
@@ -231,7 +268,9 @@ static void draw_confirm_page(struct game_s* game) {
 }
 
 void pc_pause_menu_draw(struct game_s* game) {
-    if (!g_pc_paused || game == NULL || game->graph == NULL) return;
+    if (!g_pc_paused || s_drawn_this_frame || game == NULL || game->graph == NULL) return;
+
+    s_drawn_this_frame = 1;
 
     /* Font ortho projection + identity modelview, else our screen-space quads
      * inherit whatever projection the scene ended its frame with. */
