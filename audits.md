@@ -1,0 +1,57 @@
+# Audits
+
+Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 commits, ~88 files, +4151/-456 under `src/`, `include/`, `pc/src`). Backend (native C / GL port); no frontend. Principles: maintainability, KISS, DRY, small surface, efficiency.
+
+## Checklist notes
+
+- **Structure / ownership of concerns**
+  - Per-slot menu state lives correctly in `m_submenu.c` (storage, copy-in/out, open gates); per-player identity in `m_player_lib.c` (pad/openers/slots tables); view/layout in `m_play.c`; session/pause UI in `pc/`. The layering held up across seven slices.
+  - `m_play.c` is large with co-op logic interleaved into the decomp file. Accepted: `src/` mirrors decomp structure and the helpers need `m_play.c` statics; do not split without a strong reason.
+  - Four separate "owner" state systems exist: per-slot menu openers (`s_menu_opener_*_tbl`), demo talker (`s_demo_talker_*`), request owner (`mPlib_request_owner`), and the change-data order owner. They overlap conceptually and each has its own clear/swap discipline. See P1.
+- **Duplication vs justified reuse**
+  - "Does player P have a game menu open / owns the open menu" is implemented three times with subtly different conditions: `mDemo_owner_menu_open` (`m_demo.c`), `banti_player_menu_open` (`m_banti.c`), and inline in `pc_session_menu_can_open`. See P1.
+  - `mSM_submenu_ctrl` runs three near-identical open-gate chains (guest inventory, guest map, board loop): slot-idle + refuse + reset + FirstIntro + able. See P2.
+  - The per-frame wait-actor setup is three calls (retail `Actor_info_set_wait_actor` + session rows + side-slot openers). See P2.
+  - The per-slot copy-in/out + context-wrap appears in both the move loop and the draw pass. Justified (different call shapes); do not abstract.
+  - Session/pause menus already share `pc_menu_util`/`pc_text_draw` ✓.
+- **State / rebuild surface**
+  - Side-slot `Submenu` swap is sound (backup + restore; `item_p` re-pointed both ways; per-frame tick keeps refuse timers alive; scene cleanup resets). The swap's implicit invariant — everything inside the window sees the side copy — is documented in comments and `plan.md` §4.
+  - Receiver-ignoring `PLAYER_ACTOR` procs are wrapped with `_for` forms; the retail wrappers are byte-identical. Pattern is recorded in `plan.md` §4.
+- **Mock vs real seams** — N/A (no test seams; playtests are the verification path).
+- **Dependency weight** — no new dependencies beyond SDL2 (already required). ✓
+- **Perf risks**
+  - Per-frame overhead measured/assessed: idle side-slot move copies (~2.6 KB/frame) — negligible; per-view HUD/clock loops — negligible; per-open-menu panel passes (flush/restart/`emu64_refresh`) — acceptable at 2 players, watch at 3-4 (deferred validation covers it).
+  - Shared-accumulator audit complete: the only draw-path (per-view) accumulator was the mailbox ping — fixed and playtested. Singleton systems with statics are safe. Instance-count move-side statics remain (low, see mitigations).
+  - Positional mic anomaly (`play->camera.mic_pos` garbage in one probe log) — dismissed by the operator as a pre-fix artifact.
+- **Accessibility baseline** — N/A (game port); input isolation per player is the relevant proxy and is playtested.
+- **Tests on critical paths** — no automated tests; every slice is playtested before merge (established workflow). No change recommended.
+
+## Findings
+
+### P1
+1. **Consolidate the menu-open ownership checks.** One helper in `m_submenu.c`, e.g. `mSM_player_menu_open(GAME_PLAY*, PLAYER_ACTOR*)` (and a slot form), covering: primary busy with this player as opener, and this player's side slot open/transitioning. Rework the three current implementations onto it. Do this BEFORE the per-player-state slice, which will otherwise copy the pattern again.
+
+### P2
+2. Extract the repeated open-gate chain in `mSM_submenu_ctrl` into one per-target helper (guest inventory / guest map / board loop keep their specifics).
+3. Unify the per-frame wait-actor setup into one `play_menu_wait_actors_add(play)` (primary opener + side openers + session rows) in `m_play.c`.
+4. Remove or `--verbose`-gate the two `printf("[PAUSE] ...")` lines in `pc_pause_menu.c` (debug debris).
+5. Instance-count accumulator statics in move-side code (`ef_turi_mizu`, `ef_motiyuge`, `ac_train0`, `ac_s_car`, `ac_kamakura_indoor`, `m_msg_cursol`): gate rate scales with active instance count. Retail used global frame parity. Low impact; fix opportunistically when touching those files.
+6. Accepted as-is: idle side-slot per-frame copies; per-open-menu panel passes; `Actor_info_save_game`'s static fg snapshot (BSS, game-thread only). Revisit only if profiling flags them.
+
+## Verdict
+
+**Proceed.** No P0. P1 is a small consolidation that should land before the per-player-state slice; P2s are opportunistic.
+
+## Open mitigations
+
+| id | severity | summary | status |
+|----|----------|---------|--------|
+| A1 | P1 | Consolidate menu-open ownership checks into one `m_submenu.c` helper | open |
+| A2 | P2 | Extract the repeated submenu open-gate chain | open |
+| A3 | P2 | Unify the per-frame wait-actor setup | open |
+| A4 | P2 | Remove/gate the `[PAUSE]` debug printfs | open |
+| A5 | P2 | Instance-count accumulator statics (6 sites) | open |
+
+## Pass log
+
+- 2026-10-26: Initial audit of the co-op work (55 commits, 2026-10-24..26). Verdict: proceed. Findings A1-A5 opened. The mailbox shared-accumulator fix and the receiver-ignoring proc pattern are recorded in `plan.md` §4 and were verified during this audit.
