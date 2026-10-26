@@ -92,6 +92,10 @@ Session pointer and save record:
 Actor binding:
 - `PLAYER_ACTOR` proc members ignore their receiver: `check_request_main_priority_proc`, `able_submenu_request_main_index_proc`, and `check_request_change_item_proc` all read `GET_PLAYER_ACTOR_GAME(game)` (the selected resident / context-bound player), so calling them "on" a guest still evaluates the host. Player-explicit forms live in `m_player_common.c_inc` (`..._for(PLAYER_ACTOR*)`, declared in `m_player.h`). `mPlib_CheckScene_AbleSubmenu()` adds `SubmenuArea_IsPlayer()` on top of the scene table, which on PC just means "no primary menu is open" — a side-slot gate must use the member proc (scene table only).
 
+Timing/frame counters (do not relearn):
+- `game_GameFrame` is the frame RATE (`SetGameFrame(1)`), not a frame counter. `sAdo_GameFrame`'s pump cadence is not per game frame (audio ticks accumulate `dt_num_60fps_frames`, which can be < 1 per loop). The only reliable per-frame counter is `play->game_frame` (u32, `m_play.h` 0x2090), incremented once per normal play frame.
+- Any `graph_dt_period_elapsed`/`graph_dt_60hz_ticks` accumulator inside a DRAW function is a co-op hazard: an actor visible in any view draws in every view, so a shared/static accumulator advances several times per frame. Keep such state per actor instance (or per home/owner key) and guard one advance per game frame with `play->game_frame`. The mailbox mail ping (`0x43B`, `aMBX_actor_draw`) was the first found this way.
+
 Actor binding (retail):
 - `Player_actor_ct` registers `s_player_by_slot[player_no]`. `Player_actor_dt` clears every slot holding that pointer. Profile wrappers are `Player_actor_*_call` in `src/game/m_player_call.c`.
 - Select scene still has the slot-0 actor when new-resident init changes `player_no`. The one-actor rebind in `get_player_actor_withoutCheck` is what keeps that frame from a null deref. A second registered actor must not use that rebind.

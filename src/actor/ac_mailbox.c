@@ -193,10 +193,11 @@ static void aMBX_actor_draw(ACTOR* actorx, GAME* game) {
             int mbx_idx = actor->arrange_idx & (PLAYER_NUM - 1);
 
             Evw_Anime_Set(play, evw_table[Common_Get(time.season) == mTM_SEASON_WINTER]);
-            /* The ping belongs to the mailbox's owner. Retail gated it on the
-             * selected resident; in co-op any active resident's mailbox pings,
-             * positionally. */
-            if (mPlib_pad_for_player_slot(mHS_get_pl_no(actor->arrange_idx)) >= 0 &&
+            /* The ping belongs to the selected resident only (retail gate): with
+             * one audio listener, every active resident's mailbox pinging just
+             * reads as a double ping. The per-home accumulator and frame guard
+             * stay, because the shared-accumulator rate bug was real. */
+            if (Common_Get(player_no) == mHS_get_pl_no(actor->arrange_idx) &&
                 play->game_frame != mbx_se_frame[mbx_idx] &&
                 graph_dt_period_elapsed(game, &mbx_se_accum[mbx_idx], (f32)FRAMES_PER_SECOND)) {
                 mbx_se_frame[mbx_idx] = play->game_frame;
