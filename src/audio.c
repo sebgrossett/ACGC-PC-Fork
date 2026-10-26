@@ -1,4 +1,5 @@
 #include "audio.h"
+#include <stdio.h> /* PROBE */
 
 #include "jaudio_NES/game64.h"
 #include "jaudio_NES/melody.h"
@@ -42,8 +43,11 @@ extern void sAdo_Calc_MicPosition_forLevel(f32* fcalc, u16* scalc, const xyz_t* 
     sAdo_Calc_MicPosition_common(fcalc, scalc, pos);
 }
 
+static u32 probe_frame = 0; /* PROBE */
+
 extern void sAdo_GameFrame() {
     Na_GameFrame();
+    probe_frame++; /* PROBE */
     /* pc_audio_process_frame() now runs on dedicated audio producer thread */
 }
 
@@ -55,6 +59,18 @@ extern void sAdo_BgmStop(u16 id) {
     Na_BgmStop(id);
 }
 extern void sAdo_SysTrgStart(u16 id) {
+    /* PROBE: SE trigger trace (remove after diagnosis) */
+    {
+        static int probe_n = 0;
+        if (probe_n < 400) {
+            FILE* f = fopen("probe_log.txt", "a");
+            if (f != NULL) {
+                fprintf(f, "se: f=%d sys id=0x%03x\n", probe_frame, id);
+                fclose(f);
+                probe_n++;
+            }
+        }
+    }
     Na_SysTrgStart(id);
 }
 
@@ -135,6 +151,20 @@ extern void sAdo_OngenPos(u32 p1, u8 p2, const xyz_t* pos) {
 extern void sAdo_OngenTrgStart(u16 id, const xyz_t* pos) {
     u16 scalc;
     f32 fcalc;
+
+    /* PROBE: SE trigger trace (remove after diagnosis) */
+    {
+        static int probe_n = 0;
+        if (probe_n < 400) {
+            FILE* f = fopen("probe_log.txt", "a");
+            if (f != NULL) {
+                fprintf(f, "se: f=%d ongen id=0x%03x pos=(%.1f,%.1f,%.1f) att=%.2f/%d\n", game_GameFrame, id,
+                        pos->x, pos->y, pos->z, fcalc, scalc);
+                fclose(f);
+                probe_n++;
+            }
+        }
+    }
 
     sAdo_Calc_MicPosition_forTrig(&fcalc, &scalc, pos);
     Na_OngenTrgStart(id, scalc, fcalc);
