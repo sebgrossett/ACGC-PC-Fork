@@ -300,6 +300,7 @@ Checkpoint 2, draw in the opener's view (built and playtested 2026-10-25):
 - Signboards (`ac_sign`): the target search reads the fg sign item around each player instead of the host camera's draw table; A is read from that player's pad; the demo talker is recorded.
 - Messages: `mMsg_Main` runs in the talker's context (`pads[0]`, `mcon`, `Now_Private`, `player_no`), so each player advances their own dialog.
 - Actor moves: cull visibility accumulates over all views (`Actor_info_cull_begin` clears `ACTOR_STATE_NO_CULL` once per frame and `Actor_cull_check` only sets it). The last view used to overwrite the flag, so a sign seen only by P1 stopped moving when P2 looked elsewhere and P1 could not read it. Side effects: actors visible in any view are drawn in every view (clipped) and kept alive, and the move pass now covers actors near any player.
+- Actor-opened menus: `mSM_submenu_ctrl` used to reset the opener to the selected resident on the frame after an actor opened a menu, because `process_status` only advances inside that function (`menu_type` was set, `process_status` still `WAIT`). It now defaults only when `menu_type == mSM_OVL_NONE`. This is what made P2's music board open in P1's half and answer to P1.
 - Playtest: both players read signs regardless of the other's distance, each dismisses their own message with their own A, no rotation.
 - Not covered: NPC talk (generic NPC requests still queue with the host owner), and doors/shops for a guest (scene per player, deferred).
 

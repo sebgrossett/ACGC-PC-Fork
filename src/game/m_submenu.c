@@ -275,9 +275,12 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         return;
     }
 
-    /* Default opener: the selected resident. A guest pressing Start/Y replaces
-     * it below and owns the menu until it closes. */
-    mPlib_set_menu_opener(GET_PLAYER_ACTOR(play), 0, (int)Common_Get(player_no));
+    /* Default opener: the selected resident. Skip it while an actor is already
+     * opening a menu (menu_type is set but process_status is still WAIT for one
+     * frame), otherwise it overwrites the actor's opener. */
+    if (submenu->menu_type == mSM_OVL_NONE) {
+        mPlib_set_menu_opener(GET_PLAYER_ACTOR(play), 0, (int)Common_Get(player_no));
+    }
 
     open_inventory = FALSE;
     for (i = 0; i < (1 + mPlib_extra_player_count()); i++) {
