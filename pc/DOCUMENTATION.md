@@ -62,7 +62,7 @@ User provides disc image (.ciso/.iso/.gcm)
 
 ### Fallback Chain
 
-1. **Primary**: Disc image in `rom/`, `orig/`, or current directory
+1. **Primary**: Disc image in `rom/` only
 2. **Secondary**: Pre-extracted DOL + REL files in `orig/GAFE01_00/`
 3. **Tertiary**: Individual `.bin` files in `assets/`
 

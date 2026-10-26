@@ -314,25 +314,9 @@ static int scan_dir_for_disc(const char* dir, char* out_path, int out_sz) {
 }
 
 static int find_disc_image(char* out_path, int out_sz) {
-    static const char* dirs[] = { ".", "orig", "rom", NULL };
-    char* base;
-    int d;
-
-    for (d = 0; dirs[d]; d++) {
-        if (scan_dir_for_disc(dirs[d], out_path, out_sz)) return 1;
-    }
-
-    /* AnimalCrossing.exe lives in pc/build32/bin. Three levels up is the
-     * repo root. A disc already in rom/ is chosen above and wins. */
-    base = SDL_GetBasePath();
-    if (base) {
-        char dir[512];
-        int n = snprintf(dir, sizeof(dir), "%s../../../", base);
-        SDL_free(base);
-        if (n > 0 && n < (int)sizeof(dir) && scan_dir_for_disc(dir, out_path, out_sz))
-            return 1;
-    }
-    return 0;
+    /* Only rom/ is searched (operator decision 2026-10-26). A file picker for
+     * choosing the disc image is planned for a future update. */
+    return scan_dir_for_disc("rom", out_path, out_sz);
 }
 
 /* ---- public API ---- */
