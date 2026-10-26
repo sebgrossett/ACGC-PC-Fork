@@ -45,11 +45,122 @@ static void aMBX_check_take_mail(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
                 if (submenu->start_refuse == FALSE && submenu->start_refuse_timer == 0 && mPlib_able_submenu_type1((GAME*)play) && actor->req == 0) {
                     player->a_btn_triggers_submenu = TRUE;
                     actor->req = aMBX_REQUEST_OPEN;
+#ifdef TARGET_PC
+                    if ((arrange_idx >= 0) && (arrange_idx < PLAYER_NUM)) {
+                        s_mbx_opener[arrange_idx] = NULL;
+                    }
+#endif
                 }
             }
         }
     }
 }
+
+#ifdef TARGET_PC
+/* A guest opens the mailbox they own. The retail check above stays on the
+ * selected resident; player_angle_y on this actor is that resident's line. */
+static void aMBX_check_guest_open(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
+    int arrange_idx = actor->arrange_idx;
+    int pl_no = mHS_get_pl_no(arrange_idx);
+    int count = mPlib_extra_player_count();
+    int i;
+
+    if ((actor->req != 0) || (arrange_idx < 0) || (arrange_idx >= PLAYER_NUM)) {
+        return;
+    }
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = mPlib_extra_player_at(i);
+        ACTOR* actorx = (ACTOR*)actor;
+        Private_c* priv;
+        Submenu* side;
+        int slot;
+        int pad;
+        int mbox_angle;
+        int mbox_pl_angle;
+        int dAngle;
+
+        if (player == NULL) {
+            continue;
+        }
+
+        slot = mPlib_player_slot_of(player);
+        pad = mPlib_pad_for_player(player);
+        if ((slot != pl_no) || (pad <= 0) || (pad >= mSM_SLOT_NUM)) {
+            continue;
+        }
+
+        if (player->a_btn_pressed == FALSE || player->item_in_front != (DUMMY_MAILBOX0 + arrange_idx)) {
+            continue;
+        }
+
+        mbox_angle = actorx->shape_info.rotation.y + DEG2SHORT_ANGLE2(-45.0f);
+        mbox_pl_angle = search_position_angleY(&actorx->world.position, &player->actor_class.world.position);
+        dAngle = (s16)(mbox_pl_angle - mbox_angle);
+        if (ABS(dAngle) >= aMBX_PLAYER_OPEN_ANGLE) {
+            continue;
+        }
+
+        priv = mPlib_private_for_slot(slot);
+        side = mSM_side_slot_p(pad);
+        if ((priv == NULL) || (side == NULL)) {
+            continue;
+        }
+
+#if VERSION >= VER_GAFU01_00
+        if (Common_Get(reset_flag) == TRUE && priv->reset_count < 4) {
+#else
+        if (Common_Get(reset_flag) == TRUE && priv->reset_count < 3) {
+#endif
+            Common_Set(reset_type, 5);
+            return;
+        }
+
+        if (mPr_NullCheckPersonalID(&Save_Get(homes[arrange_idx]).ownerID)) {
+            continue;
+        }
+
+        if (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE ||
+            side->start_refuse != FALSE || side->start_refuse_timer != 0 ||
+            mPlib_able_submenu_type1_player((GAME*)play, player) == FALSE) {
+            continue;
+        }
+
+        s_mbx_opener[arrange_idx] = player;
+        player->a_btn_triggers_submenu = TRUE;
+        actor->req = aMBX_REQUEST_OPEN;
+        return;
+    }
+}
+
+static PLAYER_ACTOR* aMBX_opener(MAILBOX_ACTOR* actor) {
+    PLAYER_ACTOR* opener;
+
+    if ((actor->arrange_idx < 0) || (actor->arrange_idx >= PLAYER_NUM)) {
+        return NULL;
+    }
+
+    opener = s_mbx_opener[actor->arrange_idx];
+    if ((opener != NULL) && (mPlib_player_slot_of(opener) < 0)) {
+        s_mbx_opener[actor->arrange_idx] = NULL;
+        return NULL;
+    }
+
+    return opener;
+}
+
+static void aMBX_bind_opener(PLAYER_ACTOR* opener) {
+    if (opener != NULL) {
+        mPlib_bind_player_actor(opener);
+    }
+}
+
+static void aMBX_unbind_opener(PLAYER_ACTOR* opener) {
+    if (opener != NULL) {
+        mPlib_unbind_player_actor();
+    }
+}
+#endif
 
 static void aMBX_check_flag(MAILBOX_ACTOR* actor) {
     int anime_idx = aMBX_ANIME_FLAG_DOWN;
@@ -88,6 +199,9 @@ static void aMBX_setup_flag_se(MAILBOX_ACTOR* actor) {
 static void aMBX_wait(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     if (actor->kf0_state == cKF_STATE_STOPPED) {
         aMBX_check_take_mail(actor, play);
+#ifdef TARGET_PC
+        aMBX_check_guest_open(actor, play);
+#endif
         switch (actor->req) {
             case aMBX_REQUEST_DELIVERY:
                 aMBX_setupAction(actor, aMBX_ACT_OPEN_AND_CLOSE);
@@ -107,8 +221,20 @@ static void aMBX_wait(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
 static void aMBX_pl_wait(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     static s16 angle[] = { DEG2SHORT_ANGLE2(-135.0f), DEG2SHORT_ANGLE2(135.0f) };
     static f32 posX[] = { 24.0f, -24.0f };
+#ifdef TARGET_PC
+    PLAYER_ACTOR* opener = aMBX_opener(actor);
+#endif
+    int jumped;
 
-    if (mPlib_get_player_actor_main_index((GAME*)play) == mPlayer_INDEX_MAIL_JUMP) {
+#ifdef TARGET_PC
+    aMBX_bind_opener(opener);
+#endif
+    jumped = mPlib_get_player_actor_main_index((GAME*)play) == mPlayer_INDEX_MAIL_JUMP;
+#ifdef TARGET_PC
+    aMBX_unbind_opener(opener);
+#endif
+
+    if (jumped) {
         aMBX_setupAction(actor, aMBX_ACT_PL_OPEN);
     } else {
         xyz_t pos;
@@ -116,7 +242,13 @@ static void aMBX_pl_wait(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
 
         pos.x = actor->actor_class.world.position.x + posX[idx];
         pos.z = actor->actor_class.world.position.z + 24.0f;
+#ifdef TARGET_PC
+        aMBX_bind_opener(opener);
+#endif
         mPlib_request_main_mail_jump_type1((GAME*)play, &pos, angle[idx]);
+#ifdef TARGET_PC
+        aMBX_unbind_opener(opener);
+#endif
     }
 }
 
@@ -145,9 +277,36 @@ static void aMBX_pl_open(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     }
 
     if (actor->kf0_state == cKF_STATE_STOPPED) {
-        Submenu* submenu = &play->submenu;
+#ifdef TARGET_PC
+        PLAYER_ACTOR* opener = aMBX_opener(actor);
+        int pad = (opener != NULL) ? mPlib_pad_for_player(opener) : 0;
 
-        mSM_open_submenu(submenu, mSM_OVL_INVENTORY, mSM_IV_OPEN_MAILBOX, 0);
+        if ((pad > 0) && (pad < mSM_SLOT_NUM)) {
+            Submenu* side = mSM_side_slot_p(pad);
+
+            /* Actors keep running for a guest, so the close anim would play
+             * during the menu. Hold this open frame until their menu ends. */
+            if ((side != NULL) && (s_mbx_menu_open[actor->arrange_idx] == FALSE)) {
+                mPlib_set_menu_opener_for_slot(pad, opener, pad, mPlib_player_slot_of(opener));
+                mSM_open_submenu(side, mSM_OVL_INVENTORY, mSM_IV_OPEN_MAILBOX, 0);
+                side->process_status = mSM_PROCESS_PREWAIT;
+                side->mode = mSM_MODE_PRERENDER_INIT;
+                SetGameFrame(1);
+                s_mbx_menu_open[actor->arrange_idx] = TRUE;
+            }
+
+            if ((side != NULL) && (side->menu_type != mSM_OVL_NONE)) {
+                return;
+            }
+
+            s_mbx_menu_open[actor->arrange_idx] = FALSE;
+        } else
+#endif
+        {
+            Submenu* submenu = &play->submenu;
+
+            mSM_open_submenu(submenu, mSM_OVL_INVENTORY, mSM_IV_OPEN_MAILBOX, 0);
+        }
         aMBX_setupAction(actor, aMBX_ACT_PL_CLOSE);
     }
 }
@@ -162,6 +321,12 @@ static void aMBX_pl_close(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     if (actor->kf0_state == cKF_STATE_STOPPED) {
         aMBX_check_flag(actor);
         actor->req = aMBX_REQUEST_NONE;
+#ifdef TARGET_PC
+        if ((actor->arrange_idx >= 0) && (actor->arrange_idx < PLAYER_NUM)) {
+            s_mbx_opener[actor->arrange_idx] = NULL;
+            s_mbx_menu_open[actor->arrange_idx] = FALSE;
+        }
+#endif
         aMBX_setupAction(actor, aMBX_ACT_WAIT);
     }
 }

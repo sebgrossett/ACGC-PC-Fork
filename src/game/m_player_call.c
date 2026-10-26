@@ -7,6 +7,7 @@
 #include "m_common_data.h"
 #include "m_controller.h"
 #include "m_lib.h"
+#include "m_home.h"
 
 static mActor_proc Player_actor_ct_func;
 static mActor_proc Player_actor_dt_func;
@@ -122,6 +123,7 @@ static pad_t s_player_ctx_saved_pad;
 static MCON s_player_ctx_saved_mcon;
 static Private_c* s_player_ctx_saved_priv;
 static u32 s_player_ctx_saved_player_no;
+static mHm_hs_c* s_player_ctx_saved_home;
 
 static void player_context_begin(GAME_PLAY* play, PLAYER_ACTOR* player, int pad, int slot) {
     if (s_player_ctx_active || player == NULL || pad <= 0 || pad >= MAXCONTROLLERS || slot < 0) {
@@ -132,9 +134,12 @@ static void player_context_begin(GAME_PLAY* play, PLAYER_ACTOR* player, int pad,
     s_player_ctx_saved_mcon = play->game.mcon;
     s_player_ctx_saved_priv = Common_Get(now_private);
     s_player_ctx_saved_player_no = Common_Get(player_no);
+    s_player_ctx_saved_home = Common_Get(now_home);
 
     Common_Set(now_private, mPlib_private_for_slot(slot));
     Common_Set(player_no, slot);
+    /* Mail lives on now_home. Point it at this player's house for the menu. */
+    mHm_SetNowHome();
     play->game.pads[0] = play->game.pads[pad];
     mCon_calc(&s_guest_mcon[pad], (f32)play->game.pads[pad].now.stick_x, (f32)play->game.pads[pad].now.stick_y);
     play->game.mcon = s_guest_mcon[pad];
@@ -150,6 +155,7 @@ static void player_context_end(GAME_PLAY* play) {
     play->game.mcon = s_player_ctx_saved_mcon;
     Common_Set(now_private, s_player_ctx_saved_priv);
     Common_Set(player_no, s_player_ctx_saved_player_no);
+    Common_Set(now_home, s_player_ctx_saved_home);
     s_player_ctx_active = FALSE;
 }
 

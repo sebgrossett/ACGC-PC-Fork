@@ -506,28 +506,10 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
     }
 }
 
-/* Mid-game save (co-op join/leave). The normal save path runs after the play
- * scene is torn down, so actors have already restored their fg items. A live
- * save has to do that itself: structures clear their fg item when they spawn,
- * and writing the save without restoring them would persist houses/shops as
- * reserved markers. Restore the fg table, write, then put the live table back
- * so the spawned actors are not duplicated on the next block setup. */
-extern int Actor_info_save_game(GAME* game) {
-    GAME_PLAY* play = (GAME_PLAY*)game;
-    static u8 fg_snapshot[sizeof(((Save_t*)0)->fg)];
-    int ok;
-
-    memcpy(fg_snapshot, Save_GetPointer(fg), sizeof(fg_snapshot));
-    restore_fgdata_all(play);
-    ok = pc_save_commit();
-    memcpy(Save_GetPointer(fg), fg_snapshot, sizeof(fg_snapshot));
-    return ok;
-}
-
 /* Mid-game join: the first idle Controls row that presses Start gets the next
  * free resident, spawned beside the selected resident. The caller only runs
  * this in a safe frame (no menu, demo, fade or wipe). One join per call so the
- * single guest queue and the save write stay paired. */
+ * single guest queue stays paired with the spawn. The town file is not written. */
 extern int Actor_info_join_guest(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     PLAYER_ACTOR* host;
@@ -619,11 +601,6 @@ extern int Actor_info_join_guest(GAME* game) {
         actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
         g_pc_coop_joined[pad] = 1;
         g_pc_coop_guest_slot[pad] = slot;
-
-        if (Actor_info_save_game(game) == FALSE) {
-            OSReport("[PC] co-op join: save write failed\n");
-        }
-
         return TRUE;
     }
 

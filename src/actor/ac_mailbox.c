@@ -5,6 +5,8 @@
 #include "m_rcp.h"
 #include "m_house.h"
 #include "m_player_lib.h"
+#include "m_submenu.h"
+#include "game.h"
 
 enum {
     aMBX_ACT_WAIT,
@@ -88,6 +90,13 @@ static cKF_Skeleton_R_c* aMBX_skeleton[2] = { &cKF_bs_r_obj_s_post, &cKF_bs_r_ob
 static void aMBX_check_flag(MAILBOX_ACTOR* actor);
 static void aMBX_setupAction(MAILBOX_ACTOR* actor, int action);
 
+#ifdef TARGET_PC
+/* Who asked this mailbox to open. NULL means the selected resident (retail). */
+static PLAYER_ACTOR* s_mbx_opener[PLAYER_NUM];
+/* Guest menu is up; pl_open holds the door open until it closes. */
+static u8 s_mbx_menu_open[PLAYER_NUM];
+#endif
+
 static void aMBX_actor_ct(ACTOR* actorx, GAME* game) {
     static s16 angle_table[] = {
         DEG2SHORT_ANGLE(90.0f),
@@ -108,6 +117,12 @@ static void aMBX_actor_ct(ACTOR* actorx, GAME* game) {
     actor->arrange_idx = idx;
     actor->anim_idx1 = aMBX_ANIME_NUM;
     actorx->shape_info.rotation.y = angle_table[idx];
+#ifdef TARGET_PC
+    if ((idx >= 0) && (idx < PLAYER_NUM)) {
+        s_mbx_opener[idx] = NULL;
+        s_mbx_menu_open[idx] = FALSE;
+    }
+#endif
     aMBX_check_flag(actor);
     actor->kf0.frame_control.current_frame = actor->kf0.frame_control.end_frame;
 }
@@ -115,6 +130,12 @@ static void aMBX_actor_ct(ACTOR* actorx, GAME* game) {
 static void aMBX_actor_dt(ACTOR* actorx, GAME* game) {
     MAILBOX_ACTOR* actor = (MAILBOX_ACTOR*)actorx;
 
+#ifdef TARGET_PC
+    if ((actor->arrange_idx >= 0) && (actor->arrange_idx < PLAYER_NUM)) {
+        s_mbx_opener[actor->arrange_idx] = NULL;
+        s_mbx_menu_open[actor->arrange_idx] = FALSE;
+    }
+#endif
     cKF_SkeletonInfo_R_dt(&actor->kf0); // @BUG - why not dt on the second skeleton??
 }
 

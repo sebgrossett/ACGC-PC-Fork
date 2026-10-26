@@ -782,9 +782,6 @@ static void play_coop_session_proc(GAME_PLAY* play) {
         Actor_info_delete(&play->actor_info, (ACTOR*)guest, (GAME*)play);
         g_pc_coop_joined[guest_pad] = 0;
         g_pc_coop_guest_slot[guest_pad] = -1;
-        if (Actor_info_save_game((GAME*)play) == FALSE) {
-            OSReport("[PC] co-op leave: save write failed\n");
-        }
         return;
     }
 
