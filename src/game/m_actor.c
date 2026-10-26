@@ -506,17 +506,15 @@ static void Actor_info_spawn_guest(GAME* game, Actor_info* actor_info, Actor_dat
     }
 }
 
-/* Mid-game join: the first idle Controls row that presses Start gets the next
- * free resident, spawned beside the selected resident. The caller only runs
- * this in a safe frame (no menu, demo, fade or wipe). One join per call so the
- * single guest queue stays paired with the spawn. The town file is not written. */
-extern int Actor_info_join_guest(GAME* game) {
+/* Mid-game join for one Controls row. The caller has already accepted that
+ * row's Start and only calls this on a safe frame. Spawn is beside the
+ * selected resident. The town file is not written. */
+extern int Actor_info_join_guest_pad(GAME* game, int pad) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     PLAYER_ACTOR* host;
     ACTOR* actor;
     Private_c* priv;
     int session;
-    int pad;
     int slot;
     int i;
     int other;
@@ -543,68 +541,64 @@ extern int Actor_info_join_guest(GAME* game) {
         return FALSE;
     }
 
-    for (pad = 1; pad < PLAYER_NUM; pad++) {
-        if (g_pc_settings.player_input[pad] == PC_PLAYER_INPUT_NONE) {
+    if ((pad <= 0) || (pad >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    if (g_pc_settings.player_input[pad] == PC_PLAYER_INPUT_NONE) {
+        return FALSE;
+    }
+
+    if (mPlib_pad_in_use(pad) == TRUE) {
+        return FALSE;
+    }
+
+    slot = -1;
+    for (i = 0; i < PLAYER_NUM; i++) {
+        int claimed = FALSE;
+
+        if ((i == session) || (mPlib_player_slot_in_use(i) == TRUE)) {
             continue;
         }
 
-        if (mPlib_pad_in_use(pad) == TRUE) {
-            continue;
-        }
-
-        if (chkTrigger_pad(pad, BUTTON_START) == FALSE) {
-            continue;
-        }
-
-        slot = -1;
-        for (i = 0; i < PLAYER_NUM; i++) {
-            int claimed = FALSE;
-
-            if ((i == session) || (mPlib_player_slot_in_use(i) == TRUE)) {
-                continue;
-            }
-
-            for (other = 1; other < PLAYER_NUM; other++) {
-                if ((other != pad) && (g_pc_coop_joined[other] != 0) && (g_pc_coop_guest_slot[other] == i)) {
-                    claimed = TRUE;
-                    break;
-                }
-            }
-
-            if (claimed == TRUE) {
-                continue;
-            }
-
-            priv = Save_GetPointer(private_data[i]);
-            if ((priv != NULL) && (mPr_CheckPrivate(priv) == TRUE)) {
-                slot = i;
+        for (other = 1; other < PLAYER_NUM; other++) {
+            if ((other != pad) && (g_pc_coop_joined[other] != 0) && (g_pc_coop_guest_slot[other] == i)) {
+                claimed = TRUE;
                 break;
             }
         }
 
-        if (slot < 0) {
-            return FALSE;
+        if (claimed == TRUE) {
+            continue;
         }
 
-        mPlib_queue_guest_slot(slot, pad);
-        actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER,
-                                      host->actor_class.world.position.x + s_guest_ofs[pad - 1][0],
-                                      host->actor_class.world.position.y,
-                                      host->actor_class.world.position.z + s_guest_ofs[pad - 1][1],
-                                      host->actor_class.world.angle.x, host->actor_class.world.angle.y,
-                                      host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 0, -1, -1);
-        if (actor == NULL) {
-            mPlib_queue_guest_slot(-1, -1);
-            return FALSE;
+        priv = Save_GetPointer(private_data[i]);
+        if ((priv != NULL) && (mPr_CheckPrivate(priv) == TRUE)) {
+            slot = i;
+            break;
         }
-
-        actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
-        g_pc_coop_joined[pad] = 1;
-        g_pc_coop_guest_slot[pad] = slot;
-        return TRUE;
     }
 
-    return FALSE;
+    if (slot < 0) {
+        return FALSE;
+    }
+
+    mPlib_queue_guest_slot(slot, pad);
+    actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER,
+                                  host->actor_class.world.position.x + s_guest_ofs[pad - 1][0],
+                                  host->actor_class.world.position.y,
+                                  host->actor_class.world.position.z + s_guest_ofs[pad - 1][1],
+                                  host->actor_class.world.angle.x, host->actor_class.world.angle.y,
+                                  host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 0, -1, -1);
+    if (actor == NULL) {
+        mPlib_queue_guest_slot(-1, -1);
+        return FALSE;
+    }
+
+    actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+    g_pc_coop_joined[pad] = 1;
+    g_pc_coop_guest_slot[pad] = slot;
+    return TRUE;
 }
 #endif
 

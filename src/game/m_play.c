@@ -45,6 +45,7 @@
 #include "pc_platform.h"
 #include "pc_settings.h"
 #include "pc_session_menu.h"
+#include "m_controller.h"
 
 /* Split-view helpers defined further down; the per-view clock-slide driver in
  * Game_play_move uses them before their definitions. */
@@ -708,6 +709,42 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
 #ifdef TARGET_PC
 #define PLAY_COOP_LEAVE_TIMEOUT 180.0f
 static f32 s_coop_leave_wait[PLAYER_NUM];
+/* Start presses remembered until a safe frame. Press order, not pad index. */
+static s8 s_coop_join_q[PLAYER_NUM];
+static int s_coop_join_n;
+
+static void play_coop_join_remove(int pad) {
+    int i;
+    int j;
+
+    for (i = 0; i < s_coop_join_n; i++) {
+        if (s_coop_join_q[i] != pad) {
+            continue;
+        }
+
+        for (j = i; j < s_coop_join_n - 1; j++) {
+            s_coop_join_q[j] = s_coop_join_q[j + 1];
+        }
+
+        s_coop_join_n--;
+        return;
+    }
+}
+
+static void play_coop_join_push(int pad) {
+    int i;
+
+    for (i = 0; i < s_coop_join_n; i++) {
+        if (s_coop_join_q[i] == pad) {
+            return;
+        }
+    }
+
+    if (s_coop_join_n < PLAYER_NUM) {
+        s_coop_join_q[s_coop_join_n] = (s8)pad;
+        s_coop_join_n++;
+    }
+}
 
 /* A frame where a player can join or leave without interrupting a menu, demo,
  * fade or scene wipe. A guest's side-slot menu counts: its opener must not be
@@ -735,7 +772,20 @@ static void play_coop_session_proc(GAME_PLAY* play) {
     int pad;
     int i;
 
+    if (g_pc_coop_session == 0) {
+        s_coop_join_n = 0;
+        return;
+    }
+
     for (pad = 1; pad < PLAYER_NUM; pad++) {
+        if ((g_pc_settings.player_input[pad] == PC_PLAYER_INPUT_NONE) || (mPlib_pad_in_use(pad) == TRUE)) {
+            play_coop_join_remove(pad);
+        } else if (chkTrigger_pad(pad, BUTTON_START) != FALSE) {
+            /* Remember the press during a talk, menu, or fade. The join runs
+             * on the next safe frame, in the order the presses arrived. */
+            play_coop_join_push(pad);
+        }
+
         if (mPlib_pad_in_use(pad) == FALSE) {
             s_coop_leave_wait[pad] = 0.0f;
             pc_session_menu_close(pad);
@@ -785,8 +835,12 @@ static void play_coop_session_proc(GAME_PLAY* play) {
         return;
     }
 
-    if (safe != FALSE) {
-        Actor_info_join_guest((GAME*)play);
+    if ((safe != FALSE) && (s_coop_join_n > 0)) {
+        int join_pad = s_coop_join_q[0];
+
+        if (Actor_info_join_guest_pad((GAME*)play, join_pad) != FALSE) {
+            play_coop_join_remove(join_pad);
+        }
     }
 }
 #endif

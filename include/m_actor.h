@@ -1185,7 +1185,7 @@ extern int Actor_draw_actor_no_culling_check(ACTOR* actor);
 extern int Actor_draw_actor_no_culling_check2(ACTOR* actor, xyz_t* camera_pos, f32 camera_w);
 #ifdef TARGET_PC
 extern int Actor_is_near_active_player(GAME_PLAY* play, ACTOR* actor, int keep_range);
-extern int Actor_info_join_guest(GAME* game);
+extern int Actor_info_join_guest_pad(GAME* game, int pad);
 extern void Actor_info_add_wait_actor(ACTOR* actor);
 extern void Actor_info_clear_wait_actors(void);
 extern void Actor_info_cull_begin(GAME_PLAY* play);
