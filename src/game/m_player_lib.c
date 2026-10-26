@@ -1673,13 +1673,27 @@ extern void mPlib_Load_PlayerTexAndPallet(void* tex_p, void* pal_p, int idx) {
 }
 
 static mPlayer_change_data_from_submenu_c change_data_from_submenu;
+static int change_data_from_submenu_owner = -1;
 
 extern mPlayer_change_data_from_submenu_c* mPlib_Get_change_data_from_submenu_p(void) {
+    /* The first writer while no order is pending owns it. During a co-op menu
+     * the context already points at the opener's save slot, so a guest's order
+     * is applied by that guest instead of the selected resident. */
+    if (change_data_from_submenu.requested_index_pending == FALSE) {
+        change_data_from_submenu_owner = (int)Common_Get(player_no);
+    }
+
     return &change_data_from_submenu;
+}
+
+/* Save slot that queued the pending submenu order, or -1 when none. */
+extern int mPlib_change_data_owner(void) {
+    return change_data_from_submenu_owner;
 }
 
 extern void mPlib_Clear_change_data_from_submenu(void) {
     bzero(&change_data_from_submenu, sizeof(change_data_from_submenu));
+    change_data_from_submenu_owner = -1;
 }
 
 extern void mPlib_request_main_give_from_submenu(mActor_name_t item, int after_mode, int present_flag,

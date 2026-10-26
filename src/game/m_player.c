@@ -841,12 +841,14 @@ static void Player_actor_request_main_change_from_submenu(ACTOR* actorx, GAME* g
     };
 
 #ifdef TARGET_PC
-    /* The pending submenu order belongs to the selected resident. The other
-     * actor moves first and used to consume it, leaving the mailbox jump stuck. */
+    /* The pending submenu order belongs to the player who queued it (a co-op
+     * guest can open their own menu). The other actors move first and used to
+     * consume it, leaving the mailbox jump stuck. */
     {
         int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actorx);
+        int owner = mPlib_change_data_owner();
 
-        if (slot >= 0 && slot != (int)Common_Get(player_no)) {
+        if ((slot >= 0) && (owner >= 0) && (slot != owner)) {
             return;
         }
     }
