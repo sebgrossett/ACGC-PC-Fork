@@ -734,15 +734,9 @@ extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play) {
 }
 
 #ifdef TARGET_PC
-/* The player waiting in their menu: their actor is skipped for one
+/* The players waiting in their menus: each actor is skipped for one
  * Actor_info_call_actor pass while the other players keep playing. */
-static ACTOR* s_wait_actor = NULL;
-/* Per-player session menus can have several waiters in the same pass. */
 static ACTOR* s_session_wait_actors[PLAYER_NUM];
-
-extern void Actor_info_set_wait_actor(ACTOR* actor) {
-    s_wait_actor = actor;
-}
 
 extern void Actor_info_clear_wait_actors(void) {
     bzero(s_session_wait_actors, sizeof(s_session_wait_actors));
@@ -769,10 +763,6 @@ extern void Actor_info_add_wait_actor(ACTOR* actor) {
 
 static int Actor_info_is_wait_actor(ACTOR* actor) {
     int i;
-
-    if (actor == s_wait_actor) {
-        return TRUE;
-    }
 
     for (i = 0; i < PLAYER_NUM; i++) {
         if (s_session_wait_actors[i] == actor) {

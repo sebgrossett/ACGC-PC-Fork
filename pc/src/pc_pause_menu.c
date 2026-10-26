@@ -137,7 +137,6 @@ static void return_to_title(void) {
 
 static void title_confirm_activate(void) {
     if (confirm_sel == 1) {
-        printf("[PAUSE] Return to Title confirmed\n");
         return_to_title();
     } else {
         cur_page = PAGE_MAIN;
@@ -147,7 +146,6 @@ static void title_confirm_activate(void) {
 
 static void confirm_activate(void) {
     if (confirm_sel == 1) {
-        printf("[PAUSE] Quit confirmed\n");
         g_pc_running = 0;
     } else {
         cur_page = PAGE_MAIN;

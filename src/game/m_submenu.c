@@ -400,6 +400,27 @@ static int mSM_find_inventory_press(GAME_PLAY* play, PLAYER_ACTOR** out_player, 
     return FALSE;
 }
 
+/* Common open gate for `player` opening a menu in `target`: the target must be
+ * idle, the reset flag clear, the target not refusing, and the player's own
+ * request state must allow it. Callers add their specifics (FirstIntro, the
+ * actor-open window's menu_type check, the map's flag/position). */
+static int mSM_side_open_ok(GAME_PLAY* play, Submenu* target, PLAYER_ACTOR* player) {
+    if ((target == NULL) || (player == NULL)) {
+        return FALSE;
+    }
+
+    if (target->process_status != mSM_PROCESS_WAIT) {
+        return FALSE;
+    }
+
+    if ((Common_Get(reset_flag) != FALSE) || (target->start_refuse != FALSE) ||
+        (target->start_refuse_timer != 0)) {
+        return FALSE;
+    }
+
+    return mPlib_able_submenu_type1_player((GAME*)play, player);
+}
+
 extern void mSM_submenu_ctrl(GAME_PLAY* play) {
     Submenu* submenu = &play->submenu;
     PLAYER_ACTOR* press_player = NULL;
@@ -430,9 +451,8 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
          * host's refuse flags, do not. */
         Submenu* side = mSM_side_slot_p(press_pad);
 
-        if (side != NULL && side->process_status == mSM_PROCESS_WAIT && side->menu_type == mSM_OVL_NONE &&
-            Common_Get(reset_flag) == FALSE && side->start_refuse == FALSE && side->start_refuse_timer == 0 &&
-            mEv_CheckFirstIntro() == FALSE && mPlib_able_submenu_type1_player((GAME*)play, press_player)) {
+        if (mSM_side_open_ok(play, side, press_player) && side->menu_type == mSM_OVL_NONE &&
+            mEv_CheckFirstIntro() == FALSE) {
             mPlib_set_menu_opener_for_slot(press_pad, press_player, press_pad, mPlib_player_slot_of(press_player));
             mSM_open_submenu(side, mSM_OVL_INVENTORY, 0, 0);
             press_player->a_btn_triggers_submenu = TRUE;
@@ -466,10 +486,8 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
             }
 
             side = mSM_side_slot_p(pad);
-            if (side != NULL && side->process_status == mSM_PROCESS_WAIT && side->menu_type == mSM_OVL_NONE &&
-                Common_Get(reset_flag) == FALSE && Common_Get(map_flag) == TRUE &&
-                side->start_refuse == FALSE && side->start_refuse_timer == 0 &&
-                mEv_CheckFirstIntro() == FALSE && mPlib_able_submenu_type1_player((GAME*)play, player) &&
+            if (mSM_side_open_ok(play, side, player) && side->menu_type == mSM_OVL_NONE &&
+                Common_Get(map_flag) == TRUE && mEv_CheckFirstIntro() == FALSE &&
                 mSM_check_map_position(player)) {
                 mPlib_set_menu_opener_for_slot(pad, player, pad, mPlib_player_slot_of(player));
                 mSM_open_submenu(side, mSM_OVL_MAP, 1, 0);
@@ -517,10 +535,7 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
                 continue;
             }
 
-            if ((Common_Get(reset_flag) != FALSE) || (target->process_status != mSM_PROCESS_WAIT) ||
-                (target->start_refuse != FALSE) ||
-                (target->start_refuse_timer != 0) ||
-                (mPlib_able_submenu_type1_player((GAME*)play, player) == FALSE)) {
+            if (mSM_side_open_ok(play, target, player) == FALSE) {
                 continue;
             }
 
