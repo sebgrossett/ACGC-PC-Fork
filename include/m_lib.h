@@ -6,6 +6,7 @@
 #include "m_actor_type.h"
 #include "sys_math.h"
 #include "libu64/u64types.h"
+#include "libultra/ultratypes.h"
 #include "game.h"
 
 #ifdef __cplusplus
@@ -131,6 +132,7 @@ extern int _Game_play_isPause(GAME_PLAY* play);
 extern f32 check_percent_abs(f32 x, f32 min, f32 max, f32 scale, int shift_by_min);
 extern f32 get_percent_forAccelBrake(f32 now, f32 start, f32 end, f32 accelerateDist, f32 brakeDist);
 extern void Game_play_Projection_Trans(GAME_PLAY* const play, xyz_t* world_pos, xyz_t* screen_pos);
+extern void Game_play_Projection_Trans_m(MtxF* mtx, xyz_t* world_pos, xyz_t* screen_pos);
 
 extern f32 get_percent(const int max, const int min, const int x);
 

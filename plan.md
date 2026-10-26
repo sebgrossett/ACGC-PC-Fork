@@ -319,15 +319,17 @@ Also open after this slice (paths in section 4):
 
 **Per-player clock** (requested 2026-10-26, branch `feature/per-player-clock` off `master`; `src/game/m_banti.c`, `include/m_banti.h`). The clock fade was linked: `banti_move` read `mPlib_Get_address_able_display()` (the selected resident's `address_able_display`, a per-actor field set from each player's own `now_main_index` table in `m_player_common.c_inc`), so one player running faded both clocks.
 
-Checkpoint 1, per-view fade (built 2026-10-26, MINGW32 clean, playtest pending):
+Checkpoint 1, per-view fade (built and playtested 2026-10-26, committed `76d024e`):
 - `Banti_c` splits: per-view `Banti_view_c view[banti_VIEW_NUM=4]` (addressable_type, timer, alpha); `disabled` and the slide fields (`disp_left`, `move_left`, `move_timer`) stay shared this checkpoint, with the slide still driven by the selected resident (view 0) as retail.
 - `banti_move` loops active views (view i player = selected resident / `mPlib_extra_player_at(i-1)`) and runs the retail addressable-timer and alpha logic per view from that player's own field; the demo/title forced fade stays global. The fade-in gate is now "this player has no menu open" (`banti_player_menu_open`: their primary opener match, or their own side slot) instead of the one global submenu.
 - `banti_draw(play, view_idx)` takes the view index; the split HUD loop passes `i`, single player passes 0. View 0's behaviour is byte-identical retail.
-- Playtest: P2 running must not fade P1's clock and vice versa; a menu open fades only its opener's clock; demos/title fade both; single player unchanged.
+- Playtest: per-player run/menu fade confirmed; one gap: a talk faded BOTH clocks (the forced-fade demo check was global).
 
-Checkpoint 2, per-view slide and placement (open):
-- The slide condition ("player parked in the clock's screen corner") still projects the selected resident through the stale combined matrix at move time. Per-view needs each view's own camera at decision time — either per-view projection at move (save/restore `play->view`/`projection_matrix` around `Game_play_Projection_Trans`) or moving the decision into the per-view draw pass where that view's camera is current.
-- Placement/offscreen: the half slide is `-92` (half of retail `-184`); confirm against the clock's actual half-coords whether that lands partially offscreen in a half or quadrant and tune.
+Checkpoint 2, per-view slide, scoped demo fade, half-slide placement (built 2026-10-26, MINGW32 clean, playtest pending):
+- The demo/title forced fade is now per view: an active demo forces the fade only on its own player (talker match, side-talk player match) or when unattributable (talker NULL, e.g. door zooms — retail-global behaviour); the title demo stays global. This is what made both clocks fade during one player's NPC talk.
+- The slide is per view: `banti_view_slide(view_idx, screen_pos, dt)` runs the retail state machine (10-frame timers, `disabled` gate, `disp_left`) on that view's own fields. The PC driver in `Game_play_move` projects each view's player through a rebuilt per-view matrix (`play_view_projection_matrix`: `guPerspective` × `guLookAt` from that view's camera and rect, applied via the new `Game_play_Projection_Trans_m` in `m_lib.c`) — the old shared check projected the selected resident through the stale last-drawn view's matrix, so the slide could trigger for the wrong player. The retail path keeps the single-camera projection for view 0.
+- Half-slide placement fix: a half's ortho shows only content x 0..160 (the retail right half) and the clock sits at about x +40..+150 there, so the old `-92` slide landed half the clock past the half's left edge — the observed "50% on, 50% off". The half now slides `-40` (flush to the half's left edge, fully visible); quadrants keep the retail `-184` (full ortho).
+- Playtest: each player parking in their own view's top-right corner slides only their clock; the half clock stays fully on screen; talks fade only the talker's clock; single player unchanged.
 
 **Co-op menu and join/leave** (branch `feature/coop-menu` off `master` after the per-player-menu merge). Phase 4.
 

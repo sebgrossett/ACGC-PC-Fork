@@ -45,9 +45,19 @@
 #include "pc_platform.h"
 #include "pc_settings.h"
 #include "pc_session_menu.h"
+
+/* Split-view helpers defined further down; the per-view clock-slide driver in
+ * Game_play_move uses them before their definitions. */
 #include "pc_pause_menu.h"
 #include "pc_menu_util.h"
 #include "libforest/emu64/emu64_wrapper.h"
+
+/* Split-view helpers defined further down; the per-view clock-slide driver in
+ * Game_play_move uses them before their definitions. */
+static void play_view_rect(int index, int count, rect* out);
+static int play_player_count(void);
+static PLAYER_ACTOR* play_view_player(GAME_PLAY* play, int index);
+static void play_view_camera(GAME_PLAY* play, int index, xyz_t* eye, xyz_t* center);
 #endif
 
 #define Game_play_HYRAL_SIZE 0x3E800 // 256,000 bytes
@@ -847,6 +857,45 @@ static void Game_play_move(GAME* game) {
     game->doing_point = 3;
     watch_my_step_move(play);
     game->doing_point = 4;
+#ifdef TARGET_PC
+    /* Each view's clock slide needs its own camera: project that view's player
+     * through a rebuilt per-view matrix (the stored play->projection_matrix is
+     * the last-drawn view's at move time). */
+    {
+        int count = play_player_count();
+        int i;
+
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* player = play_view_player(play, i);
+            xyz_t eye, center, screen_pos;
+            Mtx proj_m;
+            Mtx look_m;
+            MtxF proj;
+            MtxF look;
+            MtxF combined;
+            u16 normal;
+            rect vrect;
+            f32 aspect;
+
+            if (player == NULL) {
+                continue;
+            }
+
+            play_view_camera(play, i, &eye, &center);
+            play_view_rect(i, count, &vrect);
+            aspect = (f32)(vrect.r - vrect.l) / (f32)(vrect.bottom - vrect.top);
+            guPerspective(&proj_m, &normal, play->view.fovY, aspect, play->view.near, play->view.far,
+                          play->view.scale);
+            guLookAt(&look_m, eye.x, eye.y, eye.z, center.x, center.y, center.z, play->view.up.x, play->view.up.y,
+                     play->view.up.z);
+            Matrix_MtxtoMtxF(&proj_m, &proj);
+            Matrix_MtxtoMtxF(&look_m, &look);
+            Skin_Matrix_MulMatrix(&proj, &look, &combined);
+            Game_play_Projection_Trans_m(&combined, &player->actor_class.world.position, &screen_pos);
+            banti_view_slide(i, &screen_pos, (f32)play->game.graph->dt_num_60fps_frames);
+        }
+    }
+#endif
     banti_move(play);
     game->doing_point = 5;
     title_demo_move(play);

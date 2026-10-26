@@ -810,16 +810,21 @@ extern f32 get_percent_forAccelBrake(f32 now, f32 start, f32 end, f32 accelerate
  * @param wpos Pointer to the 3D world position (xyz_t).
  * @param screen_pos Pointer to the resulting 2D screen position (xyz_t).
  */
-extern void Game_play_Projection_Trans(GAME_PLAY* const play, xyz_t* world_pos, xyz_t* screen_pos) {
+/* Matrix-parameterized core: project a world position to 320x240 screen space
+ * through an arbitrary combined projection+viewing matrix. */
+extern void Game_play_Projection_Trans_m(MtxF* mtx, xyz_t* world_pos, xyz_t* screen_pos) {
     f32 w;
 
-    Matrix_mult(&play->projection_matrix, MTX_LOAD);
+    Matrix_mult(mtx, MTX_LOAD);
     Matrix_Position(world_pos, screen_pos);
-    w = play->projection_matrix.ww +
-        ((play->projection_matrix.wx * world_pos->x) + (play->projection_matrix.wy * world_pos->y) +
-         (play->projection_matrix.wz * world_pos->z));
+    w = mtx->ww +
+        ((mtx->wx * world_pos->x) + (mtx->wy * world_pos->y) + (mtx->wz * world_pos->z));
     screen_pos->x = (SCREEN_WIDTH_F / 2.0f) + ((screen_pos->x / w) * (SCREEN_WIDTH_F / 2.0f));
     screen_pos->y = (SCREEN_HEIGHT_F / 2.0f) - ((screen_pos->y / w) * (SCREEN_HEIGHT_F / 2.0f));
+}
+
+extern void Game_play_Projection_Trans(GAME_PLAY* const play, xyz_t* world_pos, xyz_t* screen_pos) {
+    Game_play_Projection_Trans_m(&play->projection_matrix, world_pos, screen_pos);
 }
 
 /**

@@ -37,16 +37,16 @@ typedef struct banti_callback_s {
 
 typedef struct banti_view_s {
   int addressable_type;
+  int disabled; /* slide-transition gate */
   f32 timer;
   f32 alpha;
+  int disp_left;
+  int move_left;
+  f32 move_timer;
 } Banti_view_c;
 
 typedef struct banti_s {
   Banti_view_c view[banti_VIEW_NUM];
-  int disabled; /* shared slide-transition gate */
-  int disp_left;
-  int move_left;
-  f32 move_timer;
 
   Banti_anim_c month_anim;
   Banti_anim_c day_anim;
@@ -62,6 +62,7 @@ typedef struct banti_s {
 extern void banti_ct();
 extern void banti_dt();
 extern void banti_move(GAME_PLAY* play);
+extern void banti_view_slide(int view_idx, xyz_t* screen_pos, f32 dt);
 extern void banti_draw(GAME_PLAY* play, int view_idx);
 
 #ifdef __cplusplus
