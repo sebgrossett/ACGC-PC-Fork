@@ -129,31 +129,6 @@ extern void banti_view_slide(int view_idx, xyz_t* screen_pos, f32 dt) {
     banti_view_slide_disp(&banti.view[view_idx], dt, screen_pos);
 }
 
-/* TRUE when this player has a menu open or transitioning (their primary menu,
- * or their own side-slot menu). The retail check was the one global submenu. */
-static int banti_player_menu_open(GAME_PLAY* play, PLAYER_ACTOR* player) {
-    Submenu* side;
-    int pad;
-
-    if (player == NULL) {
-        return FALSE;
-    }
-
-    if ((play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE) &&
-        mPlib_menu_opener_for_slot(0) == player) {
-        return TRUE;
-    }
-
-    pad = mPlib_pad_for_player(player);
-    side = (pad > 0 && pad < mSM_SLOT_NUM) ? mSM_side_slot_p(pad) : NULL;
-    if (side != NULL &&
-        (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE)) {
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
 static void banti_calc_disp_alpha_rate(GAME_PLAY* play, Banti_view_c* view, PLAYER_ACTOR* player) {
     /* The retail forced fade was global: any demo faded the one clock. With
      * per-player demos, only the demo's own player (or an unattributable one)
@@ -173,7 +148,7 @@ static void banti_calc_disp_alpha_rate(GAME_PLAY* play, Banti_view_c* view, PLAY
         add_calc(&view->alpha, 0.0f, 1.0f - sqrtf(0.8), 0.1f,
                  0.005f); /* quickly fade out on demo screen or title or force disabled */
     } else if (view->addressable_type == mPlayer_ADDRESSABLE_TRUE &&
-               banti_player_menu_open(play, player) == FALSE) {
+               mSM_player_menu_open_by_slot(play, mPlib_player_slot_of(player)) == FALSE) {
         add_calc(&view->alpha, 1.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade in */
     } else {
         add_calc(&view->alpha, 0.0f, 1.0f - sqrtf(0.8), 0.0425f, 0.0005f); /* fade out */

@@ -66,19 +66,14 @@ static int session_menu_can_open(int pad) {
     me = session_menu_pad_player(pad);
     if (me == NULL) return 0;
 
-    /* Only this player's own game menu blocks their session menu. The primary
-     * can be busy because another player opened something; that does not hold
-     * this session menu hostage. */
-    if (play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE ||
-        play->submenu.mode != mSM_MODE_IDLE) {
-        if (mPlib_menu_opener_for_slot(0) == me) return 0;
-    }
-
-    /* The requesting player's own side-slot menu (their inventory) blocks
-     * their session menu. */
-    side = mSM_side_slot_p(pad);
-    if (side != NULL && (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE ||
-                         side->mode != mSM_MODE_IDLE)) {
+    /* Only this player's own game menu blocks their session menu: their
+     * primary-menu open or their own side-slot inventory (the shared helper),
+     * plus the mode tails retail keeps after a close. The primary can be busy
+     * because another player opened something; that does not hold this session
+     * menu hostage. */
+    if (mSM_player_menu_open_by_slot(play, mPlib_player_slot_of(me)) ||
+        (mPlib_menu_opener_for_slot(0) == me && play->submenu.mode != mSM_MODE_IDLE) ||
+        ((side = mSM_side_slot_p(pad)) != NULL && side->mode != mSM_MODE_IDLE)) {
         return 0;
     }
 

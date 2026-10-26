@@ -46,7 +46,7 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 
 | id | severity | summary | status |
 |----|----------|---------|--------|
-| A1 | P1 | Consolidate menu-open ownership checks into one `m_submenu.c` helper | open |
+| A1 | P1 | Consolidate menu-open ownership checks into one `m_submenu.c` helper | done |
 | A2 | P2 | Extract the repeated submenu open-gate chain | open |
 | A3 | P2 | Unify the per-frame wait-actor setup | open |
 | A4 | P2 | Remove/gate the `[PAUSE]` debug printfs | open |
@@ -55,3 +55,4 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 ## Pass log
 
 - 2026-10-26: Initial audit of the co-op work (55 commits, 2026-10-24..26). Verdict: proceed. Findings A1-A5 opened. The mailbox shared-accumulator fix and the receiver-ignoring proc pattern are recorded in `plan.md` §4 and were verified during this audit.
+- 2026-10-26: A1 done on `feature/audit-a1`. New helper `mSM_player_menu_open_by_slot(GAME_PLAY*, slot)` in `m_submenu.c` (primary busy with this slot as opener, or this slot's side-slot menu open/transitioning; slot-based because `PLAYER_ACTOR` is not visible in `m_submenu.h`). Reworked onto it: `mDemo_owner_menu_open` (now a one-line wrapper, pad param dropped), `banti_player_menu_open` (deleted; the clock fade gate calls the helper via `mPlib_player_slot_of`), and `pc_session_menu_can_open` (helper + the two retail `mode` tails kept inline as scoped extras). MINGW32 clean. Smoke regression owed by the operator: clock fade during a menu, demo guard vs a menu holder's A, session gate block.

@@ -21,6 +21,7 @@ typedef struct submenu_s Submenu;
 extern int mSM_cur_slot(void);
 extern void mSM_set_cur_slot(int slot);
 extern Submenu* mSM_side_slot_p(int slot);
+extern int mSM_player_menu_open_by_slot(GAME_PLAY* play, int slot);
 extern void mSM_side_slot_begin(int slot);
 extern void mSM_side_slot_end(int slot);
 

@@ -39,6 +39,35 @@ extern Submenu* mSM_side_slot_p(int slot) {
     return &s_submenu_side_slot[slot];
 }
 
+/* TRUE when this save slot's player has a game menu open or transitioning:
+ * their own primary-menu open (they are the slot-0 opener), or their own
+ * side-slot menu. The single source for the demo owner guard, the per-view
+ * clock fade gate and the session-menu gate. */
+extern int mSM_player_menu_open_by_slot(GAME_PLAY* play, int slot) {
+    Submenu* side;
+    PLAYER_ACTOR* player;
+    int pad;
+
+    if (slot < 0 || slot >= PLAYER_NUM) {
+        return FALSE;
+    }
+
+    player = get_player_actor_by_index(play, slot);
+
+    if ((play->submenu.process_status != mSM_PROCESS_WAIT || play->submenu.menu_type != mSM_OVL_NONE) &&
+        player != NULL && mPlib_menu_opener_for_slot(0) == player) {
+        return TRUE;
+    }
+
+    pad = mPlib_pad_for_player_slot(slot);
+    side = (pad > 0 && pad < mSM_SLOT_NUM) ? mSM_side_slot_p(pad) : NULL;
+    if (side != NULL && (side->process_status != mSM_PROCESS_WAIT || side->menu_type != mSM_OVL_NONE)) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 extern void mSM_side_slot_begin(int slot) {
     GAME_PLAY* play = (GAME_PLAY*)gamePT;
 
