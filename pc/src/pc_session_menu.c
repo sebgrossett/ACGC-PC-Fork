@@ -245,19 +245,6 @@ int pc_session_menu_handle_event(const SDL_Event* e) {
 
     if ((e->type == SDL_CONTROLLERBUTTONDOWN && e->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) ||
         (e->type == SDL_KEYDOWN && !e->key.repeat && e->key.keysym.sym == SDLK_ESCAPE)) {
-        /* PROBE: session gate trace (remove after diagnosis) */
-        {
-            GAME_PLAY* play = (GAME_PLAY*)gamePT;
-            Submenu* side = (pad > 0 && pad < mSM_SLOT_NUM) ? mSM_side_slot_p(pad) : NULL;
-            FILE* f = fopen("probe_log.txt", "a");
-            if (f != NULL) {
-                fprintf(f, "ssn: pad=%d gate=%d side(proc=%d type=%d) prim(proc=%d type=%d opener0=%p)\n", pad,
-                        session_menu_can_open(pad), side ? side->process_status : -1, side ? side->menu_type : -1,
-                        play ? play->submenu.process_status : -1, play ? play->submenu.menu_type : -1,
-                        (void*)mPlib_menu_opener_for_slot(0));
-                fclose(f);
-            }
-        }
         session_menu_open(pad);
         return 1;
     }

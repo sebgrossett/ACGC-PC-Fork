@@ -82,15 +82,6 @@ void pc_pause_menu_toggle(void) {
     if (!g_pc_paused && (g_pc_title_main_menu_visible || g_pc_nes_active)) return;
     if (!g_pc_paused && pc_coop_dialogue_active()) return;
 
-    /* PROBE: pause toggle trace (remove after diagnosis) */
-    {
-        FILE* f = fopen("probe_log.txt", "a");
-        if (f != NULL) {
-            fprintf(f, "pause: %d -> %d\n", g_pc_paused, !g_pc_paused);
-            fclose(f);
-        }
-    }
-
     g_pc_paused = !g_pc_paused;
     if (g_pc_paused) {
         cur_page = PAGE_MAIN;

@@ -192,7 +192,11 @@ int pc_platform_poll_events(void) {
                     break; /* swallow all keys while paused */
                 }
                 if (pc_session_menu_handle_event(&event)) break;
-                if (event.key.keysym.sym == SDLK_ESCAPE && !event.key.repeat) {
+                /* ESC is row 0's pause key only when row 0 owns the keyboard.
+                 * A keyboard guest row uses ESC as its session-menu button; if
+                 * the session gate declines it, it must not leak into the
+                 * host's pause. */
+                if (event.key.keysym.sym == SDLK_ESCAPE && !event.key.repeat && pc_pad_keyboard_row() == 0) {
                     pc_pause_menu_toggle();
                     break;
                 }
