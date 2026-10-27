@@ -217,8 +217,20 @@ extern void mPlib_slot_context_end(GAME_PLAY* play) {
 
 static int guest_slot_for_actor(ACTOR* actor) {
     int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actor);
+    int pad;
 
-    if ((slot < 0) || (slot == (int)Common_Get(player_no))) {
+    if (slot < 0) {
+        return -1;
+    }
+
+    /* Indoors this resident is player_no for that play. Their controller is
+     * still their Controls row, so the move has to borrow pads[0] from it. */
+    pad = mPlib_pad_for_player_slot(slot);
+    if (pad > 0) {
+        return slot;
+    }
+
+    if (slot == (int)Common_Get(player_no)) {
         return -1;
     }
 

@@ -23,8 +23,10 @@
 #include "ac_insect.h"
 #include "ac_quest_manager.h"
 #include "ac_intro_demo.h"
+#include "pc_settings.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #define PC_DLFTBL_CAP 256
@@ -49,6 +51,7 @@ typedef struct {
     u8 in_initial_block;
     u8 sunlight_flag;
     u8 player_no;
+    s8 floor_idx;
     Private_c* now_private;
     Door_data_c door_data;
     Door_data_c structure_exit;
@@ -78,6 +81,9 @@ static s8 s_door_return[PLAYER_NUM];
 static int s_pad0_slot = 0;
 /* Resident a door is sending inside. -1 until a scene change notes one. */
 static int s_enter_slot = -1;
+/* Pad of a resident whose town actor was removed. The slot table forgets
+ * them; the split still needs their view. -1 while they are in the town. */
+static s8 s_slot_pad[PLAYER_NUM];
 
 static int pc_scene_splits(int scene) {
     /* One list for every interior. The house proved the switch; the other
@@ -134,6 +140,7 @@ static void pc_world_capture(int index) {
     world->in_initial_block = Common_Get(in_initial_block);
     world->sunlight_flag = Common_Get(sunlight_flag);
     world->player_no = Common_Get(player_no);
+    world->floor_idx = Common_Get(floor_idx);
     world->now_private = Common_Get(now_private);
     world->door_data = Common_Get(door_data);
     world->structure_exit = Common_Get(structure_exit_door_data);
@@ -167,6 +174,7 @@ static void pc_world_restore(int index) {
     Common_Set(in_initial_block, world->in_initial_block);
     Common_Set(sunlight_flag, world->sunlight_flag);
     Common_Set(player_no, world->player_no);
+    Common_Set(floor_idx, world->floor_idx);
     Common_Set(now_private, world->now_private);
     Common_Set(door_data, world->door_data);
     Common_Set(structure_exit_door_data, world->structure_exit);
@@ -179,6 +187,7 @@ static void pc_world_restore(int index) {
     aINS_world_load(world->insect_ctrl, &world->insect_clip);
     aQMgr_world_load(&world->quest);
     aID_world_load(&world->intro_clip);
+    Game_play_set_sound_room(world->scene_no);
     gamePT = world->game;
     mPlib_world_clear_bind();
 }
@@ -211,6 +220,7 @@ void pc_world_attach_primary(GAME* game) {
     for (i = 0; i < PLAYER_NUM; i++) {
         s_slot_world[i] = 0;
         s_door_return[i] = FALSE;
+        s_slot_pad[i] = -1;
     }
 
     s_world[0].game = game;
@@ -307,10 +317,6 @@ static void pc_world_drop_player(GAME_PLAY* play, int slot) {
     PLAYER_ACTOR* host = get_player_actor_by_index(play, slot);
 
     if (host == NULL) {
-        host = get_player_actor_withoutCheck(play);
-    }
-
-    if (host == NULL) {
         return;
     }
 
@@ -327,6 +333,7 @@ static void pc_world_drop_player(GAME_PLAY* play, int slot) {
 static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot) {
     GAME* child;
     int index;
+    int saved_pad = -1;
 
     index = pc_world_free_slot();
     if (index < 0) {
@@ -355,6 +362,9 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
         if (priv != NULL) {
             Common_Set(now_private, priv);
         }
+
+        /* Read before the child play rewrites the shared pad table. */
+        saved_pad = mPlib_pad_for_player_slot(resident_slot);
     }
 
     memset(child, 0, sizeof(GAME_PLAY));
@@ -365,6 +375,11 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
     /* The child play registered its own player into the shared slot table.
      * Keep that player only, then snapshot the interior. */
     mPlib_world_keep_slot(resident_slot);
+    /* Child init registers the resident as the selected player, which is
+     * pad 0. Put their Controls row back before the interior is snapshotted. */
+    if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM) && (saved_pad >= 0)) {
+        mPlib_register_player_pad(resident_slot, saved_pad);
+    }
     s_world[index].game = child;
     pc_world_capture(index);
     pc_world_restore(0);
@@ -373,7 +388,8 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
 
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
         s_slot_world[resident_slot] = (s8)index;
-        if (mPlib_pad_for_player_slot(resident_slot) == 0) {
+        s_slot_pad[resident_slot] = (s8)saved_pad;
+        if (saved_pad == 0) {
             s_pad0_slot = resident_slot;
         }
     }
@@ -399,6 +415,23 @@ void pc_world_note_entering(int slot) {
     s_enter_slot = slot;
 }
 
+void pc_world_leave_log(const char* msg) {
+    FILE* file;
+
+    if (msg == NULL) {
+        return;
+    }
+
+    file = fopen("leave_log.txt", "a");
+    if (file == NULL) {
+        return;
+    }
+
+    fprintf(file, "%s\n", msg);
+    fflush(file);
+    fclose(file);
+}
+
 static void pc_world_destroy_child(int index) {
     GAME* child;
 
@@ -407,6 +440,7 @@ static void pc_world_destroy_child(int index) {
     }
 
     child = s_world[index].game;
+    pc_world_leave_log("cleanup");
     pc_world_bind(index);
     s_child_cleanup = TRUE;
     play_cleanup(child);
@@ -419,6 +453,7 @@ static void pc_world_destroy_child(int index) {
     if (s_live > 1) {
         s_live--;
     }
+    pc_world_leave_log("cleanup done");
 
     /* The last interior move left its colliders in this global. The next town
      * pass reads them. The actors are already freed. */
@@ -436,6 +471,7 @@ void pc_world_drop_children(void) {
 
     for (i = 0; i < PLAYER_NUM; i++) {
         s_slot_world[i] = 0;
+        s_slot_pad[i] = -1;
     }
 
     s_live = (s_world[0].game != NULL) ? 1 : 0;
@@ -484,21 +520,82 @@ static void pc_world_fade_in_town(GAME_PLAY* leaving, ACTOR* who) {
     Game_play_start_fade_in_player(town, leaving->fb_wipe_type, who);
 }
 
+static int pc_world_pad_for_resident(int resident_slot, int session) {
+    int pad;
+    int row;
+
+    if ((resident_slot < 0) || (resident_slot >= PLAYER_NUM)) {
+        return -1;
+    }
+
+    pad = (int)s_slot_pad[resident_slot];
+    if (pad < 0) {
+        pad = mPlib_pad_for_player_slot(resident_slot);
+    }
+
+    /* Pad 0 is the resident still outside. A guest who lost their row must
+     * not be spawned on that pad, or the new body replaces them. */
+    if ((pad <= 0) && (resident_slot != session)) {
+        for (row = 1; row < PC_PLAYER_COUNT; row++) {
+            if ((g_pc_coop_joined[row] != 0) && (g_pc_coop_guest_slot[row] == resident_slot)) {
+                return row;
+            }
+        }
+    }
+
+    return pad;
+}
+
 static ACTOR* pc_world_spawn_return(GAME_PLAY* primary, Door_data_c* door, int resident_slot) {
     xyz_t pos;
     ACTOR* actor;
     s16 angle;
+    int pad = -1;
+    int session = (int)Common_Get(player_no);
+
+    pad = pc_world_pad_for_resident(resident_slot, session);
+
+    /* Already outside: move that body to the door. A second construct is the
+     * model neither pad can drive. */
+    if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
+        actor = (ACTOR*)get_player_actor_by_index(primary, resident_slot);
+        if (actor != NULL) {
+            xyz_t_move_s_xyz(&pos, &door->exit_position);
+            actor->world.position = pos;
+            actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+            s_slot_world[resident_slot] = 0;
+            s_slot_pad[resident_slot] = -1;
+            s_door_return[resident_slot] = TRUE;
+            return actor;
+        }
+    }
+
+    /* The town's selected resident is already outside. Spawning without a
+     * guest slot registers this actor as them and leaves the real body. */
+    if ((resident_slot >= 0) && (resident_slot != session)) {
+        if (pad <= 0) {
+            mPlib_queue_guest_slot(-1, -1);
+            return NULL;
+        }
+        mPlib_queue_guest_slot(resident_slot, pad);
+    }
 
     xyz_t_move_s_xyz(&pos, &door->exit_position);
     angle = pc_exit_angle(door->exit_orientation);
     actor = Actor_info_make_actor(&primary->actor_info, (GAME*)primary, mAc_PROFILE_PLAYER, pos.x, pos.y, pos.z, 0,
                                   angle, 0, -1, -1, -1, EMPTY_NO, (s16)door->extra_data, -1, -1);
-    if (actor != NULL) {
-        actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+    if (actor == NULL) {
+        /* The interior is still theirs. Dropping the slot here removes the
+         * view and the next leave has nobody to spawn. */
+        mPlib_queue_guest_slot(-1, -1);
+        return NULL;
     }
+
+    actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
 
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
         s_slot_world[resident_slot] = 0;
+        s_slot_pad[resident_slot] = -1;
         s_door_return[resident_slot] = TRUE;
     }
 
@@ -530,12 +627,21 @@ static int pc_world_slot_in(int index) {
 }
 
 int pc_world_transition(GAME_PLAY* play) {
+    static int s_in_transition = FALSE;
     int child;
     int scene;
     int slot;
     Door_data_c door;
 
+    if (s_in_transition != FALSE) {
+        pc_world_leave_log("reenter");
+        return TRUE;
+    }
+
+    s_in_transition = TRUE;
+
     if ((s_live <= 0) || (s_world[0].game == NULL)) {
+        s_in_transition = FALSE;
         return FALSE;
     }
 
@@ -543,15 +649,22 @@ int pc_world_transition(GAME_PLAY* play) {
     child = pc_world_child_index(play);
 
     if (child < 0) {
+        int opened;
+
         if (play != (GAME_PLAY*)s_world[0].game) {
+            s_in_transition = FALSE;
             return FALSE;
         }
 
-        if (mPlib_extra_player_count() <= 0) {
+        /* Someone else still has a view. A guest indoors is already off the
+         * town actor list, so the extra count is the wrong test. */
+        if (pc_world_session_count() <= 1) {
+            s_in_transition = FALSE;
             return FALSE;
         }
 
         if (pc_scene_splits(scene) == FALSE) {
+            s_in_transition = FALSE;
             return FALSE;
         }
 
@@ -560,7 +673,9 @@ int pc_world_transition(GAME_PLAY* play) {
         if ((slot < 0) || (slot >= PLAYER_NUM)) {
             slot = (int)Common_Get(player_no);
         }
-        return pc_world_open_scene(play, scene, slot);
+        opened = pc_world_open_scene(play, scene, slot);
+        s_in_transition = FALSE;
+        return opened;
     }
 
     /* Leaving an interior. Back to town, or across into another building.
@@ -568,21 +683,54 @@ int pc_world_transition(GAME_PLAY* play) {
      * frame, so it is only marked here and freed after that move returns.
      * Spawning the returning actor needs the town's globals, so bind the town
      * for it and put the child's state back before this transition returns. */
+    pc_world_leave_log("leave begin");
     slot = pc_world_slot_in(child);
+    /* The child is still bound, so player_no is who is indoors. */
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        slot = (int)Common_Get(player_no);
+    }
     door = Common_Get(door_data);
     pc_world_bind(0);
 
     if ((scene == s_world[0].scene_no) || (pc_scene_splits(scene) == FALSE)) {
-        pc_world_fade_in_town(play, pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot));
+        ACTOR* who;
+
+        pc_world_leave_log("leave spawn");
+        who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
+
+        if (who == NULL) {
+            pc_world_leave_log("leave spawn null");
+            pc_world_bind(child);
+            s_in_transition = FALSE;
+            return TRUE;
+        }
+
+        pc_world_leave_log("leave spawned");
+        pc_world_fade_in_town(play, who);
         mBGM_init();
     } else if (pc_world_open_scene((GAME_PLAY*)s_world[0].game, scene, slot) == FALSE) {
-        pc_world_fade_in_town(play, pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot));
+        ACTOR* who;
+
+        pc_world_leave_log("leave spawn");
+        who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
+
+        if (who == NULL) {
+            pc_world_leave_log("leave spawn null");
+            pc_world_bind(child);
+            s_in_transition = FALSE;
+            return TRUE;
+        }
+
+        pc_world_leave_log("leave spawned");
+        pc_world_fade_in_town(play, who);
         mBGM_init();
     } else {
     }
 
+    pc_world_leave_log("leave marked");
     s_world[child].destroy = TRUE;
     pc_world_bind(child);
+    s_in_transition = FALSE;
     return TRUE;
 }
 
@@ -617,9 +765,123 @@ void pc_world_move_rest(void (*move)(GAME*)) {
     }
 }
 
-void pc_world_fill_views(int* view_world, int count) {
+static int pc_world_slot_pad(int slot) {
+    int pad;
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return -1;
+    }
+
+    pad = mPlib_pad_for_player_slot(slot);
+    if (pad >= 0) {
+        return pad;
+    }
+
+    /* The town table drops an indoor resident. The remembered pad keeps
+     * their half on the correct side. */
+    if (s_slot_world[slot] != 0) {
+        return (int)s_slot_pad[slot];
+    }
+
+    return -1;
+}
+
+static int pc_world_slot_live(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return FALSE;
+    }
+
+    if (mPlib_pad_for_player_slot(slot) >= 0) {
+        return TRUE;
+    }
+
+    return s_slot_world[slot] != 0;
+}
+
+/* Pad 0 first, then the other residents. An indoor guest stays in this list
+ * after their town actor is gone. */
+static int pc_world_ordered_slots(int* slots) {
+    int n = 0;
     int i;
-    int host_slot = -1;
+    int j;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (pc_world_slot_live(i) == FALSE) {
+            continue;
+        }
+
+        slots[n] = i;
+        n++;
+    }
+
+    for (i = 1; i < n; i++) {
+        int slot = slots[i];
+        int pad = pc_world_slot_pad(slot);
+
+        j = i;
+        while (j > 0) {
+            int prev = pc_world_slot_pad(slots[j - 1]);
+            int move = FALSE;
+
+            if ((prev < 0) && (pad >= 0)) {
+                move = TRUE;
+            } else if ((prev >= 0) && (pad >= 0) && (pad < prev)) {
+                move = TRUE;
+            }
+
+            if (move == FALSE) {
+                break;
+            }
+
+            slots[j] = slots[j - 1];
+            j--;
+        }
+
+        slots[j] = slot;
+    }
+
+    return n;
+}
+
+int pc_world_session_count(void) {
+    int slots[PLAYER_NUM];
+    int n = pc_world_ordered_slots(slots);
+
+    return (n > 0) ? n : 1;
+}
+
+int pc_world_entering_slot(void) {
+    return s_enter_slot;
+}
+
+int pc_world_slot_view(int slot) {
+    int slots[PLAYER_NUM];
+    int n = pc_world_ordered_slots(slots);
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (slots[i] == slot) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int pc_world_play_slot(GAME_PLAY* play) {
+    int child = pc_world_child_index(play);
+
+    if (child <= 0) {
+        return -1;
+    }
+
+    return pc_world_slot_in(child);
+}
+
+void pc_world_fill_views(int* view_world, int count) {
+    int slots[PLAYER_NUM];
+    int n;
+    int i;
 
     for (i = 0; i < count && i < PLAYER_NUM; i++) {
         view_world[i] = 0;
@@ -629,27 +891,8 @@ void pc_world_fill_views(int* view_world, int count) {
         return;
     }
 
-    for (i = 0; i < PLAYER_NUM; i++) {
-        if (mPlib_pad_for_player_slot(i) == 0) {
-            host_slot = i;
-            break;
-        }
-    }
-
-    if (host_slot < 0) {
-        host_slot = s_pad0_slot;
-    }
-
-    if ((host_slot >= 0) && (count > 0)) {
-        view_world[0] = s_slot_world[host_slot];
-    }
-
-    for (i = 1; i < count && i < PLAYER_NUM; i++) {
-        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
-        int slot = mPlib_player_slot_of(guest);
-
-        if (slot >= 0) {
-            view_world[i] = s_slot_world[slot];
-        }
+    n = pc_world_ordered_slots(slots);
+    for (i = 0; i < count && i < n; i++) {
+        view_world[i] = s_slot_world[slots[i]];
     }
 }

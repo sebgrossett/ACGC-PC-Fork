@@ -66,7 +66,14 @@ static OSMemBlock* search_last_block(OSArena* arena) {
         OSMemBlock* current = arena->head;
 
         if (OS_MALLOC_BLOCK_OK(current)) {
+            int steps = 0;
+
             while (current != NULL) {
+                /* A cyclic block list never returns. The second house leave
+                 * hangs inside the spawn alloc with the screen already black. */
+                if (++steps > 4096) {
+                    break;
+                }
                 block = current;
                 current = get_block_next(current);
             }
@@ -120,10 +127,17 @@ static void destroy_all_block(OSArena* arena) {
     
     arena_lock(arena);
     block = arena->head;
-    while (block != NULL) {
-        next = get_block_next(block);
-        memset(block, 0xAB, block->size + sizeof(OSMemBlock));
-        block = next;
+    {
+        int steps = 0;
+
+        while (block != NULL) {
+            if (++steps > 4096) {
+                break;
+            }
+            next = get_block_next(block);
+            memset(block, 0xAB, block->size + sizeof(OSMemBlock));
+            block = next;
+        }
     }
     arena_unlock(arena);
 }
@@ -189,7 +203,12 @@ static void* __osMallocAlign_NoLock(OSArena* arena, u32 size, u32 align) {
 
     block = arena->head;
     mask = align - 1;
+    {
+    int steps = 0;
     while (block != NULL) {
+        if (++steps > 4096) {
+            break;
+        }
         if (block->free) {
             remain = ((u32)block + sizeof(OSMemBlock)) & mask;
             alignment_bytes = remain == 0 ? 0 : align - remain;
@@ -245,6 +264,7 @@ static void* __osMallocAlign_NoLock(OSArena* arena, u32 size, u32 align) {
 
         block = get_block_next(block);
     }
+    }
 
     return data_p;
 }
@@ -277,7 +297,12 @@ extern void* __osMallocR(OSArena* arena, u32 size) {
     full_size = ALIGN_NEXT(size, 32) + sizeof(OSMemBlock);
     arena_lock(arena);
     block = search_last_block(arena);
+    {
+    int steps = 0;
     while (block != NULL) {
+        if (++steps > 4096) {
+            break;
+        }
         if (block->free && block->size >= size) {
             if (arena->flags & OSArena_FLAG_FREE_BLOCK_TEST) {
                 __osMalloc_FreeBlockTest(arena, block);
@@ -309,6 +334,7 @@ extern void* __osMallocR(OSArena* arena, u32 size) {
         }
 
         block = get_block_prev(block);
+    }
     }
 
     arena_unlock(arena);

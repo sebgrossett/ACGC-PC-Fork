@@ -26,6 +26,13 @@ int pc_world_transition(struct game_play_s* play);
  * talker is gone, so the transition reads this instead of the selected slot. */
 void pc_world_note_entering(int slot);
 
+/* How many residents still have a view, including one whose town actor was
+ * removed because they are indoors. */
+int pc_world_session_count(void);
+int pc_world_entering_slot(void);
+int pc_world_slot_view(int slot);
+int pc_world_play_slot(struct game_play_s* play);
+
 /* Step every world but the primary. `move` is Game_play_move for one play.
  * Primary stays bound on return. */
 void pc_world_move_rest(void (*move)(struct game_s*));
@@ -47,5 +54,8 @@ int pc_world_any_player(void);
 void pc_world_mark_door_return(int slot);
 int pc_world_door_return_pending(int slot);
 void pc_world_clear_door_return(int slot);
+
+/* Flushed stage line for a leave that hangs with no crash log. */
+void pc_world_leave_log(const char* msg);
 
 #endif

@@ -193,7 +193,14 @@ static void Actor_ct(ACTOR* actor, GAME* game) {
     Shape_Info_init(actor, 0.0f, NULL, 0.0f, 0.0f);
 
     if (Actor_data_bank_dma_end_check(actor, play) == TRUE) {
-        (*actor->ct_proc)(actor, game);
+        /* A profile with a NULL constructor still passes the class-size check.
+         * Calling it is the cockroach spawn crash on the second house leave. */
+        if (actor->ct_proc != NULL) {
+            (*actor->ct_proc)(actor, game);
+        } else {
+            actor->mv_proc = NULL;
+            actor->dw_proc = NULL;
+        }
         actor->ct_proc = NULL;
     }
 }
@@ -800,8 +807,17 @@ extern void Actor_info_dt(Actor_info* actor_info, GAME_PLAY* play) {
 
     for (i = 0; i < ACTOR_PART_NUM; i++) {
         ACTOR* actor;
+#ifdef TARGET_PC
+        int guard = 0;
+#endif
 
         while (actor = actor_info->list[i].actor, actor != NULL) {
+#ifdef TARGET_PC
+            if (++guard > 4096) {
+                actor_info->list[i].actor = NULL;
+                break;
+            }
+#endif
             Actor_info_delete(actor_info, actor, (GAME*)play);
         }
     }
@@ -875,8 +891,16 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
         ACTOR* next;
         actor = actor_info->list[i].actor;
 
+#ifdef TARGET_PC
+        int guard = 0;
+#endif
+
         while (actor != NULL) {
 #ifdef TARGET_PC
+            /* A cyclic list is the leave hang: the frame never returns. */
+            if (++guard > 4096) {
+                break;
+            }
             if (Actor_info_is_wait_actor(actor)) {
                 actor = actor->next_actor;
                 continue;
@@ -1181,8 +1205,10 @@ extern ACTOR* Actor_info_make_actor(Actor_info* actor_info, GAME* game, s16 prof
 
     profile = dlftbl->profile;
 #ifdef TARGET_PC
-    /* Skip actors with NULL or stubbed profiles (stub functions masquerading as struct data) */
-    if (profile == NULL || profile->class_size == 0 || profile->class_size > 0x100000) {
+    /* Skip actors with NULL or stubbed profiles (stub functions masquerading as struct data).
+     * A NULL constructor still passes the size check. Linking that actor is the
+     * hang on the second house leave: the list keeps a cockroach with no move. */
+    if (profile == NULL || profile->class_size == 0 || profile->class_size > 0x100000 || profile->ct_proc == NULL) {
         return NULL;
     }
 #endif

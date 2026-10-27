@@ -1437,21 +1437,30 @@ extern void mPlib_repair_guest_pads(void) {
 }
 #endif
 
-/* Controls pad of a player actor: 0 for the selected resident, the registered
- * Controls row for a guest. -1 when the actor is not an active player. */
+/* Controls pad of a player actor. The registered row wins: an indoor resident
+ * is the selected player of that play, and still uses their own controller.
+ * -1 when the actor is not an active player. */
 extern int mPlib_pad_for_player(PLAYER_ACTOR* player) {
     int slot;
+    int pad;
 
     if (player == NULL) {
         return -1;
+    }
+
+    slot = mPlib_player_slot_of(player);
+    if (slot >= 0) {
+        pad = mPlib_pad_for_player_slot(slot);
+        if (pad >= 0) {
+            return pad;
+        }
     }
 
     if (player == get_player_actor_withoutCheck((GAME_PLAY*)gamePT)) {
         return 0;
     }
 
-    slot = mPlib_player_slot_of(player);
-    return (slot >= 0) ? mPlib_pad_for_player_slot(slot) : -1;
+    return -1;
 }
 
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {

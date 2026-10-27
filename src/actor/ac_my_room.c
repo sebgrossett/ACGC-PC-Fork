@@ -1857,8 +1857,16 @@ static void aMR_FreeMallocBank(ACTOR* actorx) {
     int i;
 
     if (my_room->bank_count1 != 0) {
+        if (my_room->bank_count1 > aMR_FTR_BANK_NUM) {
+            my_room->bank_count1 = aMR_FTR_BANK_NUM;
+        }
         for (i = 0; i < my_room->bank_count1; i++) {
-            zelda_free(l_bank_address_table[my_room->bank_count0 + i]);
+            int idx = my_room->bank_count0 + i;
+
+            if ((idx >= 0) && (idx < aMR_FTR_BANK_NUM) && (l_bank_address_table[idx] != NULL)) {
+                zelda_free(l_bank_address_table[idx]);
+                l_bank_address_table[idx] = NULL;
+            }
         }
     }
 }
@@ -1868,10 +1876,12 @@ static void aMR_FreeHeapArea(ACTOR* actorx) {
 
     if (l_aMR_work.ftr_actor_list != NULL) {
         zelda_free(l_aMR_work.ftr_actor_list);
+        l_aMR_work.ftr_actor_list = NULL;
     }
 
     if (l_aMR_work.used_list != NULL) {
         zelda_free(l_aMR_work.used_list);
+        l_aMR_work.used_list = NULL;
     }
 
     aMR_FreeMallocBank(actorx);
@@ -1882,6 +1892,7 @@ static void aMR_FreeHeapArea(ACTOR* actorx) {
 
     if (my_room->bank0_p != NULL) {
         zelda_free(my_room->bank0_p);
+        my_room->bank0_p = NULL;
     }
 }
 
@@ -1914,6 +1925,10 @@ static void aMR_AllFurnitureDestruct(ACTOR* actorx, GAME* game) {
     int i;
 
     sAdo_RhythmAllStop();
+    /* A corrupt count walks off the table on the second room destroy. */
+    if (l_aMR_work.list_size > 128) {
+        l_aMR_work.list_size = 128;
+    }
     if (ftr_actor != NULL && used != NULL) {
         for (i = 0; i < l_aMR_work.list_size; i++) {
             if (*used) {

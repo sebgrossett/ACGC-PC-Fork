@@ -221,6 +221,9 @@ static void Game_play_fbdemo_wipe_init(GAME_PLAY* play) {
 /* The player whose view plays the current fade-in. NULL means the selected
  * resident, which is the retail house exit. */
 static ACTOR* s_fade_player = NULL;
+/* Set around Game_play_start_fade_in. Any other IN after the first frame is
+ * the entrance wipe starting again. */
+static int s_allow_fade_in = FALSE;
 #endif
 
 static void Game_play_fbdemo_fade_in_move_end(GAME_PLAY* play) {
@@ -266,10 +269,36 @@ static void Game_play_change_scene_move_end(GAME_PLAY* play) {
     Save_Set(scene_no, play->next_scene_no);
 }
 
+#ifdef TARGET_PC
+/* The second house leave covers the screen and never finishes. Sound checks
+ * can hold an out-wipe there with no fault. Count this play's frames only.
+ * The town steps first each frame and must not clear the house count. */
+static GAME_PLAY* s_out_wipe_play = NULL;
+static int s_out_wipe_ticks = 0;
+#endif
+
 static void Game_play_fbdemo_wipe_move(GAME_PLAY* play) {
     fbdemo_wipe* wipe = &play->fbdemo_wipe;
     s16 wipet = FALSE;
     int isDone = TRUE;
+
+#ifdef TARGET_PC
+    if (play->fb_fade_type == FADE_TYPE_OUT) {
+        if (s_out_wipe_play != play) {
+            s_out_wipe_play = play;
+            s_out_wipe_ticks = 0;
+        }
+        s_out_wipe_ticks++;
+        if (s_out_wipe_ticks > 90) {
+            s_out_wipe_ticks = 0;
+            s_out_wipe_play = NULL;
+            pc_world_leave_log("wipe force");
+            Game_play_change_scene_move_end(play);
+            play->fb_fade_type = FADE_TYPE_NONE;
+            return;
+        }
+    }
+#endif
 
     if (wipe->wipe_procs.isfinished_proc(&wipe->wipe_data) != 0) {
         if ((play->fb_fade_type != FADE_TYPE_IN) && (play->fb_fade_type != FADE_TYPE_EVENT)) {
@@ -378,8 +407,33 @@ static void Game_play_fbdemo_wipe_proc(GAME_PLAY* play) {
     static PLAY_WIPE_PROC wipe_proc[] = { (PLAY_WIPE_PROC)none_proc1, Game_play_fbdemo_wipe_create,
                                           Game_play_fbdemo_wipe_init, Game_play_fbdemo_wipe_move };
 
+#ifdef TARGET_PC
+    /* The entrance wipe runs while the menu is idle. The first inventory open
+     * was starting that same wipe again after the menu had already left idle.
+     * Drop that IN wipe only. An exit wipe has to keep running, or the second
+     * leave stays on the door walk. */
+    if ((play->submenu.process_status != mSM_PROCESS_WAIT) && (s_allow_fade_in == FALSE) &&
+        ((play->fb_fade_type == FADE_TYPE_IN) || (play->fb_fade_type == FADE_TYPE_NONE))) {
+        if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
+            Game_play_fbdemo_wipe_destroy(play);
+        }
+        play->fb_wipe_mode = WIPE_MODE_NONE;
+        play->fb_fade_type = FADE_TYPE_NONE;
+    }
+#endif
+
     if ((play->fb_wipe_mode == WIPE_MODE_NONE) && (play->fb_fade_type != FADE_TYPE_NONE)) {
-        play->fb_wipe_mode = WIPE_MODE_CREATE;
+#ifdef TARGET_PC
+        /* play_init sets IN while game_frame is still 0, so the real entrance
+         * still plays. A later IN that did not come from start_fade_in is the
+         * same wipe running again. */
+        if ((play->fb_fade_type == FADE_TYPE_IN) && (play->game_frame != 0) && (s_allow_fade_in == FALSE)) {
+            play->fb_fade_type = FADE_TYPE_NONE;
+        } else
+#endif
+        {
+            play->fb_wipe_mode = WIPE_MODE_CREATE;
+        }
     }
 
     wipe_proc[play->fb_wipe_mode](play);
@@ -395,7 +449,9 @@ extern void Game_play_start_fade_in(GAME_PLAY* play, int wipe_type) {
     play->fb_wipe_type = (u8)wipe_type;
     play->fb_fade_type = FADE_TYPE_IN;
     play->fb_wipe_mode = WIPE_MODE_NONE;
+    s_allow_fade_in = TRUE;
     Game_play_fbdemo_wipe_proc(play);
+    s_allow_fade_in = FALSE;
 }
 
 extern void Game_play_start_fade_in_player(GAME_PLAY* play, int wipe_type, ACTOR* player) {
@@ -531,7 +587,15 @@ extern void play_init(GAME* game) {
     }
 #endif
 
+#ifdef TARGET_PC
+    /* The overlay table is the session's. A house play that resets it unlinks
+     * the open menu and the next inventory draw never comes back. */
+    if (pc_world_init_is_child() == FALSE) {
+        mSM_submenu_ovlptr_init(play);
+    }
+#else
     mSM_submenu_ovlptr_init(play);
+#endif
     mDemo_Init(play);
     mEv_init(&play->event);
 
@@ -1436,9 +1500,14 @@ static int play_menu_mode(int count, int index) {
     return 3 + index;
 }
 
-/* One player, or the selected resident plus one per extra pad. */
+/* One player, or one view per resident still in the session. An indoor guest
+ * is no longer in the town actor list, and still keeps their half. */
 static int play_player_count(void) {
+#ifdef TARGET_PC
+    return pc_world_session_count();
+#else
     return 1 + mPlib_extra_player_count();
+#endif
 }
 
 /* The actor a split view belongs to: view 0 is the selected resident. */
@@ -1699,11 +1768,37 @@ static int play_fade_every_view(GAME_PLAY* fading) {
 
 static int play_fade_view(GAME_PLAY* play) {
     PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+    GAME_PLAY* fading = play_fading_play(play);
+    int slot = -1;
     int view;
 
+    /* Join and the walk back outside name the actor. That wins over the
+     * door slot, which is only set for a scene change. */
     if (s_fade_player != NULL) {
         view = play_actor_view_index(play, (PLAYER_ACTOR*)s_fade_player);
-        return (view < 0) ? 0 : view;
+        if (view > 0) {
+            return view;
+        }
+    }
+
+    /* The out-wipe runs on the town before that resident is removed. The
+     * in-wipe runs on the interior after. Either one belongs to their half. */
+    if (fading != NULL) {
+        slot = pc_world_play_slot(fading);
+    }
+    if (slot < 0) {
+        slot = pc_world_entering_slot();
+    }
+
+    if (slot >= 0) {
+        view = pc_world_slot_view(slot);
+        if (view >= 0) {
+            return view;
+        }
+    }
+
+    if (s_fade_player != NULL) {
+        return 0;
     }
 
     if (host == NULL) {
@@ -1714,6 +1809,23 @@ static int play_fade_view(GAME_PLAY* play) {
     return (view < 0) ? 0 : view;
 }
 
+static int play_menu_blocks_fade(GAME_PLAY* fading, int view) {
+    GAME_PLAY* view_play;
+
+    if ((fading != NULL) && (fading->submenu.process_status != mSM_PROCESS_WAIT)) {
+        return TRUE;
+    }
+
+    if ((view >= 0) && (view < PLAYER_NUM)) {
+        view_play = pc_world_at(s_draw_view_world[view]);
+        if ((view_play != NULL) && (view_play->submenu.process_status != mSM_PROCESS_WAIT)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int count) {
     Gfx* newdisp;
     Gfx* polydisp;
@@ -1721,6 +1833,12 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
     int full;
 
     if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
+        return;
+    }
+
+    /* Same frame the menu leaves idle, the wipe proc has already run. Do not
+     * draw that card onto an open menu. */
+    if (play_menu_blocks_fade(play, view) != FALSE) {
         return;
     }
 
@@ -1961,9 +2079,11 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #endif
 
 #ifdef TARGET_PC
-    /* With extra players, keep drawing every view. The fullscreen prerender
-     * blit is what blacked out the other view and hid the menu. */
-    if (play->submenu.mode == mSM_MODE_PRERENDER_DONE && mPlib_extra_player_count() == 0) {
+    /* With anyone else still on screen, keep drawing every view. The fullscreen
+     * prerender blit is what blacked out the other view and hid the menu. An
+     * indoor resident is already off the town actor list, so the extra count
+     * is the wrong test. */
+    if (play->submenu.mode == mSM_MODE_PRERENDER_DONE && play_player_count() <= 1) {
 #else
     if (play->submenu.mode == mSM_MODE_PRERENDER_DONE) {
 #endif
@@ -2182,6 +2302,16 @@ static void Game_play_draw(GAME_PLAY* play) {
                         }
 
                         opener_index = play_actor_view_index(play, mPlib_menu_opener_for_slot(slot));
+                        /* An indoor resident is not in the town actor list, so
+                         * the actor lookup is P1's half. The save slot is theirs. */
+                        {
+                            int resident = mPlib_menu_opener_priv_for_slot(slot);
+                            int view = pc_world_slot_view(resident);
+
+                            if (view >= 0) {
+                                opener_index = view;
+                            }
+                        }
 
                         pc_graph_flush_world(graph);
                         play_restart_disp(play, graph);
@@ -2267,7 +2397,19 @@ static void play_move_child(GAME* child) {
         for (i = 0; i < MAXCONTROLLERS; i++) {
             child->pads[i] = primary->pads[i];
         }
-        child->mcon = primary->mcon;
+
+        /* The interior's resident is not pad 0. The camera reads mcon before
+         * the actor move borrows pads[0]. */
+        {
+            int slot = pc_world_play_slot((GAME_PLAY*)child);
+            int pad = (slot >= 0) ? mPlib_pad_for_player_slot(slot) : 0;
+
+            if ((pad > 0) && (pad < MAXCONTROLLERS)) {
+                mCon_calc(&child->mcon, (f32)child->pads[pad].now.stick_x, (f32)child->pads[pad].now.stick_y);
+            } else {
+                child->mcon = primary->mcon;
+            }
+        }
     }
 
     s_world_move_primary = FALSE;
@@ -2378,6 +2520,12 @@ static u8 mPl_SceneNo2SoundRoomType(int scene) {
             return 0;
     }
 }
+
+#ifdef TARGET_PC
+extern void Game_play_set_sound_room(int scene) {
+    sAdo_RoomType(mPl_SceneNo2SoundRoomType(scene));
+}
+#endif
 
 static void Gameplay_Scene_Read(GAME_PLAY* play, s16 idx) {
     static Scene_Word_u* scene_word_data[SCENE_NUM] = {

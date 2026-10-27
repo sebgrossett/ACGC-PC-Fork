@@ -260,7 +260,15 @@ typedef struct {
 static s16 cKF_KeyCalc(s16 start_idx, s16 n_frames, s16* data_src, f32 frame) {
     int now;
     int next;
-    cKF_AnimKey_c* key_p = (cKF_AnimKey_c*)&data_src[start_idx * 3];
+    cKF_AnimKey_c* key_p;
+
+    /* A bad key count walks off the table and never returns. That is the
+     * door-walk hang after the second inventory reload. */
+    if ((n_frames <= 0) || (data_src == NULL)) {
+        return 0;
+    }
+
+    key_p = (cKF_AnimKey_c*)&data_src[start_idx * 3];
 
     /* If the first frame is greater than the current frame then the first value is held */
     if (key_p[0].frame >= frame) {
@@ -276,7 +284,7 @@ static s16 cKF_KeyCalc(s16 start_idx, s16 n_frames, s16* data_src, f32 frame) {
     now = 0;
     next = 1;
 
-    while (TRUE) {
+    while (next < n_frames) {
         if (key_p[next].frame > frame) {
             f32 delta_frame = key_p[next].frame - key_p[now].frame;
 
@@ -296,6 +304,8 @@ static s16 cKF_KeyCalc(s16 start_idx, s16 n_frames, s16* data_src, f32 frame) {
         now++;
         next++;
     }
+
+    return key_p[n_frames - 1].value;
 }
 
 extern void cKF_SkeletonInfo_subRotInterpolation(f32 t, s16* out, s16 rot1, s16 rot2) {

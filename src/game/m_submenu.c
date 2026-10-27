@@ -400,13 +400,35 @@ static int mSM_check_open_map_new(GAME_PLAY* play) {
 
 /* First active player pressing Start/Y, in controller-index order (ties go to
  * the lower index). */
+#ifdef TARGET_PC
+/* Another play already has its menu open. This play's idle opener must not
+ * replace that resident. */
+static int mSM_other_menu_open(GAME_PLAY* play) {
+    int world;
+
+    for (world = 0; world < PC_WORLD_MAX; world++) {
+        GAME_PLAY* other = pc_world_at(world);
+
+        if ((other == NULL) || (other == play)) {
+            continue;
+        }
+
+        if ((other->submenu.process_status != mSM_PROCESS_WAIT) || (other->submenu.menu_type != mSM_OVL_NONE)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+#endif
+
 static int mSM_find_inventory_press(GAME_PLAY* play, PLAYER_ACTOR** out_player, int* out_pad) {
     int count = 1 + mPlib_extra_player_count();
     int i;
 
     for (i = 0; i < count; i++) {
         PLAYER_ACTOR* player = (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
-        int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(player));
+        int pad = mPlib_pad_for_player(player);
 
         if ((player == NULL) || (pad < 0) || (pad >= MAXCONTROLLERS)) {
             continue;
@@ -467,13 +489,30 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         /* The town submenu stays idle while the indoor menu is open. Writing
          * a NULL opener here cleared the indoor player before the draw. */
         if (host != NULL) {
+            int pad = mPlib_pad_for_player(host);
+
+            if (pad < 0) {
+                pad = 0;
+            }
+#ifdef TARGET_PC
+            if (mSM_other_menu_open(play) == FALSE) {
+                mPlib_set_menu_opener(host, pad, (int)Common_Get(player_no));
+            }
+#else
             mPlib_set_menu_opener(host, 0, (int)Common_Get(player_no));
+#endif
         }
     }
 
     open_inventory = mSM_find_inventory_press(play, &press_player, &press_pad);
 
+    /* A house play's resident is not pad 0. Their inventory is this play's
+     * menu, the same as P1 indoors. A town guest still uses a side slot. */
+#ifdef TARGET_PC
+    if (open_inventory && press_pad > 0 && pc_world_play_slot(play) < 0) {
+#else
     if (open_inventory && press_pad > 0) {
+#endif
         /* A guest opens its own side slot. Only that slot's state and that
          * player's own request state gate it; the primary being busy, or the
          * host's refuse flags, do not. */
@@ -502,7 +541,7 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
 
         for (i = 1; i < count; i++) {
             PLAYER_ACTOR* player = mPlib_extra_player_at(i - 1);
-            int pad = (player != NULL) ? mPlib_pad_for_player_slot(mPlib_player_slot_of(player)) : -1;
+            int pad = mPlib_pad_for_player(player);
             Submenu* side;
 
             if ((player == NULL) || (pad <= 0) || (pad >= MAXCONTROLLERS)) {
@@ -548,7 +587,7 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         for (i = 0; i < count; i++) {
             PLAYER_ACTOR* player =
                 (i == 0) ? GET_PLAYER_ACTOR(play) : mPlib_extra_player_at(i - 1);
-            int pad = (i == 0) ? 0 : mPlib_pad_for_player_slot(mPlib_player_slot_of(player));
+            int pad = mPlib_pad_for_player(player);
             Submenu* target = (pad == 0) ? submenu : mSM_side_slot_p(pad);
             int menu_slot = (pad == 0) ? 0 : pad;
             s16 y_dir;

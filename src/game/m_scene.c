@@ -135,6 +135,34 @@ extern void mSc_regist_initial_exchange_bank(GAME_PLAY* play) {
     play->object_exchange.exchange_id = play->object_exchange.bank_idx; /* leftover from DnM? */
 }
 
+#ifdef TARGET_PC
+/* Inventory close reloads every bank. A destination outside this play's
+ * arena is the second-leave hang: the copy walks the heap, then the return
+ * spawn never comes back. */
+static int mSc_bank_dma_in_arena(Object_Bank_c* bank, Object_Exchange_c* exchange) {
+    int part;
+
+    if ((bank->dma_start == NULL) || (bank->size == 0)) {
+        return FALSE;
+    }
+
+    for (part = 0; part < 2; part++) {
+        char* start = exchange->start_address_save[part];
+        char* end = exchange->end_address_save[part];
+
+        if ((start == NULL) || (end <= start)) {
+            continue;
+        }
+
+        if ((bank->dma_start >= start) && (bank->size <= (size_t)(end - bank->dma_start))) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+#endif
+
 static void mSc_dmacopy_all_exchange_bank_sub(Object_Bank_c* bank, Object_Exchange_c* exchange, int idx) {
     if (idx >= exchange->exchange_id) {
         char* area = (char*)ALIGN_NEXT((u32)exchange->next_bank_ram_address + bank->size, 32);
@@ -152,6 +180,11 @@ static void mSc_dmacopy_all_exchange_bank_sub(Object_Bank_c* bank, Object_Exchan
         exchange->next_bank_ram_address = area;
     }
 
+#ifdef TARGET_PC
+    if (mSc_bank_dma_in_arena(bank, exchange) == FALSE) {
+        return;
+    }
+#endif
     _JW_GetResourceAram(bank->rom_addr, (u8*)bank->dma_start, bank->size);
     DCStoreRangeNoSync(bank->dma_start, bank->size);
     mSc_set_bank_status_after(bank);
@@ -517,6 +550,15 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
     int res = 0; // failed
 
     if (player != NULL) {
+#ifdef TARGET_PC
+        /* A leftover entrance wipe is not an exit. Leaving it up makes
+         * goto return "already changing" and the door walk never finishes. */
+        if ((play->fb_wipe_mode != WIPE_MODE_NONE) &&
+            ((play->fb_fade_type == FADE_TYPE_NONE) || (play->fb_fade_type == FADE_TYPE_IN))) {
+            play->fb_wipe_mode = WIPE_MODE_NONE;
+            play->fb_fade_type = FADE_TYPE_NONE;
+        }
+#endif
         if (play->fb_wipe_mode == WIPE_MODE_NONE) {
             play->fb_fade_type = FADE_TYPE_OUT;
 
