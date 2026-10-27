@@ -1,6 +1,6 @@
 # Animal Crossing (GameCube) PC Port: Local Co-op Plan
 
-**Status:** P1 can enter and leave Nook's Cranny (`feature/nook-shop`, `af85e90`). Next playtest is the inventory outfit figure when P1 is alone inside, and a join waiting out that menu. Then P2's door, the other shops, the museum, and the map board. Held tools are second last. 3-4 players are last. Crash paths stay in §4.
+**Status:** P1's Cranny enter crashed with P2 still outside (`feature/nook-shop`). The town insect net range now follows the player still outside. Next playtest is that enter, then the indoor inventory figure. Then P2's door. Held tools are second last. 3-4 players are last. Crash paths stay in §4.
 
 ## 1. Project overview
 
@@ -254,7 +254,7 @@ Guest spawn trace (do not re-search):
 
 ## 7. Open items
 
-**Next: playtest the inventory outfit figure** when P2 leaves while P1 is inside Cranny (2026-10-27). The shop stays loaded, so that menu was still the split draw and the model missed the full-screen correction. A join during an interior menu waits, same as a town menu. Then P2 into Cranny on `pc_world_transition`. Then the other shops, the museum, and the map board. Do not add another entrance path. `crash_log.txt` stays. Safe return is `af85e90` on `feature/nook-shop` until this playtest holds. Held tools are second last. 3-4 players are last.
+**Next: playtest P1 entering Cranny with P2 outside** (2026-10-27). The crash was the town insect net range reading the resident who had already left (`aINS_set_catch_range`). Then the indoor inventory figure, then P2 into Cranny on `pc_world_transition`. Do not add another entrance path. `crash_log.txt` stays. Safe return is `af85e90` on `feature/nook-shop` until this enter holds. Held tools are second last. 3-4 players are last.
 
 **Ghost model on load: fixed (2026-10-25, playtested).** A P1-shaped model appeared on the ground at P1's door for about two seconds after loading with Player 2 active. Every player actor runs `Player_actor_ct` → DMA → `Player_actor_request_proc_index_fromDma`, which reads `actor_specific & 7`: 1-3 request `mPlayer_INDEX_OUTDOOR` (the `mPlayer_ANIM_GO_OUT_O1` "walk out of a doorway" state plus an `mDemo_TYPE_OUTDOOR` request). `Actor_info_spawn_guest` passed the host's `player_data->arg`, so the guest replayed P1's house exit at P1 + 80 x, 80 units into the open where no door hides it; single player never sees the host's own version. It also issued a second `mDemo_TYPE_OUTDOOR` against the one global demo, which made P1's exit roughly twice as long. Fix: the guest spawns with arg 0 → INTRO → WAIT. Playtest: no model at the door, P2 stands normally, P1 controllable sooner. Probes are gone.
 
