@@ -283,6 +283,14 @@ static void aSHOP_open_door(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
 }
 
 static void aSHOP_pl_into_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* Retail destroys this play on the way in. The town shop stays, and the
+     * next frame would read the removed resident. */
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        aSHOP_setup_action(shop, aSHOP_ACTION_OPEN_WAIT);
+        return;
+    }
+#endif
     if (shop != GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
         return;
     }

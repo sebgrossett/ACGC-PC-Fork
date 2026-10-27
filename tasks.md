@@ -1,7 +1,7 @@
 # Tasks
 
 ## Now
-- Shops, then the museum, then the map board. Same enter/leave as the house (`pc_world_transition`). A per-player loop uses the `*_player` / `*_for` proc. Town menu and talk step only on the town world. First building is Nook (`SCENE_SHOP0`). Start from `feature/audit-a7` (`6e59e1b`, playtest held 2026-10-27).
+- Nook's Cranny (`SCENE_SHOP0`), P1 in and out while P2 stays outside. Same `pc_world_transition` as the house. Branch `feature/nook-shop`. Other residents' doors are the next slice, after this playtest holds. Then the other shops, the museum, and the map board.
 - After those buildings: held tools (this save has none), then 3-4 player validation last (needs 3 controllers and 3-4 residents).
 - `crash_log.txt` stays through the shop playtests. `transition_log.txt` is gone.
 
@@ -18,6 +18,7 @@
 - [x] One player indoors, playtest 40 (`0181c0c`). A7+A8 playtest held on `feature/audit-a7`
 
 ## Progress
+- 2026-10-27: Nook door. The town shop stays in the into-wait after P1 leaves the play, and the next frame read the removed resident. It returns to open-wait. Playtest is P1 in and out, P2 outside. Other residents' doors are next.
 - 2026-10-27: A7+A8 playtest held. Shops are next. Older playtest rows were folded; the detail is in git history.
 - 2026-10-27: A7+A8 on `feature/audit-a7` (`6e59e1b`). Item popup and side talk step on the town. Light prompt and shop bell step once on the interior. `pc_world_trace` removed. `crash_log.txt` stays.
 - 2026-10-27: Co-op surface audit. Bind stays a copy. Inventory and the pending order stay put. Entrances are already one path.
