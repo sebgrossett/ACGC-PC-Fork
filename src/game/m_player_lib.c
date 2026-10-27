@@ -4376,18 +4376,36 @@ extern int mPlib_check_player_actor_main_index_AllWade(GAME* game) {
     return FALSE;
 }
 
+extern int mPlib_check_player_actor_main_index_catch_insect_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    /* The selected resident is gone once they are indoors. A later caller
+     * can pass whichever resident is still outside. */
+    return (player->Get_item_net_catch_label_proc((ACTOR*)player) != 0 &&
+            player->now_main_index == mPlayer_INDEX_SWING_NET) ||
+           player->now_main_index == mPlayer_INDEX_PULL_NET ||
+           player->now_main_index == mPlayer_INDEX_NOTICE_NET ||
+           player->now_main_index == mPlayer_INDEX_PUTAWAY_NET;
+}
+
 extern int mPlib_check_player_actor_main_index_catch_insect(GAME* game) {
-    return (mPlib_Get_item_net_catch_label() != 0 &&
-            mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_SWING_NET) ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PULL_NET ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_NOTICE_NET ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PUTAWAY_NET;
+    return mPlib_check_player_actor_main_index_catch_insect_player(GET_PLAYER_ACTOR_GAME(game));
+}
+
+extern int mPlib_check_player_actor_main_index_catch_fish_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->now_main_index == mPlayer_INDEX_FLY_ROD ||
+           player->now_main_index == mPlayer_INDEX_NOTICE_ROD ||
+           player->now_main_index == mPlayer_INDEX_PUTAWAY_ROD;
 }
 
 extern int mPlib_check_player_actor_main_index_catch_fish(GAME* game) {
-    return mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_FLY_ROD ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_NOTICE_ROD ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PUTAWAY_ROD;
+    return mPlib_check_player_actor_main_index_catch_fish_player(GET_PLAYER_ACTOR_GAME(game));
 }
 
 extern int mPlib_check_player_actor_start_switch_on_lighthouse(GAME* game) {
