@@ -211,10 +211,13 @@ extern int mPlib_cancel_player_warp_forEvent(void);
 extern int mPlib_check_player_warp_forEvent(void);
 extern int mPlib_Check_HitAxe(xyz_t* pos_p);
 extern int mPlib_Check_VibUnit_OneFrame(const xyz_t* pos_p);
+extern int mPlib_Check_StopNet_player(PLAYER_ACTOR* player, xyz_t* pos_p);
 extern int mPlib_Check_StopNet(xyz_t* pos_p);
+extern u32 mPlib_Get_item_net_catch_label_player(PLAYER_ACTOR* player);
 extern u32 mPlib_Get_item_net_catch_label(void);
 extern int mPlib_Change_item_net_catch_label(u32 label, s8 type);
 extern int mPlib_Check_HitScoop(xyz_t* pos_p);
+extern int mPlib_Check_DigScoop_player(PLAYER_ACTOR* player, xyz_t* pos_p);
 extern int mPlib_Check_DigScoop(xyz_t* pos_p);
 extern int mPlib_Get_address_able_display(void);
 extern int mPlib_Check_scoop_after(GAME* game, xyz_t* pos_p, mActor_name_t* item_p, ACTOR** reflect_actor_pp,

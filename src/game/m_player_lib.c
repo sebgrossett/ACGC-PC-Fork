@@ -3420,12 +3420,50 @@ extern int mPlib_Check_VibUnit_OneFrame(const xyz_t* pos_p) {
     return GET_PLAYER_ACTOR_NOW()->Check_VibUnit_OneFrame_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
 }
 
+#ifdef TARGET_PC
+/* Town insects keep moving after the selected resident goes indoors. They
+ * follow the player still outside, the same as the insect controller. */
+static PLAYER_ACTOR* mPlib_player_here(void) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+
+    return player;
+}
+#endif
+
+extern int mPlib_Check_StopNet_player(PLAYER_ACTOR* player, xyz_t* pos_p) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_StopNet_proc((ACTOR*)player, pos_p);
+}
+
 extern int mPlib_Check_StopNet(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_StopNet_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    return mPlib_Check_StopNet_player(mPlib_player_here(), pos_p);
+#else
+    return mPlib_Check_StopNet_player(GET_PLAYER_ACTOR_NOW(), pos_p);
+#endif
+}
+
+extern u32 mPlib_Get_item_net_catch_label_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return 0;
+    }
+
+    return player->Get_item_net_catch_label_proc((ACTOR*)player);
 }
 
 extern u32 mPlib_Get_item_net_catch_label(void) {
-    return GET_PLAYER_ACTOR_NOW()->Get_item_net_catch_label_proc(GET_PLAYER_ACTOR_NOW_ACTOR());
+#ifdef TARGET_PC
+    return mPlib_Get_item_net_catch_label_player(mPlib_player_here());
+#else
+    return mPlib_Get_item_net_catch_label_player(GET_PLAYER_ACTOR_NOW());
+#endif
 }
 
 extern int mPlib_Change_item_net_catch_label(u32 label, s8 type) {
@@ -3436,8 +3474,20 @@ extern int mPlib_Check_HitScoop(xyz_t* pos_p) {
     return GET_PLAYER_ACTOR_NOW()->Check_HitScoop_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
 }
 
+extern int mPlib_Check_DigScoop_player(PLAYER_ACTOR* player, xyz_t* pos_p) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_DigScoop_proc((ACTOR*)player, pos_p);
+}
+
 extern int mPlib_Check_DigScoop(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_DigScoop_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    return mPlib_Check_DigScoop_player(mPlib_player_here(), pos_p);
+#else
+    return mPlib_Check_DigScoop_player(GET_PLAYER_ACTOR_NOW(), pos_p);
+#endif
 }
 
 extern int mPlib_Get_address_able_display(void) {
@@ -4383,7 +4433,7 @@ extern int mPlib_check_player_actor_main_index_catch_insect_player(PLAYER_ACTOR*
 
     /* The selected resident is gone once they are indoors. A later caller
      * can pass whichever resident is still outside. */
-    return (player->Get_item_net_catch_label_proc((ACTOR*)player) != 0 &&
+    return (mPlib_Get_item_net_catch_label_player(player) != 0 &&
             player->now_main_index == mPlayer_INDEX_SWING_NET) ||
            player->now_main_index == mPlayer_INDEX_PULL_NET ||
            player->now_main_index == mPlayer_INDEX_NOTICE_NET ||

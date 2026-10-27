@@ -18,7 +18,7 @@
 - [x] One player indoors, playtest 40 (`0181c0c`). A7+A8 playtest held on `feature/audit-a7`
 
 ## Progress
-- 2026-10-27: Nook enter crash (`rva 0x2D91C1`, NULL + `0x134C`). A town villager asked if the removed resident was swinging a net. The net and rod checks take a player and return false when that player is gone. Playtest is still P1 in and out.
+- 2026-10-27: Nook fade, then crash (`rva 0x2D7021`, NULL + `0x134C`). A town ladybug read the removed resident's net. The net label, the stopped net, and the scoop take a player and follow the player still outside. Playtest is still P1 in and out.
 - 2026-10-27: Nook door. The town shop stays in the into-wait after P1 leaves the play, and the next frame read the removed resident. It returns to open-wait. Playtest is P1 in and out, P2 outside. Other residents' doors are next.
 - 2026-10-27: A7+A8 playtest held. Shops are next. Older playtest rows were folded; the detail is in git history.
 - 2026-10-27: A7+A8 on `feature/audit-a7` (`6e59e1b`). Item popup and side talk step on the town. Light prompt and shop bell step once on the interior. `pc_world_trace` removed. `crash_log.txt` stays.
