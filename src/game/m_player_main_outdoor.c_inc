@@ -83,13 +83,13 @@ static int Player_actor_Request_Demo_Outdoor(ACTOR* actor) {
 #endif
 
     if (player->main_data.outdoor.is_demo == FALSE) {
-        if (mDemo_Check(mDemo_TYPE_OUTDOOR, actor)) {
-            player->main_data.outdoor.is_demo = TRUE;
-            return FALSE;
-        } else {
+        /* One frame for the demo to take the camera. If a door demo is still
+         * held, the request never lands and this actor would wait forever. */
+        if (mDemo_Check(mDemo_TYPE_OUTDOOR, actor) == FALSE) {
             mDemo_Request(mDemo_TYPE_OUTDOOR, actor, Player_actor_Demo_Outdoor_Demo_ct);
-            return FALSE;
         }
+        player->main_data.outdoor.is_demo = TRUE;
+        return FALSE;
     }
 
     return TRUE;

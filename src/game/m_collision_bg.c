@@ -7,6 +7,7 @@
 #include "m_common_data.h"
 #include "m_random_field.h"
 #include "sys_matrix.h"
+#include <string.h>
 
 typedef struct {
     xyz_t pos;
@@ -1965,3 +1966,29 @@ extern void mCoBG_VirtualBGCheck(xyz_t* rev_pos_p, mCoBG_Check_c* bg_check, cons
     mCoBG_BgCheckControll(rev_pos_p, actorx, range, ground_dist, attr_wall, rev_type, check_type);
     *bg_check = actorx->bg_collision_check;
 }
+
+#ifdef TARGET_PC
+typedef struct {
+    mCoBG_vec_info_c vec;
+    mCoBG_ActorInf_c actor;
+    mCoBG_mBgMgr_c mgr;
+} mCoBG_world_state_c;
+
+_Static_assert(sizeof(mCoBG_world_state_c) <= PC_COBG_STATE_BYTES, "collision world state");
+
+extern void mCoBG_world_store(void* dst) {
+    mCoBG_world_state_c* state = (mCoBG_world_state_c*)dst;
+
+    state->vec = l_VecInf;
+    state->actor = l_ActorInf;
+    state->mgr = l_mBgMgr;
+}
+
+extern void mCoBG_world_load(const void* src) {
+    const mCoBG_world_state_c* state = (const mCoBG_world_state_c*)src;
+
+    l_VecInf = state->vec;
+    l_ActorInf = state->actor;
+    l_mBgMgr = state->mgr;
+}
+#endif

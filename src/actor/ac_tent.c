@@ -167,13 +167,19 @@ static int aTnt_check_player(ACTOR* actor, GAME_PLAY* play) {
 
 static void aTnt_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
     xyz_t pos;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
 
-    if (actor == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    /* The selected resident can be in another play (indoors). */
+    if (player == NULL) {
+        return;
+    }
+
+    if (actor == player->get_door_label_proc(gamePT)) {
         aTnt_rewrite_out_data(&actor->actor_class, play);
         goto_other_scene(play, &aTnt_tent_enter_data, 1);
     } else if (aTnt_check_player(&actor->actor_class, play) != 0) {
         pos.x = actor->actor_class.world.position.x;
-        pos.y = GET_PLAYER_ACTOR(play)->actor_class.world.position.y;
+        pos.y = player->actor_class.world.position.y;
         pos.z = 68.0f + actor->actor_class.world.position.z;
         mPlib_request_main_door_type1(&play->game, &pos, -0x8000, 1, &actor->actor_class);
     }
@@ -206,7 +212,7 @@ static void aTnt_actor_move(ACTOR* actor, GAME* game) {
     int bx2;
     int bz2;
 
-    if ((mFI_Wpos2BlockNum(&bx1, &bz1, actor->world.position) != 0) &&
+    if ((player != NULL) && (mFI_Wpos2BlockNum(&bx1, &bz1, actor->world.position) != 0) &&
         (mFI_Wpos2BlockNum(&bx2, &bz2, actor->world.position) != 0) && ((bx1 != bx2) || (bz1 != bz2)) &&
         (mDemo_Check(mDemo_TYPE_SCROLL, &player->actor_class) == FALSE) &&
         (mDemo_Check(mDemo_TYPE_SCROLL2, &player->actor_class) == FALSE) &&

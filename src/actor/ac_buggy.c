@@ -89,6 +89,11 @@ static void aBGY_actor_ct(ACTOR* actor, GAME* game) {
     buggy = (STRUCTURE_ACTOR*)actor;
     play = (GAME_PLAY*)game;
     player = get_player_actor_withoutCheck(play);
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
 
     buggy->season = Common_Get(time.season);
     winter = buggy->season == mTM_SEASON_WINTER;
@@ -103,7 +108,12 @@ static void aBGY_actor_ct(ACTOR* actor, GAME* game) {
     
     action = aBGY_ACTION_WAIT;
 
+#ifdef TARGET_PC
+    if (player != NULL && (int)player->actor_class.world.position.x == x &&
+        (int)player->actor_class.world.position.z == z) {
+#else
     if ((int)player->actor_class.world.position.x == x && (int)player->actor_class.world.position.z == z) {
+#endif
         action = aBGY_ACTION_OPEN_WAIT;
     }
 

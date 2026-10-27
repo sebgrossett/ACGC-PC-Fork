@@ -72,7 +72,8 @@ static void aMSC_menu_open_wait(MSCORE_CONTROL_ACTOR* mscore_ctrl, GAME_PLAY* pl
         }
 
         if (player->a_btn_pressed != TRUE || Common_Get(reset_flag) || submenu->start_refuse ||
-            submenu->start_refuse_timer != 0 || mPlib_able_submenu_type1((GAME*)play) == FALSE) {
+            submenu->start_refuse_timer != 0 ||
+            mPlib_able_submenu_type1_player((GAME*)play, player) == FALSE) {
             continue;
         }
 

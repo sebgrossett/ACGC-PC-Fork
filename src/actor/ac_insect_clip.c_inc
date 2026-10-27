@@ -103,12 +103,19 @@ static int aINS_chk_live_ant(int bx, int bz, GAME* game) {
 }
 
 static int aINS_chk_live_insect(int bx, int bz, GAME* game) {
-    aINS_INSECT_ACTOR* insect = aINS_ctrlActor->insect_actor;
+    aINS_INSECT_ACTOR* insect;
     int res = FALSE;
 
     if (aINS_chk_live_ant(bx, bz, game) == TRUE) {
-        res = TRUE;
-    } else {
+        return TRUE;
+    }
+
+    if (aINS_ctrlActor == NULL) {
+        return FALSE;
+    }
+
+    insect = aINS_ctrlActor->insect_actor;
+    {
         int i;
 
         for (i = 0; i < aINS_ACTOR_NUM - 1; i++) {

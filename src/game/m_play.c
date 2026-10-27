@@ -51,6 +51,7 @@
  * Game_play_move uses them before their definitions. */
 #include "pc_pause_menu.h"
 #include "pc_menu_util.h"
+#include "pc_world.h"
 #include "libforest/emu64/emu64_wrapper.h"
 
 /* Split-view helpers defined further down; the per-view clock-slide driver in
@@ -216,7 +217,16 @@ static void Game_play_fbdemo_wipe_init(GAME_PLAY* play) {
     S_se_endcheck_timeout = 120.0f;
 }
 
+#ifdef TARGET_PC
+/* The player whose view plays the current fade-in. NULL means the selected
+ * resident, which is the retail house exit. */
+static ACTOR* s_fade_player = NULL;
+#endif
+
 static void Game_play_fbdemo_fade_in_move_end(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    s_fade_player = NULL;
+#endif
     Game_play_fbdemo_wipe_destroy(play);
 
     if (play->fb_mode == FBDEMO_MODE_MOVE) {
@@ -231,10 +241,26 @@ static void Game_play_fbdemo_fade_out_start_emu_move_end(GAME_PLAY* play) {
 }
 
 static void Game_play_fbdemo_fade_out_game_end_move_end(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    pc_world_drop_children();
+#endif
     GAME_GOTO_NEXT(&play->game, trademark, TRADEMARK);
 }
 
 static void Game_play_change_scene_move_end(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* Another player is still in this play, or this play is an interior that
+     * should return to the town play. Keep both worlds. */
+    if (pc_world_transition(play)) {
+        Game_play_fbdemo_wipe_destroy(play);
+        play->fb_fade_type = FADE_TYPE_NONE;
+        /* goto_other_scene clears pads because retail destroys this play.
+         * The play stays, and the other world copies these pads each frame. */
+        play->game.pad_initialized = TRUE;
+        sAdo_Set_ongenpos_refuse_fg(0);
+        return;
+    }
+#endif
     game_goto_next_game_play(&play->game);
     Common_Set(last_scene_no, Save_Get(scene_no));
     Save_Set(scene_no, play->next_scene_no);
@@ -331,7 +357,16 @@ static void Game_play_fbdemo_wipe_move(GAME_PLAY* play) {
                     break;
             }
             if (!wipet) {
+#ifdef TARGET_PC
+                /* The handoff frame still draws this play. Clearing the type
+                 * here drops the card on every view but the first, so that
+                 * half shows the town before trademark. */
+                if (play->fb_fade_type != FADE_TYPE_OUT_RETURN_TITLE) {
+                    play->fb_fade_type = FADE_TYPE_NONE;
+                }
+#else
                 play->fb_fade_type = FADE_TYPE_NONE;
+#endif
             }
         }
     } else {
@@ -349,6 +384,25 @@ static void Game_play_fbdemo_wipe_proc(GAME_PLAY* play) {
 
     wipe_proc[play->fb_wipe_mode](play);
 }
+
+#ifdef TARGET_PC
+extern void Game_play_start_fade_in(GAME_PLAY* play, int wipe_type) {
+    if (play == NULL) {
+        return;
+    }
+
+    s_fade_player = NULL;
+    play->fb_wipe_type = (u8)wipe_type;
+    play->fb_fade_type = FADE_TYPE_IN;
+    play->fb_wipe_mode = WIPE_MODE_NONE;
+    Game_play_fbdemo_wipe_proc(play);
+}
+
+extern void Game_play_start_fade_in_player(GAME_PLAY* play, int wipe_type, ACTOR* player) {
+    Game_play_start_fade_in(play, wipe_type);
+    s_fade_player = player;
+}
+#endif
 
 static Gfx* game_play_set_fog(GAME_PLAY* play, Gfx* gfx) {
     return gfx_set_fog_nosync(gfx, play->global_light.fogColor[0], play->global_light.fogColor[1],
@@ -376,7 +430,13 @@ extern void play_cleanup(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
     mMsg_dt(game);
+#ifdef TARGET_PC
+    if (pc_world_cleanup_is_child() == FALSE) {
+        banti_dt();
+    }
+#else
     banti_dt();
+#endif
 
     game->graph->taskEndCallback = NULL;
     game->graph->taskEndData = NULL;
@@ -396,8 +456,15 @@ extern void play_cleanup(GAME* game) {
 
     Actor_info_dt(&play->actor_info, play);
     mEv_finish(&play->event);
+#ifdef TARGET_PC
+    if (pc_world_cleanup_is_child() == FALSE) {
+        mNpc_ClearEventNpc();
+        mNpc_ClearMaskNpc();
+    }
+#else
     mNpc_ClearEventNpc();
     mNpc_ClearMaskNpc();
+#endif
 
     mSM_submenu_dt(&play->submenu);
     play->submenu_ground_idx = -1;
@@ -405,14 +472,30 @@ extern void play_cleanup(GAME* game) {
 
     mPlib_Object_Exchange_keep_Player_dt(play);
 
+#ifdef TARGET_PC
+    if (pc_world_cleanup_is_child() == FALSE) {
+        mHsRm_GetHuusuiRoom(NULL, Common_Get(player_no));
+    }
+#else
     mHsRm_GetHuusuiRoom(NULL, Common_Get(player_no));
+#endif
     mFM_Field_dt();
+#ifdef TARGET_PC
+    if (pc_world_cleanup_is_child() == FALSE) {
+        mCD_toNextLand();
+        mEA_CleanCardDLProgram();
+        if (my_malloc_current == &my_malloc_func) {
+            my_malloc_current = NULL;
+        }
+    }
+#else
     mCD_toNextLand();
     mEA_CleanCardDLProgram();
 
     if (my_malloc_current == &my_malloc_func) {
         my_malloc_current = NULL;
     }
+#endif
 
     zelda_CleanupArena();
 }
@@ -434,6 +517,9 @@ extern void play_init(GAME* game) {
     game_resize_hyral(game, -Game_play_HYRAL_SIZE); // reserve bytes from gamealloc
     Common_Set(rhythym_updated, 0);
 
+#ifdef TARGET_PC
+    if (pc_world_init_is_child() == FALSE) {
+#endif
     mFI_ChangeClimate_ForEventNotice();
     mTM_time_init();
     sAdo_Set_ongenpos_refuse_fg(0);
@@ -441,6 +527,9 @@ extern void play_init(GAME* game) {
     mTD_rtc_set();
     mTM_set_season();
     mPlib_Clear_controller_data_for_title_demo();
+#ifdef TARGET_PC
+    }
+#endif
 
     mSM_submenu_ovlptr_init(play);
     mDemo_Init(play);
@@ -512,11 +601,21 @@ extern void play_init(GAME* game) {
     mEv_2nd_init(&play->event);
     mTD_player_keydata_init(play);
     Balloon_init(play);
+    watch_my_step_ct();
+#ifdef TARGET_PC
+    if (pc_world_init_is_child() == FALSE) {
+        mNtc_set_auto_nwrite_data();
+        banti_ct();
+        event_title_flag_off();
+        mEA_GetCardDLProgram();
+        pc_world_attach_primary(game);
+    }
+#else
     mNtc_set_auto_nwrite_data();
     banti_ct();
-    watch_my_step_ct();
     event_title_flag_off();
     mEA_GetCardDLProgram();
+#endif
 }
 
 /* Every player who must not move this pass: the primary menu's opener (when
@@ -577,6 +676,27 @@ static int play_menu_any_open(GAME_PLAY* play) {
     return FALSE;
 }
 
+#ifdef TARGET_PC
+/* FALSE while stepping an interior, so town-wide work stays once per frame. */
+static int s_world_move_primary = TRUE;
+
+/* The town's actor loop needs someone in that world, or someone still indoors.
+ * The outdoor door is in the town. If the last guest leaves while the other
+ * player is inside, stopping this loop leaves that door stuck and the exit
+ * never finishes. */
+static int play_world_has_player(GAME_PLAY* play) {
+    if (get_player_actor_withoutCheck(play) != NULL) {
+        return TRUE;
+    }
+
+    if (s_world_move_primary == FALSE) {
+        return FALSE;
+    }
+
+    return (mPlib_extra_player_count() != 0) || (pc_world_live() >= 2);
+}
+#endif
+
 static void Game_play_move_fbdemo_not_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
@@ -594,12 +714,18 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
      * Requests whose owner has a menu open are refused in mDemo_Request. */
     if (play->submenu.process_status == mSM_PROCESS_WAIT ||
         (mPlib_extra_player_count() > 0 && play_menu_any_open(play))) {
-        mPlib_demo_context_begin(play);
+        /* The talker is one global. The house move's demo is a different
+         * world; binding or clearing here drops the outdoor sign talk. */
+        if (s_world_move_primary) {
+            mPlib_demo_context_begin(play);
+        }
         mDemo_Main(play);
-        mPlib_demo_context_end(play);
-        mDemo_side_sync_player(play);
-        if (mDemo_CheckDemo() == FALSE) {
-            mPlib_clear_demo_talker();
+        if (s_world_move_primary) {
+            mPlib_demo_context_end(play);
+            mDemo_side_sync_player(play);
+            if (mDemo_CheckDemo() == FALSE) {
+                mPlib_clear_demo_talker();
+            }
         }
     }
 #else
@@ -623,6 +749,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     mSM_submenu_move(&play->submenu);
 #ifdef TARGET_PC
     mPlib_menu_context_end(play);
+    /* Side slots are the town's menus. An interior has no copy of those
+     * players, and stepping the menus there clears now_private. */
+    if (s_world_move_primary) {
     /* Side slots: run each slot's move every frame so its WAIT tick keeps the
      * refuse timers alive after a close (an un-ticked timer would refuse every
      * later open). The opener's player context is only needed while the menu
@@ -649,6 +778,7 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             mSM_side_slot_end(slot);
         }
     }
+    }
 #endif
 
     if (play->submenu.process_status == mSM_PROCESS_WAIT) {
@@ -662,7 +792,12 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         game->doing_point = 0;
         game->doing_point_specific = 0x90;
         play_menu_wait_actors_add(play);
-        Actor_info_call_actor(play, &play->actor_info);
+#ifdef TARGET_PC
+        if (play_world_has_player(play))
+#endif
+        {
+            Actor_info_call_actor(play, &play->actor_info);
+        }
         Actor_info_clear_wait_actors();
         game->doing_point = 0;
         game->doing_point_specific = 0x91;
@@ -688,7 +823,12 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             CollisionCheck_OC(game, &play->collision_check);
             CollisionCheck_clear(game, &play->collision_check);
             play_menu_wait_actors_add(play);
-            Actor_info_call_actor(play, &play->actor_info);
+#ifdef TARGET_PC
+            if (play_world_has_player(play))
+#endif
+            {
+                Actor_info_call_actor(play, &play->actor_info);
+            }
             Actor_info_clear_wait_actors();
             mCoBG_CalcTimerDecalCircle();
 #ifdef TARGET_PC
@@ -845,6 +985,10 @@ static void play_coop_session_proc(GAME_PLAY* play) {
 }
 #endif
 
+#ifdef TARGET_PC
+static void play_move_child(GAME* child);
+#endif
+
 static void Game_play_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     int pause;
@@ -871,6 +1015,13 @@ static void Game_play_move(GAME* game) {
     game->doing_point_specific = 0x8E;
 
     if (!pause) {
+#ifdef TARGET_PC
+        /* A world swap can leave a joined guest on pad 0. Their mailbox close
+         * then opens the town submenu, which is the other resident's mail. */
+        if (s_world_move_primary) {
+            mPlib_repair_guest_pads();
+        }
+#endif
         game->doing_point = 1;
         Game_play_fbdemo_wipe_proc(play);
         game->doing_point = 2;
@@ -891,13 +1042,28 @@ static void Game_play_move(GAME* game) {
         game->doing_point = 0;
         game->doing_point_specific = 0x92;
         game->doing_point = 1;
+#ifdef TARGET_PC
+        /* The selected resident is in another world, or that world was just
+         * dropped on the way to the title. This play has no camera for them.
+         * Guest cameras are built at draw time. */
+        if (get_player_actor_withoutCheck(play) != NULL) {
+            Game_play_camera_proc(play);
+        }
+#else
         Game_play_camera_proc(play);
+#endif
         game->doing_point = 2;
+#ifdef TARGET_PC
+        if (s_world_move_primary) {
+#endif
         mPO_business_proc(play);
         game->doing_point = 3;
         mTRC_move(game);
         game->doing_point = 4;
         Balloon_move(play);
+#ifdef TARGET_PC
+        }
+#endif
         mEnv_ManagePointLight(play, &play->kankyo, &play->global_light);
     }
 
@@ -906,11 +1072,18 @@ static void Game_play_move(GAME* game) {
     game->doing_point = 1;
     Global_kankyo_set(play, &play->kankyo, &play->global_light);
     game->doing_point = 2;
+#ifdef TARGET_PC
+    if (s_world_move_primary) {
+        mEnv_WindMove();
+    }
+#else
     mEnv_WindMove();
+#endif
     game->doing_point = 3;
     watch_my_step_move(play);
     game->doing_point = 4;
 #ifdef TARGET_PC
+    if (s_world_move_primary) {
     /* Each view's clock slide needs its own camera: project that view's player
      * through a rebuilt per-view matrix (the stored play->projection_matrix is
      * the last-drawn view's at move time). */
@@ -948,12 +1121,23 @@ static void Game_play_move(GAME* game) {
             banti_view_slide(i, &screen_pos, (f32)play->game.graph->dt_num_60fps_frames);
         }
     }
+    }
+#endif
+#ifdef TARGET_PC
+    if (s_world_move_primary) {
 #endif
     banti_move(play);
-    game->doing_point = 5;
-    title_demo_move(play);
 #ifdef TARGET_PC
-    play_coop_session_proc(play);
+    }
+#endif
+    game->doing_point = 5;
+#ifdef TARGET_PC
+    if (s_world_move_primary) {
+        title_demo_move(play);
+        play_coop_session_proc(play);
+    }
+#else
+    title_demo_move(play);
 #endif
     game->doing_point = 0;
     game->doing_point_specific = 0x95;
@@ -1217,7 +1401,11 @@ static void play_draw_talk_msg(GAME_PLAY* play, mMsg_Window_c* msg, PLAYER_ACTOR
 /* pc_gx_menu_mode for the opener's view: 1/2 = two-player left/right band,
  * 3-6 = quadrant top-left, top-right, bottom-left, bottom-right. */
 static int play_menu_mode(int count, int index) {
-    if (count <= 2) {
+    if (count <= 1) {
+        return 0;
+    }
+
+    if (count == 2) {
         return (index == 0) ? 1 : 2;
     }
 
@@ -1245,6 +1433,15 @@ static PLAYER_ACTOR* play_view_player(GAME_PLAY* play, int index) {
 }
 
 static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int count, xyz_t* eye, xyz_t* center) {
+#ifdef TARGET_PC
+    /* The indoor view's room prim stays in GL after its list is flushed.
+     * Outdoor acres use that prim and never set it back. */
+    OPEN_DISP(graph);
+    gDPSetPrimColor(NOW_POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
+    gDPSetPrimColor(NOW_POLY_XLU_DISP++, 0, 0, 255, 255, 255, 255);
+    gDPSetPrimColor(NOW_BG_OPA_DISP++, 0, 0, 255, 255, 255, 255);
+    CLOSE_DISP(graph);
+#endif
     play_set_view_player(play, index, count);
     if ((eye != NULL) && (center != NULL)) {
         setLookAtView(&play->view, eye, center, &play->view.up);
@@ -1258,6 +1455,40 @@ static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int c
     Actor_info_draw_actor(play, &play->actor_info);
     mPlib_set_view_player_actor(NULL);
 }
+
+#ifdef TARGET_PC
+static int s_draw_view_world[PLAYER_NUM];
+static GAME_PLAY* s_draw_culled;
+
+/* Draw one view from the world that player is in. A shared world is drawn
+ * once per view, and an empty world is not drawn. */
+static void play_draw_bound_view(GAME_PLAY* play, GRAPH* graph, int index, int count, xyz_t* eye, xyz_t* center) {
+    int world = s_draw_view_world[index];
+    GAME_PLAY* view_play = pc_world_at(world);
+    int foreign;
+
+    if (view_play == NULL) {
+        view_play = play;
+        world = 0;
+    }
+
+    foreign = (view_play != play);
+    if (foreign) {
+        pc_world_bind(world);
+    }
+
+    if (s_draw_culled != view_play) {
+        Actor_info_cull_begin(view_play);
+        s_draw_culled = view_play;
+    }
+
+    play_draw_split_side(view_play, graph, index, count, foreign ? NULL : eye, foreign ? NULL : center);
+
+    if (foreign) {
+        pc_world_bind(0);
+    }
+}
+#endif
 
 /* The guest camera runs the same normal follow as the host (retail spring and
  * constants) but from the guest's own eye position, direction and distance, so
@@ -1378,19 +1609,140 @@ static void play_restart_disp(GAME_PLAY* play, GRAPH* graph) {
     DisplayList_initialize(graph, fill_r, fill_g, fill_b, (GAME*)play);
 }
 
-/* A door wipe uses one full-screen list. A second town during that wipe is what froze the zoom. */
-static int play_split_live(GAME_PLAY* play) {
-    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
-
-    if ((host == NULL) || (mPlib_extra_player_count() == 0)) {
+/* Drawing a second play into the wipe list is what froze the zoom. The other
+ * player's view of this same play stays up, and the wipe is clipped to the
+ * view that is changing scenes. Return to Title fades every view in place, so
+ * each world keeps its own picture under that fade. */
+static int play_draw_keeps_one_world(GAME_PLAY* play) {
+    /* Return to Title and a join fade-in both run while the other player is
+     * still indoors. Collapsing to this play hides that room and, when the
+     * joiner was not a guest yet, never splits. */
+    if ((pc_world_live() >= 2) &&
+        ((play->fb_fade_type == FADE_TYPE_OUT_RETURN_TITLE) || (play->fb_fade_type == FADE_TYPE_IN))) {
         return FALSE;
     }
 
-    if ((play->fb_wipe_mode != WIPE_MODE_NONE) || (play->fb_mode != FBDEMO_MODE_NONE)) {
+    return (play->fb_wipe_mode != WIPE_MODE_NONE) || (play->fb_mode != FBDEMO_MODE_NONE) || (pc_world_live() <= 1);
+}
+
+static int play_split_live(GAME_PLAY* play) {
+    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+
+    /* Someone is still in another scene. Keep their view when the last
+     * outdoor player leaves. */
+    if (pc_world_live() >= 2) {
+        return TRUE;
+    }
+
+    if ((mPlib_extra_player_count() == 0) || (host == NULL)) {
         return FALSE;
     }
 
     return TRUE;
+}
+
+static GAME_PLAY* play_fading_play(GAME_PLAY* town) {
+    int i;
+
+    for (i = 0; i < PC_WORLD_MAX; i++) {
+        GAME_PLAY* world = pc_world_at(i);
+
+        if (world == NULL) {
+            continue;
+        }
+
+        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE)) {
+            return world;
+        }
+    }
+
+    return town;
+}
+
+static int play_fade_is_split(GAME_PLAY* play) {
+    GAME_PLAY* fading = play_fading_play(play);
+    int split = (mPlib_extra_player_count() > 0) || (pc_world_live() >= 2);
+
+    /* Leaving the house runs the wipe on the house play. The town play stays
+     * idle, so a check of this play never sees it. */
+    return (split != FALSE) &&
+           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE));
+}
+
+static int play_fade_every_view(GAME_PLAY* fading) {
+    return fading->fb_fade_type == FADE_TYPE_OUT_RETURN_TITLE;
+}
+
+static int play_fade_view(GAME_PLAY* play) {
+    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+    int view;
+
+    if (s_fade_player != NULL) {
+        view = play_actor_view_index(play, (PLAYER_ACTOR*)s_fade_player);
+        return (view < 0) ? 0 : view;
+    }
+
+    if (host == NULL) {
+        return 0;
+    }
+
+    view = play_actor_view_index(play, host);
+    return (view < 0) ? 0 : view;
+}
+
+static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int count) {
+    Gfx* newdisp;
+    Gfx* polydisp;
+    rect rect;
+    int full;
+
+    if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
+        return;
+    }
+
+    OPEN_DISP(graph);
+
+    newdisp = NOW_POLY_OPA_DISP;
+    polydisp = gfxopen(newdisp);
+    gSPDisplayList(NEXT_OVERLAY_DISP, polydisp);
+
+    full = (count <= 1);
+    if (full) {
+        rect.top = 0;
+        rect.bottom = SCREEN_HEIGHT;
+        rect.l = 0;
+        rect.r = SCREEN_WIDTH;
+        gDPNoOpTag(polydisp++, PC_NOOP_WIDESCREEN_STRETCH);
+    } else {
+        /* fbdemo_wipe1 then replaces the view projection with its own 4:3
+         * matrix. Stretch lets that card fill the window; the scissor below
+         * keeps it inside this view. */
+        gDPNoOpTag(polydisp++, PC_NOOP_WIDESCREEN_STRETCH);
+        play_view_rect(view, count, &rect);
+    }
+
+    if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
+        View wipe_view;
+
+        initView(&wipe_view, graph);
+        wipe_view.flag = VIEW_UPDATE_ORTHOGRAPHIC | VIEW_UPDATE_SCISSOR;
+        setScissorView(&wipe_view, &rect);
+        showView1(&wipe_view, VIEW_UPDATE_ALL, &polydisp);
+        play->fbdemo_wipe.wipe_procs.draw_proc(&play->fbdemo_wipe.wipe_data, &polydisp);
+    }
+
+    fbdemo_fade_draw(&play->color_fade, &polydisp);
+    fade_rgba8888_draw(&polydisp, play->fade_color_value.rgba8888);
+
+    if (full == FALSE) {
+        gDPNoOpTag(polydisp++, PC_NOOP_WIDESCREEN_STRETCH_OFF);
+    }
+
+    gSPEndDisplayList(polydisp++);
+    gfxclose(newdisp, polydisp);
+    SET_POLY_OPA_DISP(polydisp);
+
+    CLOSE_DISP(graph);
 }
 #endif
 
@@ -1402,6 +1754,12 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     Gfx* fb_disp;
     Gfx* old_fb;
     Gfx* poly;
+#ifdef TARGET_PC
+    int fade_drawn = FALSE;
+    GAME_PLAY* fade_play = play_fading_play(play);
+    int clip_fade = play_fade_is_split(play);
+    int fade_view = play_fade_view(play);
+#endif
 
     PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
             play->fb_mode, play->fb_wipe_mode, play->submenu.mode);
@@ -1410,10 +1768,12 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #ifdef TARGET_PC
     /* One world fills the display-list buffers. Draw every view but the last,
      * showing each and restarting the lists, then build the last view where
-     * the right half used to go. A wipe stays one full list. */
+     * the right half used to go. A wipe is drawn into the view that is
+     * changing scenes, before that view is shown. */
     /* Visibility accumulates over every view: the next move pass runs once for
      * all players, so an actor seen by any of them must move. */
     Actor_info_cull_begin(play);
+    s_draw_culled = play;
     if (play_split_live(play)) {
         int count = play_player_count();
         xyz_t host_eye = play->view.eye;
@@ -1421,12 +1781,24 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
         xyz_t host_up = play->view.up;
         int i;
 
+        pc_world_fill_views(s_draw_view_world, count);
         for (i = 0; i < count - 1; i++) {
             xyz_t eye = host_eye;
             xyz_t center = host_center;
 
             play_view_camera(play, i, &eye, &center);
-            play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
+            if (play_draw_keeps_one_world(play)) {
+                play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
+            } else {
+                play_draw_bound_view(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
+            }
+            if ((clip_fade != FALSE) &&
+                ((play_fade_every_view(fade_play) != FALSE) || (i == fade_view))) {
+                play_draw_fade_overlay(fade_play, graph1, i, count);
+                if (play_fade_every_view(fade_play) == FALSE) {
+                    fade_drawn = TRUE;
+                }
+            }
             pc_graph_flush_world(graph1);
             play_restart_disp(play, graph1);
         }
@@ -1437,6 +1809,26 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     }
 #endif
 
+#ifdef TARGET_PC
+    if (clip_fade != FALSE) {
+        if ((play_fade_every_view(fade_play) != FALSE) && (play_split_live(play) != FALSE)) {
+            int count = play_player_count();
+
+            if (count > 1) {
+                play_draw_fade_overlay(fade_play, graph1, count - 1, count);
+            } else if (fade_drawn == FALSE) {
+                play_draw_fade_overlay(fade_play, graph1, 0, 1);
+            }
+        } else if (fade_drawn == FALSE) {
+            int count = play_player_count();
+
+            if (play_fade_every_view(fade_play) != FALSE) {
+                count = 1;
+            }
+            play_draw_fade_overlay(fade_play, graph1, fade_view, count);
+        }
+    } else
+#endif
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 92) != 0)) {
         newdisp = NOW_POLY_OPA_DISP;
         polydisp = gfxopen(newdisp);
@@ -1513,6 +1905,35 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
             }
         }
     }
+
+    /* An interior's menu lives on that play. This draw is the town's, so the
+     * house map would stay in PRERENDER_INIT and the actor loop would never
+     * come back. Same two-frame cadence as a side slot, no fullscreen blit. */
+    {
+        int world;
+
+        for (world = 1; world < PC_WORLD_MAX; world++) {
+            GAME_PLAY* child = pc_world_at(world);
+            Submenu* menu;
+
+            if (child == NULL) {
+                continue;
+            }
+
+            menu = &child->submenu;
+            if (menu->menu_type == mSM_OVL_NONE) {
+                continue;
+            }
+
+            if (menu->mode == mSM_MODE_PRERENDER_WAIT) {
+                menu->mode = mSM_MODE_PRERENDER_DONE;
+            } else if (menu->mode == mSM_MODE_PRERENDER_INIT) {
+                menu->mode = mSM_MODE_PRERENDER_WAIT;
+            } else if (menu->mode >= mSM_MODE_NUM) {
+                menu->mode = mSM_MODE_IDLE;
+            }
+        }
+    }
 #endif
 
 #ifdef TARGET_PC
@@ -1568,7 +1989,11 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 full.r = SCREEN_WIDTH;
                 play_view_camera(play, last, &guest_eye, &guest_center);
 
-                play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
+                if (play_draw_keeps_one_world(play)) {
+                    play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
+                } else {
+                    play_draw_bound_view(play, graph1, last, count, &guest_eye, &guest_center);
+                }
                 setLookAtView(&play->view, &eye, &center, &up);
                 setScissorView(&play->view, &full);
                 setupViewer(play);
@@ -1661,10 +2086,13 @@ static void Game_play_draw(GAME_PLAY* play) {
             PC_DIAG(3, "Game_play_draw: bump done, drawing\n");
             watch_my_step_draw(play);
 #ifdef TARGET_PC
-            if (mPlib_extra_player_count() != 0) {
+            if (play_split_live(play)) {
                 rect saved = play->view.screen;
                 int count = play_player_count();
                 int i;
+                int indoor_menu = FALSE;
+                GAME_PLAY* indoor_play = NULL;
+                Submenu indoor_saved;
 
                 for (i = 0; i < count; i++) {
                     play_set_view_player(play, i, count);
@@ -1673,7 +2101,37 @@ static void Game_play_draw(GAME_PLAY* play) {
                      * half ortho. A quadrant is 320x240 EFB, the retail mapping. */
                     pc_gx_hud_half = (count == 2);
                     banti_draw(play, i);
+                    /* Indoor camera and light prompt. Same half ortho and view
+                     * as the clock, and only the view that is inside. */
+                    if (s_draw_view_world[i] != 0) {
+                        navigate_camera_draw(play);
+                    }
                     pc_gx_hud_half = FALSE;
+                }
+
+                /* The indoor menu lives on the house play. The draw that
+                 * already works is the town slot loop, which reads this
+                 * play's view. Park the house submenu there for that pass. */
+                {
+                    int world;
+
+                    for (world = 1; world < PC_WORLD_MAX && indoor_menu == FALSE; world++) {
+                        GAME_PLAY* child = pc_world_at(world);
+
+                        if (child == NULL || play->submenu.process_status != mSM_PROCESS_WAIT) {
+                            continue;
+                        }
+                        if (child->submenu.process_status == mSM_PROCESS_WAIT ||
+                            child->submenu.mode < mSM_MODE_PRERENDER_DONE) {
+                            continue;
+                        }
+
+                        indoor_saved = play->submenu;
+                        play->submenu = child->submenu;
+                        play->submenu.item_p = &play->submenu.items[0];
+                        indoor_play = child;
+                        indoor_menu = TRUE;
+                    }
                 }
 
                 /* Per-slot menus: the primary (slot 0) and any open guest
@@ -1722,6 +2180,13 @@ static void Game_play_draw(GAME_PLAY* play) {
                         CLOSE_DISP(graph);
                     }
                 }
+
+                if (indoor_menu != FALSE) {
+                    indoor_play->submenu = play->submenu;
+                    indoor_play->submenu.item_p = &indoor_play->submenu.items[0];
+                    play->submenu = indoor_saved;
+                    play->submenu.item_p = &play->submenu.items[0];
+                }
                 play->view.screen = saved;
             } else
 #endif
@@ -1753,6 +2218,25 @@ static void Game_play_draw(GAME_PLAY* play) {
         }
     }
 }
+
+#ifdef TARGET_PC
+static void play_move_child(GAME* child) {
+    GAME* primary = pc_world_primary();
+
+    if (primary != NULL) {
+        int i;
+
+        for (i = 0; i < MAXCONTROLLERS; i++) {
+            child->pads[i] = primary->pads[i];
+        }
+        child->mcon = primary->mcon;
+    }
+
+    s_world_move_primary = FALSE;
+    Game_play_move(child);
+    s_world_move_primary = TRUE;
+}
+#endif
 
 extern void play_main(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
@@ -1790,6 +2274,9 @@ extern void play_main(GAME* game) {
 
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 81) != 0)) {
         Game_play_move(game);
+#ifdef TARGET_PC
+        pc_world_move_rest(play_move_child);
+#endif
     }
     game->doing_point = 0;
     game->doing_point_specific = 0xAA;

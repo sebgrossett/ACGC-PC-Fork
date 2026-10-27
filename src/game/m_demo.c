@@ -29,6 +29,16 @@ static s16 direct_back_angle[mDemo_DIRECT_NUM] = { 0x0000, 0xE000, 0xC000, 0xA00
 static mDemo_Data_c demo_data;
 static mDemo_Data_c* const demo = &demo_data;
 
+#ifdef TARGET_PC
+extern void mDemo_world_store(mDemo_Data_c* dst) {
+    *dst = demo_data;
+}
+
+extern void mDemo_world_load(const mDemo_Data_c* src) {
+    demo_data = *src;
+}
+#endif
+
 static int mDemo_Check_talk_type() {
     int res = FALSE;
 
@@ -268,6 +278,14 @@ static int change_camera(int camera_type) {
     player = GET_PLAYER_ACTOR_NOW();
     play = (GAME_PLAY*)gamePT;
 
+#ifdef TARGET_PC
+    /* The talk camera is play->view, which is the other player's picture.
+     * A guest's setup still asks for it. Leave that view on its follow. */
+    if ((mPlib_demo_talker_is_guest() != FALSE) && (camera_type != CAMERA2_PROCESS_NORMAL)) {
+        camera_type = CAMERA2_PROCESS_NORMAL;
+    }
+#endif
+
     if (camera_type == play->camera.now_main_index) {
         return FALSE;
     }
@@ -429,6 +447,15 @@ static int set_talk_default() {
 
 static int wait_talk_start() {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_demo_talker();
+    }
+    if (player == NULL) {
+        return FALSE;
+    }
+#endif
 
     if (demo->data.talk.change_player) {
         if (mPlib_get_player_actor_main_index(gamePT) != 65 &&
@@ -742,9 +769,18 @@ static f32 weight_of_talk_position(ACTOR* actor) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
     f32 actor_talk_dist;
     f32 player_dist;
-    f32 dist_y = player->actor_class.world.position.y - actor->world.position.y;
-    s16 diff_y = player->actor_class.shape_info.rotation.y - actor->player_angle_y;
+    f32 dist_y;
+    s16 diff_y;
     s16 angle_y;
+
+#ifdef TARGET_PC
+    /* Town NPCs still request talk after the last outdoor resident leaves. */
+    if (player == NULL) {
+        return -99.0f;
+    }
+#endif
+    dist_y = player->actor_class.world.position.y - actor->world.position.y;
+    diff_y = player->actor_class.shape_info.rotation.y - actor->player_angle_y;
 
     if (dist_y < 0.0f) {
         dist_y = -dist_y;

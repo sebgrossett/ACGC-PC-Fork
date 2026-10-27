@@ -1325,6 +1325,29 @@ static void aMR_MakeOneFurniture(ACTOR* actorx, mActor_name_t item, GAME* game, 
             u8* used = l_aMR_work.used_list;
             FTR_ACTOR* ftr_actor = l_aMR_work.ftr_actor_list + id;
 
+#ifdef TARGET_PC
+            /* Layer 1 repeats layer 0's cells after a world restore. The same
+             * gyroid then exists twice and the two dances no longer overlap. */
+            {
+                int have_i;
+                FTR_ACTOR* have = l_aMR_work.ftr_actor_list;
+
+                for (have_i = 0; have_i < l_aMR_work.list_size; have_i++) {
+                    f32 dx;
+                    f32 dz;
+
+                    if ((used[have_i] != FALSE) && (have->name == ftr_idx)) {
+                        dx = have->position.x - ((f32)ut_x * mFI_UT_WORLDSIZE_X_F);
+                        dz = have->position.z - ((f32)ut_z * mFI_UT_WORLDSIZE_Z_F);
+                        if ((dx * dx + dz * dz) < (36.0f * 36.0f)) {
+                            return;
+                        }
+                    }
+
+                    have++;
+                }
+            }
+#endif
             if (aMR_GetFurnitureBank2(ftr_idx, game, item)) {
                 used[id] = TRUE;
                 aMR_FurnitureCt(ftr_actor, game, ut_x, ut_z, item, id, aFTR_STATE_STOP, layer, FALSE);

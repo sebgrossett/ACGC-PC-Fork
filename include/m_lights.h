@@ -76,6 +76,9 @@ extern Light_list* Global_light_list_new(GAME* game, Global_light* glight, Light
 extern void Global_light_list_delete(Global_light* glight, Light_list* light);
 extern void Light_list_point_draw(GAME_PLAY* play);
 
+/* One 32-slot pool. Two plays allocating from it reuse each other's nodes. */
+extern Light_buffer light_list_buf;
+
 #ifdef __cplusplus
 }
 #endif

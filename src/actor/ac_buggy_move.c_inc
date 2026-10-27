@@ -226,6 +226,11 @@ static void aBGY_open_wait(STRUCTURE_ACTOR* buggy, GAME_PLAY* play) {
     actor = (ACTOR*)buggy;
     game = &play->game;
 
+#ifdef TARGET_PC
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        return;
+    }
+#endif
     if (buggy == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
         aBGY_rewrite_out_data(actor, play);
         goto_other_scene(play, &aBGY_buggy_door_data, TRUE);

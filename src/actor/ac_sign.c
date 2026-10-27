@@ -248,8 +248,13 @@ static void aSIGN_actor_set_draw_tables(SIGN_ACTOR* sign, GAME_PLAY* play, xyz_t
 
 static void aSIGN_actor_set_draw(SIGN_ACTOR* sign, GAME* game) {
     xyz_t pos = *Camera2_getCenterPos_p();
-
+#ifdef TARGET_PC
+    /* Door offset follows the selected resident. After that resident goes
+     * indoors the town still moves signs, and the lookup is NULL. */
+    if (GET_PLAYER_ACTOR_GAME(game) != NULL && mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DOOR) {
+#else
     if (mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DOOR) {
+#endif
         pos.z -= mFI_UT_WORLDSIZE_Z_F;
     }
 
@@ -525,6 +530,12 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
 
         if (reader != NULL) {
             player_actor = (ACTOR*)reader;
+        }
+        if (player_actor == NULL) {
+            if (side) {
+                mMsg_set_use_window(NULL);
+            }
+            return;
         }
 #endif
         player_angle = player_actor->shape_info.rotation;

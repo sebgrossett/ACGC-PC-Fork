@@ -64,6 +64,10 @@ extern void SetGameFrame(int frame);
 extern void game_main(GAME* game);
 extern void game_resize_hyral(GAME* game, int size);
 extern void game_ct(GAME* game, void (*init)(GAME*), GRAPH* graph);
+#ifdef TARGET_PC
+/* A second play that shares the graph. Does not reinit controllers, BGM, or gamePT. */
+extern void game_child_ct(GAME* game, void (*init)(GAME*), GRAPH* graph);
+#endif
 extern void game_dt(GAME* game);
 extern void (*game_get_next_game_init(GAME* game))(GAME*);
 #ifndef MUST_MATCH

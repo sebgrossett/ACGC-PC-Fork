@@ -2098,8 +2098,20 @@ static void mIV_inventory_ovl_init(Submenu* submenu, mSM_MenuInfo_c* menu_info, 
         ITEM_NAME_GET_CAT(menu_info->data1) == ITEM1_CAT_FISH) {
         inv_ovl->release_flag = TRUE;
     } else {
-        inv_ovl->release_flag = mCoBG_SearchWaterLimitDistN(&inv_ovl->release_pos, player->actor_class.world.position,
-                                                            player->actor_class.shape_info.rotation.y, 120.0f, 12);
+#ifdef TARGET_PC
+        if (player == NULL) {
+            /* The selected resident is indoors. This init is the outdoor
+             * opener's menu, so the water search uses that actor. */
+            player = mPlib_menu_opener_for_slot(mSM_cur_slot());
+        }
+        if (player == NULL) {
+            inv_ovl->release_flag = FALSE;
+        } else
+#endif
+        {
+            inv_ovl->release_flag = mCoBG_SearchWaterLimitDistN(&inv_ovl->release_pos, player->actor_class.world.position,
+                                                                player->actor_class.shape_info.rotation.y, 120.0f, 12);
+        }
     }
 
     if (mPlib_Check_scoop_after((GAME*)play, &inv_ovl->shovel_pos, &dig_item, NULL, FALSE) ==

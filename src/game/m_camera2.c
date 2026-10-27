@@ -198,6 +198,22 @@ static void Camera2_SetDirectionAngleXYZ(GAME_PLAY* play, const s_xyz* goal_dir,
     *dir = *goal_dir;
 }
 
+/* The selected resident can be in another play. Cull and the outdoor camera
+ * then follow the view's player, or the guest still in this one. */
+static PLAYER_ACTOR* Camera2_focus_player(GAME_PLAY* play) {
+    PLAYER_ACTOR* player;
+
+#ifdef TARGET_PC
+    player = mPlib_view_player_actor(play);
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#else
+    player = get_player_actor_withoutCheck(play);
+#endif
+    return player;
+}
+
 static void Camera2_SetView(GAME_PLAY* play) {
     Camera2* camera = &play->camera;
     xyz_t* eye;
@@ -219,16 +235,24 @@ static void Camera2_SetView(GAME_PLAY* play) {
         camera->perspective.far = 1600.0f;
     } else {
         if (camera->now_main_index != CAMERA2_PROCESS_LOCK) {
-            f32 dist_from_player = Math3DLength(eye, &get_player_actor_withoutCheck(play)->actor_class.world.position);
-            f32 dt = play->game.graph->dt_num_60fps_frames;
+            PLAYER_ACTOR* focus = Camera2_focus_player(play);
+            f32 dist_from_player;
 
-            if (dist_from_player < 540.0f) {
-                chase_f(&camera->perspective.near, 145.0f, 4.0f * dt);
+            if (focus == NULL) {
+                camera->perspective.near = 200.0f;
+                camera->perspective.far = 1600.0f;
             } else {
-                chase_f(&camera->perspective.near, 200.0f, 4.0f * dt);
-            }
+                f32 dt = play->game.graph->dt_num_60fps_frames;
 
-            camera->perspective.far = 1600.0f;
+                dist_from_player = Math3DLength(eye, &focus->actor_class.world.position);
+                if (dist_from_player < 540.0f) {
+                    chase_f(&camera->perspective.near, 145.0f, 4.0f * dt);
+                } else {
+                    chase_f(&camera->perspective.near, 200.0f, 4.0f * dt);
+                }
+
+                camera->perspective.far = 1600.0f;
+            }
         }
     }
 
@@ -783,7 +807,12 @@ extern int Camera2_CheckEnterCullingArea(f32 pos_x, f32 pos_z, f32 width) {
             actor0 = camera->main_data.talk.speaker_actor;
             actor1 = camera->main_data.talk.listener_actor;
         } else {
-            actor1 = &get_player_actor_withoutCheck(play)->actor_class;
+            PLAYER_ACTOR* focus = Camera2_focus_player(play);
+
+            if (focus == NULL) {
+                return FALSE;
+            }
+            actor1 = &focus->actor_class;
             actor0 = actor1;
         }
 
@@ -1436,6 +1465,13 @@ static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_
     PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
     int block_x;
     int block_z;
+
+    /* The resident is indoors, or the door camera ran after that actor was
+     * dropped. Keep the center already on this camera. */
+    if (player == NULL) {
+        *end_center_pos = play->camera.lookat.center;
+        return;
+    }
 
     if (mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
         block_x = play->block_table.block_x;

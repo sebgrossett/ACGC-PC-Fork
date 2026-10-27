@@ -1,4 +1,7 @@
 #include "m_player_lib.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 #include "libultra/libultra.h"
 #include "m_play.h"
@@ -684,9 +687,17 @@ extern void Player_actor_dt(ACTOR* actorx, GAME* game) {
 
     mPlib_unregister_player_slot(player);
     Player_actor_dt_forCorect(actorx, game); //
+#ifdef TARGET_PC
+    /* The town table is empty once the last outdoor guest leaves, but the
+     * resident indoors is still in the other world. */
+    if (pc_world_any_player() == FALSE) {
+        Common_Set(player_actor_exists, FALSE);
+    }
+#else
     if (mPlib_any_player_actor() == FALSE) {
         Common_Set(player_actor_exists, FALSE);
     }
+#endif
     if (guest == FALSE) {
         mPlib_cancel_player_warp_forEvent();
         Player_actor_Reset_bee_chase(actorx);
@@ -856,11 +867,24 @@ static void Player_actor_request_main_change_from_submenu(ACTOR* actorx, GAME* g
     /* The pending submenu order belongs to the player who queued it (a co-op
      * guest can open their own menu). The other actors move first and used to
      * consume it, leaving the mailbox jump stuck. */
-    {
+    if (mPlib_Check_SetOrderSubmenu()) {
+        int idx = mPlib_Get_change_data_from_submenu_p()->requested_main_index;
         int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actorx);
         int owner = mPlib_change_data_owner();
+        int jumping = (idx == mPlayer_INDEX_MAIL_LAND) &&
+                      (((PLAYER_ACTOR*)actorx)->now_main_index == mPlayer_INDEX_MAIL_JUMP);
 
-        if ((slot >= 0) && (owner >= 0) && (slot != owner)) {
+        /* Only a real pending order is owned. A read of the order record
+         * stores player_no even when nothing is pending, and bailing on that
+         * stopped the guest's mailbox from opening.
+         * Mail land is the actor still in the jump. The recorded owner is the
+         * indoor resident after this leave/rejoin, and refusing the jumper
+         * left them there. */
+        if (idx == mPlayer_INDEX_MAIL_LAND) {
+            if (jumping == FALSE) {
+                return;
+            }
+        } else if ((owner >= 0) && (slot != owner)) {
             return;
         }
     }
@@ -875,6 +899,18 @@ static void Player_actor_request_main_change_from_submenu(ACTOR* actorx, GAME* g
         }
 
         (*proc[idx])(actorx, game);
+#ifdef TARGET_PC
+        /* A refused land must stay pending. Clearing it here left the jumper
+         * in MAIL_JUMP with no inputs. */
+        if (idx == mPlayer_INDEX_MAIL_LAND) {
+            PLAYER_ACTOR* player = (PLAYER_ACTOR*)actorx;
+
+            if ((player->requested_main_index_changed == FALSE) ||
+                (player->requested_main_index != mPlayer_INDEX_MAIL_LAND)) {
+                return;
+            }
+        }
+#endif
     }
 
     mPlib_Clear_change_data_from_submenu();

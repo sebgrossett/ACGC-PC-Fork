@@ -376,12 +376,19 @@ static int aMHS_light_ctrl(STRUCTURE_ACTOR* my_house) {
 static s8 s_pc_exit_opened[mHS_HOUSE_NUM];
 static s8 s_pc_guest_open[mHS_HOUSE_NUM];
 
-/* Guests only. The selected resident's exit still goes through structure
- * control, which will not overwrite a request_type we already took. */
-static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house) {
+/* Structure control sets the door once, when the town play is created. A
+ * later exit keeps that play, so the door never hears it. The first load
+ * still uses that retail door. Only a return marked by the world does this. */
+static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
     int owner = mHS_get_pl_no(my_house->action & 3);
+    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
     int i;
     int count = mPlib_extra_player_count();
+
+    if ((host != NULL) && (mPlib_player_slot_of(host) == owner) &&
+        (host->now_main_index == mPlayer_INDEX_OUTDOOR) && (pc_world_door_return_pending(owner) != FALSE)) {
+        return TRUE;
+    }
 
     for (i = 0; i < count; i++) {
         PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
@@ -400,7 +407,7 @@ static void aMHS_wait(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
 #ifdef TARGET_PC
     int house_idx = my_house->action & 3;
 
-    if (aMHS_guest_walking_out(my_house) != FALSE) {
+    if (aMHS_guest_walking_out(my_house, play) != FALSE) {
         if (s_pc_exit_opened[house_idx] == FALSE) {
             s_pc_exit_opened[house_idx] = TRUE;
             s_pc_guest_open[house_idx] = TRUE;
@@ -418,6 +425,10 @@ static void aMHS_wait(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
          * walking out. That check requests a door demo, and the demo does
          * not end unless this finish takes the indoor branch. */
         return;
+    }
+
+    if (s_pc_exit_opened[house_idx] != FALSE) {
+        pc_world_clear_door_return(mHS_get_pl_no(house_idx));
     }
 
     s_pc_exit_opened[house_idx] = FALSE;
@@ -481,6 +492,14 @@ static void aMHS_open_door(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
                 demo_class = Common_Get(clip).demo_clip->demo_class;
 
                 if (demo_class != NULL) {
+#ifdef TARGET_PC
+                    if (aID_class_is_live(play, demo_class) == FALSE) {
+                        demo_class = NULL;
+                    }
+#endif
+                }
+
+                if (demo_class != NULL) {
                     intro_demo = (INTRO_DEMO_ACTOR*)demo_class;
 
                     intro_demo->player_in_house = FALSE;
@@ -489,6 +508,14 @@ static void aMHS_open_door(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
 
             mDemo_End((ACTOR*)my_house);
             next_act = aMHS_ACTION_GOTO_NEXT_SCEEN_WAIT;
+#ifdef TARGET_PC
+            /* Retail throws this play away, so the dead action is fine. With
+             * someone still outside the town house stays, and it never takes
+             * another A. */
+            if (mPlib_extra_player_count() > 0) {
+                next_act = aMHS_ACTION_WAIT;
+            }
+#endif
         } else {
             next_act = aMHS_ACTION_WAIT;
         }

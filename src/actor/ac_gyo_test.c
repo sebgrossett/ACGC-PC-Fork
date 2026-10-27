@@ -113,10 +113,24 @@ static void aGTT_set_angle(ACTOR* actorx, s16 angleY) {
 static xyz_t aGTT_pos_calc(xyz_t pos, GAME* game, s16 angleY, f32 dist, f32 rr) {
     ACTOR* playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
     xyz_t ret;
-    f32 sin = sin_s(playerx->world.angle.y) * dist;
-    f32 cos = cos_s(playerx->world.angle.y) * dist;
-    f32 cos2 = cos_s(angleY) * -rr;
-    f32 sin2 = sin_s(angleY) * rr;
+    f32 sin;
+    f32 cos;
+    f32 cos2;
+    f32 sin2;
+
+#ifdef TARGET_PC
+    if (playerx == NULL) {
+        playerx = (ACTOR*)mPlib_extra_player_at(0);
+    }
+    if (playerx == NULL) {
+        return pos;
+    }
+#endif
+
+    sin = sin_s(playerx->world.angle.y) * dist;
+    cos = cos_s(playerx->world.angle.y) * dist;
+    cos2 = cos_s(angleY) * -rr;
+    sin2 = sin_s(angleY) * rr;
 
     ret.x = pos.x + sin + cos2;
     ret.z = pos.z + cos + sin2;
@@ -352,14 +366,35 @@ static int aGTT_player_near(ACTOR* actorx, GAME* game) {
     s16 target_angle;
     xyz_t pos;
     int ret = FALSE;
+#ifdef TARGET_PC
+    int host;
+#endif
+
+#ifdef TARGET_PC
+    if (playerx == NULL) {
+        playerx = (ACTOR*)mPlib_extra_player_at(0);
+    }
+    if (playerx == NULL) {
+        return FALSE;
+    }
+    /* Dash and tool checks read the selected resident. While they are
+     * indoors that actor is gone, so only the distance to the outdoor
+     * player is available. */
+    host = (GET_PLAYER_ACTOR_GAME_ACTOR(game) != NULL);
+#endif
 
     dist = search_position_distance(&actorx->world.position, &playerx->world.position);
     target_angle = search_position_angleY(&actorx->world.position, &playerx->world.position);
 
     if (
         // clang-format off
+#ifdef TARGET_PC
+        ((dist < 110.0f && host && mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DASH) ||
+        (dist < 150.0f && host && (
+#else
         ((dist < 110.0f && mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DASH) ||
         (dist < 150.0f && (
+#endif
             mPlib_Check_HitAxe(&pos) ||
             mPlib_Check_StopNet(&pos) ||
             mPlib_Check_HitScoop(&pos)
@@ -706,6 +741,12 @@ static void aGTT_comeback(ACTOR* actorx, GAME* game) {
     } else if (uki->gyo_status == 5) {
         ACTOR* playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
 
+#ifdef TARGET_PC
+        if (playerx == NULL) {
+            playerx = (ACTOR*)mPlib_extra_player_at(0);
+        }
+#endif
+
         if ((gyo->gyo_flags & 4) == 0) {
             switch (gyo->gyo_type) {
                 case aGYO_TYPE_EMPTY_CAN:
@@ -715,7 +756,12 @@ static void aGTT_comeback(ACTOR* actorx, GAME* game) {
                     break;
             }
 
-            gyo->swork4 = playerx->world.angle.y;
+#ifdef TARGET_PC
+            if (playerx != NULL)
+#endif
+            {
+                gyo->swork4 = playerx->world.angle.y;
+            }
             gyo->gyo_flags |= 8;
         }
     } else if (uki->gyo_status == 6) {

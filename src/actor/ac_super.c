@@ -86,6 +86,11 @@ static void aSPR_actor_ct(ACTOR* actorx, GAME* game) {
     super = (SUPER_ACTOR*)actorx;
     play = (GAME_PLAY*)game;
     player = GET_PLAYER_ACTOR_ACTOR(play);
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = (ACTOR*)mPlib_extra_player_at(0);
+    }
+#endif
 
     super->struct_class.season = Common_Get(time.season);
     action = aSPR_ACTION_CLOSE_WAIT;
@@ -103,7 +108,11 @@ static void aSPR_actor_ct(ACTOR* actorx, GAME* game) {
 
     x = (int)(super->struct_class.actor_class.world.position.x - 62.00f);
     z = (int)(super->struct_class.actor_class.world.position.z + 118.57f);
+#ifdef TARGET_PC
+    if (player != NULL && (int)player->world.position.x == x && (int)player->world.position.z == z) {
+#else
     if ((int)player->world.position.x == x && (int)player->world.position.z == z) {
+#endif
         action = aSPR_ACTION_OPEN_WAIT;
     }
 

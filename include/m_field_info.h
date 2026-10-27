@@ -365,6 +365,11 @@ extern void mFI_SetClimate(int climate);
 extern int mFI_CheckBeforeScenePerpetual();
 extern void mFI_ChangeClimate_ForEventNotice();
 extern void mFI_PullTanukiPathTrees();
+#ifdef TARGET_PC
+#define PC_MFI_STATE_BYTES 1024
+extern void mFI_world_store(void* dst);
+extern void mFI_world_load(const void* src);
+#endif
 
 #ifdef __cplusplus
 }

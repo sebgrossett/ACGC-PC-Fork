@@ -86,6 +86,11 @@ static void aSHOP_actor_ct(ACTOR* actor, GAME* game) {
     shop = (STRUCTURE_ACTOR*)actor;
     play = (GAME_PLAY*)game;
     player = GET_PLAYER_ACTOR(play);
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
 
     shop->season = Common_Get(time.season);
     action = aSHOP_ACTION_OPEN_WAIT;
@@ -106,7 +111,12 @@ static void aSHOP_actor_ct(ACTOR* actor, GAME* game) {
 
     x = (int)(shop->actor_class.world.position.x - 68.29f);
     z = (int)(shop->actor_class.world.position.z + 68.29f);
+#ifdef TARGET_PC
+    if (player != NULL && (int)player->actor_class.world.position.x == x &&
+        (int)player->actor_class.world.position.z == z) {
+#else
     if ((int)player->actor_class.world.position.x == x && (int)player->actor_class.world.position.z == z) {
+#endif
         action = aSHOP_ACTION_OPEN_WAIT;
     }
 

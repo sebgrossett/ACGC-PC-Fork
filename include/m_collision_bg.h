@@ -514,6 +514,11 @@ extern f32 mCoBG_WaveCos(void);
 extern int mCoBG_GetWaterFlow(xyz_t* flow, u32 attr);
 extern int mCoBG_CheckWaveAttr(u32 attr);
 extern int mCoBG_CheckSand2Sea(xyz_t* pos);
+#ifdef TARGET_PC
+#define PC_COBG_STATE_BYTES 32768
+extern void mCoBG_world_store(void* dst);
+extern void mCoBG_world_load(const void* src);
+#endif
 
 #if VERSION == VER_GAFU01_00
 extern int mCoBG_GetCrossCircleAndLine2DvectorPlaneXZ_Xyz(xyz_t* cross1, xyz_t* cross2, const xyz_t* point, const xyz_t* vec, const xyz_t* center, f32 radius);

@@ -368,6 +368,18 @@ static void aINS_actor_move(ACTOR* actorx, GAME* game) {
     aINS_INSECT_ACTOR* insect = ctrl_actor->insect_actor;
     int i;
 
+#ifdef TARGET_PC
+    if (player == NULL) {
+        /* The selected resident is in another play (indoors); follow the first
+         * player still here. */
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    if (player == NULL) {
+        return;
+    }
+
     for (i = 0; i < aINS_ACTOR_NUM; i++) {
         ACTOR* actorx = (ACTOR*)insect;
 

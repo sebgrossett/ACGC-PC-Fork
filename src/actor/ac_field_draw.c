@@ -190,8 +190,26 @@ static f32 aFD_position_offset = 0.0f;
 static void aFD_SetActorPosition(ACTOR* actorx, GAME_PLAY* play) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
 
+    if (player == NULL) {
+        return;
+    }
+
     actorx->world.position = player->actor_class.world.position;
     actorx->world.position.y += aFD_position_offset;
+}
+
+/* The selected resident can be in another play (indoors). The field window then
+ * follows the first player still standing in this play. */
+static PLAYER_ACTOR* aFD_Player(GAME_PLAY* play) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    return player;
 }
 
 static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player) {
@@ -232,7 +250,11 @@ static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player
 static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     FIELD_DRAW_ACTOR* field_draw = (FIELD_DRAW_ACTOR*)actorx;
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+    PLAYER_ACTOR* player = aFD_Player(play);
+
+    if (player == NULL) {
+        return;
+    }
 
     aFD_SetBlockTable(field_draw, player);
     aFD_SetActorPosition(actorx, play);
@@ -258,12 +280,16 @@ static void Bg_Draw_Actor_dt(ACTOR* actorx, GAME* game) {
 
 static void Bg_Draw_Actor_move(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+    PLAYER_ACTOR* player = aFD_Player(play);
     lbRTC_time_c* rtc_time = Common_GetPointer(time.rtc_time);
     int bx;
     int bz;
     int pond_x;
     int pond_z;
+
+    if (player == NULL) {
+        return;
+    }
 
     aFD_PrepareFieldDraw(actorx, game);
 

@@ -234,6 +234,13 @@ static void aSHOP_open_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     actor = &shop->actor_class;
     game = &play->game;
 
+#ifdef TARGET_PC
+    /* Town has no selected resident while the host is indoors. OutDoorMove
+     * reads now_main_index on that NULL. */
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        return;
+    }
+#endif
     if (mPlib_check_player_actor_main_index_OutDoorMove(&play->game) != FALSE) {
         return;
     }

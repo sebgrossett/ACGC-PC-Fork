@@ -18,6 +18,10 @@
 #include "audio.h"
 #include "m_scene_table.h"
 #include "m_private.h"
+#ifdef TARGET_PC
+#include "pc_platform.h"
+#include "pc_world.h"
+#endif
 
 extern int Camera2_InDoorCheck(void);
 
@@ -199,7 +203,15 @@ extern void watch_my_step_draw(GAME_PLAY* play) {
 
     font_mtx = GRAPH_ALLOC_TYPE(g, Mtx, 1);
 
+#ifdef TARGET_PC
+    /* Split draws this in the indoor view, with that view's ortho. A fullscreen
+     * pass here is what put the light prompt on the outdoor half. */
+    if ((mPlib_extra_player_count() == 0) && (pc_world_live() < 2)) {
+        navigate_camera_draw(play);
+    }
+#else
     navigate_camera_draw(play);
+#endif
     mWt_mybell_confirmation_draw(play);
 
     if (S_watch_my_step.draw_type == 0) {
@@ -344,7 +356,7 @@ static void navigate_camera_move(GAME_PLAY* play) {
     }
 }
 
-static void navigate_camera_draw(GAME_PLAY* play) {
+extern void navigate_camera_draw(GAME_PLAY* play) {
     GRAPH* g = play->game.graph;
     Gfx* font_gfx;
     Mtx* font_mtx;
@@ -357,7 +369,15 @@ static void navigate_camera_draw(GAME_PLAY* play) {
         u8 a = S_navigate.opacity * 255.0f;
 
         if (font_mtx != NULL) {
+#ifdef TARGET_PC
+            if (pc_gx_hud_half) {
+                mFont_CulcHudHalfOrthoMatrix(font_mtx);
+            } else {
+                mFont_CulcOrthoMatrix(font_mtx);
+            }
+#else
             mFont_CulcOrthoMatrix(font_mtx);
+#endif
             gSPMatrix(NOW_FONT_DISP++, font_mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
         }
 

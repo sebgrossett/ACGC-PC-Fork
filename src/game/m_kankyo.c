@@ -9,6 +9,8 @@
 #include "m_player_lib.h"
 #include "libultra/libultra.h"
 
+#include <string.h>
+
 #define mEnv_TIME_TO_SECS(hour, min, sec) ((hour) * mTM_SECONDS_IN_HOUR + (min) * mTM_SECONDS_IN_MINUTE + (sec))
 
 static int klight_chg_tim[mEnv_TERM_NUM + 1] = {
@@ -906,6 +908,16 @@ typedef struct electric_light_s {
 } mEnv_electric_light_c;
 
 static mEnv_electric_light_c l_mEnv_electric_light;
+
+_Static_assert(sizeof(l_mEnv_electric_light) <= PC_MENV_LIGHT_BYTES, "electric light state");
+
+extern void mEnv_light_store(void* dst) {
+    memcpy(dst, &l_mEnv_electric_light, sizeof(l_mEnv_electric_light));
+}
+
+extern void mEnv_light_load(const void* src) {
+    memcpy(&l_mEnv_electric_light, src, sizeof(l_mEnv_electric_light));
+}
 
 static int mEnv_CheckNpcRoomPointLightNiceStatus();
 static void mEnv_set_time(Kankyo* kankyo);

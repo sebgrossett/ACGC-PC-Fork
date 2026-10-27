@@ -220,6 +220,8 @@ extern void mDemo_side_clear_needs_setup(void);
 extern ACTOR* mDemo_side_player(void);
 extern void mDemo_side_sync_player(GAME_PLAY* play);
 extern void mDemo_side_msg(GAME_PLAY* play);
+extern void mDemo_world_store(mDemo_Data_c* dst);
+extern void mDemo_world_load(const mDemo_Data_c* src);
 #endif
 extern int mDemo_CheckDemo();
 extern int mDemo_CheckDemo4Event();

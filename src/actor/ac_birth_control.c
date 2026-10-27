@@ -95,6 +95,35 @@ static void aBC_deleteActor_part(GAME_PLAY* play, int part) {
   }
 }
 
+#ifdef TARGET_PC
+/* The player rescan walks an acre that already spawned this prop. A second
+ * actor at the same spot is the doubled gyroid. Clear the name and move on. */
+static int aBC_actor_already_at(GAME_PLAY* play, s16 profile, mActor_name_t actor_id, f32 pos_x, f32 pos_z) {
+  int part;
+
+  for (part = 0; part < ACTOR_PART_NUM; part++) {
+    ACTOR* actor = play->actor_info.list[part].actor;
+
+    while (actor != NULL) {
+      f32 dx;
+      f32 dz;
+
+      if ((actor->id == profile) && (actor->npc_id == actor_id)) {
+        dx = actor->world.position.x - pos_x;
+        dz = actor->world.position.z - pos_z;
+        if ((dx * dx + dz * dz) < (36.0f * 36.0f)) {
+          return TRUE;
+        }
+      }
+
+      actor = actor->next_actor;
+    }
+  }
+
+  return FALSE;
+}
+#endif
+
 static int aBC_setupOtherActor(GAME_PLAY* play, mActor_name_t actor_id, s16 profile, f32 pos_x, f32 pos_z,
                                mActor_name_t clear_item, int bx, int bz) {
   ACTOR* actor;
@@ -104,6 +133,17 @@ static int aBC_setupOtherActor(GAME_PLAY* play, mActor_name_t actor_id, s16 prof
   pos.x = pos_x;
   pos.z = pos_z;
   pos.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(pos, 0.0f);
+#ifdef TARGET_PC
+  if (aBC_actor_already_at(play, profile, actor_id, pos_x, pos_z) != FALSE) {
+    /* Init writes the dummy once. A later scan must not replace it with RSV,
+     * or the A check no longer sees a mailbox. */
+    if ((actor_id >= ACTOR_PROP_MAILBOX0) && (actor_id <= ACTOR_PROP_MAILBOX3)) {
+      clear_item = (mActor_name_t)(DUMMY_MAILBOX0 + (actor_id - ACTOR_PROP_MAILBOX0));
+    }
+    mFI_SetFG_common(clear_item, pos, FALSE);
+    return FALSE;
+  }
+#endif
   actor = Actor_info_make_actor(
     &play->actor_info,
     (GAME*)play,
@@ -144,6 +184,16 @@ static void aBC_setupActor(BIRTH_CONTROL_ACTOR* birth_control, GAME_PLAY* play, 
 
   for (ut_z = 0; ut_z < UT_Z_NUM; ut_z++) {
     for (ut_x = 0; ut_x < UT_X_NUM; ut_x++) {
+#ifdef TARGET_PC
+      /* The live shrine replaces its FG name with DUMMY_SHRINE. Deleting the
+       * actor does not always put WISHING_WELL back, and a later scan then
+       * walks past the spot. Put the structure name back when no shrine actor
+       * is alive so this same pass can spawn it. */
+      if ((*item_p == DUMMY_SHRINE) &&
+          (Actor_info_name_search(&play->actor_info, mAc_PROFILE_SHRINE, ACTOR_PART_ITEM) == NULL)) {
+        *item_p = WISHING_WELL;
+      }
+#endif
       switch (ITEM_NAME_GET_TYPE(*item_p)) {
         case NAME_TYPE_ITEM2:
         {
@@ -369,8 +419,20 @@ static int aBC_check_update_actors_in_nearby_blocks(BIRTH_CONTROL_ACTOR* birth_c
   int quadrant;
   int block_ux;
   int block_uz;
+  ACTOR* player = GET_PLAYER_ACTOR_ACTOR(play);
 
-  if (mFI_Wpos2UtNum_inBlock(&block_ux, &block_uz, GET_PLAYER_ACTOR_ACTOR(play)->world.position) == FALSE) {
+#ifdef TARGET_PC
+  /* The selected resident can already be indoors. Follow whoever is still here. */
+  if (player == NULL) {
+    player = (ACTOR*)mPlib_extra_player_at(0);
+  }
+
+  if (player == NULL) {
+    return FALSE;
+  }
+#endif
+
+  if (mFI_Wpos2UtNum_inBlock(&block_ux, &block_uz, player->world.position) == FALSE) {
     return FALSE;
   }
 
@@ -390,6 +452,34 @@ static void aBC_actor_ct(ACTOR* actorx, GAME* game) {
 
   birth_control->last_quadrant = -1;
 }
+
+#ifdef TARGET_PC
+/* block_table follows whichever player crossed an acre last, and birth only
+ * builds that acre. A guest standing on another acre never gets its structures
+ * (the wishing well is one). Spawn the acres of players who are actually in
+ * this play; the FG name is cleared on a successful spawn, so a later frame
+ * does not make a second copy. */
+static void aBC_setup_player_blocks(BIRTH_CONTROL_ACTOR* birth_control, GAME_PLAY* play) {
+    ACTOR* actor = play->actor_info.list[ACTOR_PART_PLAYER].actor;
+    int kept = birth_control->setup_actor_flag;
+
+    /* block_table follows the last acre crossing, including this player's, so
+     * skipping that block never retried a shrine that had already been cleared
+     * to DUMMY_SHRINE. Scan every player who is actually in this play. */
+    while (actor != NULL) {
+        int bx;
+        int bz;
+
+        if (mFI_Wpos2BlockNum(&bx, &bz, actor->world.position) != FALSE) {
+            aBC_setupActor(birth_control, play, bx, bz);
+        }
+
+        actor = actor->next_actor;
+    }
+
+    birth_control->setup_actor_flag = kept;
+}
+#endif
 
 static void aBC_actor_move(ACTOR* actorx, GAME* game) {
   BIRTH_CONTROL_ACTOR* birth_control = (BIRTH_CONTROL_ACTOR*)actorx;
@@ -444,6 +534,12 @@ static void aBC_actor_move(ACTOR* actorx, GAME* game) {
     if (g_mPlib_wade_disabled && aBC_check_update_actors_in_nearby_blocks(birth_control, play)) {
       aBC_spawn_actors_in_nearby_blocks(birth_control, play);
     }
+
+#ifdef TARGET_PC
+    if (mPlib_extra_player_count() > 0) {
+      aBC_setup_player_blocks(birth_control, play);
+    }
+#endif
   }
 
   /* Only refresh the list when transitioning between acres or transitioning between scenes */

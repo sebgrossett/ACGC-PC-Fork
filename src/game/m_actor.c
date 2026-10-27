@@ -74,10 +74,27 @@ extern void Actor_position_moveF(ACTOR* actor) {
 }
 
 extern int Actor_player_look_direction_check(ACTOR* actor, s16 angle, GAME_PLAY* play) {
-    s16 player_rot_y = get_player_actor_withoutCheck(play)->actor_class.shape_info.rotation.y;
-    s16 inv_angle = actor->player_angle_y - -0x8000;
-    s16 diff = inv_angle - player_rot_y;
-    int delta = ABS(diff);
+    PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+    s16 player_rot_y;
+    s16 inv_angle;
+    s16 diff;
+    int delta;
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        /* The selected resident can be in another play (indoors). */
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    player_rot_y = player->actor_class.shape_info.rotation.y;
+    inv_angle = actor->player_angle_y - -0x8000;
+    diff = inv_angle - player_rot_y;
+    delta = ABS(diff);
 
     return delta < angle;
 }
@@ -595,10 +612,9 @@ extern int Actor_info_join_guest_pad(GAME* game, int pad) {
         return FALSE;
     }
 
+    /* The selected resident may be indoors. Their actor is not in this play.
+     * The new player still comes out of their own door. */
     host = get_player_actor_withoutCheck(play);
-    if (host == NULL) {
-        return FALSE;
-    }
 
     session = (int)Common_Get(player_no);
     if ((session < 0) || (session >= PLAYER_NUM)) {
@@ -649,17 +665,32 @@ extern int Actor_info_join_guest_pad(GAME* game, int pad) {
 
     mPlib_queue_guest_slot(slot, pad);
     {
-        f32 door_x = host->actor_class.world.position.x + s_guest_ofs[pad - 1][0];
-        f32 door_z = host->actor_class.world.position.z + s_guest_ofs[pad - 1][1];
-        s16 door_angle = host->actor_class.world.angle.y;
+        f32 door_x = 0.0f;
+        f32 door_z = 0.0f;
+        f32 door_y = 0.0f;
+        s16 door_angle = 0;
+        s16 angle_x = 0;
+        s16 angle_z = 0;
 
-        Actor_info_resident_door(game, slot, &door_x, &door_z, &door_angle);
+        if (host != NULL) {
+            door_x = host->actor_class.world.position.x + s_guest_ofs[pad - 1][0];
+            door_z = host->actor_class.world.position.z + s_guest_ofs[pad - 1][1];
+            door_y = host->actor_class.world.position.y;
+            door_angle = host->actor_class.world.angle.y;
+            angle_x = host->actor_class.world.angle.x;
+            angle_z = host->actor_class.world.angle.z;
+        }
+
+        if ((Actor_info_resident_door(game, slot, &door_x, &door_z, &door_angle) == FALSE) && (host == NULL)) {
+            mPlib_queue_guest_slot(-1, -1);
+            return FALSE;
+        }
+
         /* arg 2: GO_OUT_O1 from frame 25. Frame 1 is the indoor half of the
          * walk, so playing it at this outdoor spot starts the body inside the
          * door. The house opens its out clip from the same frame. */
-        actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER, door_x,
-                                      host->actor_class.world.position.y, door_z, host->actor_class.world.angle.x,
-                                      door_angle, host->actor_class.world.angle.z, -1, -1, -1, EMPTY_NO, 2, -1, -1);
+        actor = Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_PLAYER, door_x, door_y, door_z, angle_x,
+                                      door_angle, angle_z, -1, -1, -1, EMPTY_NO, 2, -1, -1);
     }
     if (actor == NULL) {
         mPlib_queue_guest_slot(-1, -1);
@@ -669,6 +700,9 @@ extern int Actor_info_join_guest_pad(GAME* game, int pad) {
     actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
     g_pc_coop_joined[pad] = 1;
     g_pc_coop_guest_slot[pad] = slot;
+    /* The walk-out is the outdoor half of leaving home. Retail fades that
+     * half in with the same triforce the door uses. */
+    Game_play_start_fade_in_player(play, WIPE_TYPE_TRIFORCE, actor);
     return TRUE;
 }
 #endif
@@ -822,7 +856,19 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
     ACTOR* actor;
     int i;
 
+#ifdef TARGET_PC
+    if (player_actor == NULL) {
+        /* The selected resident can be in another play (indoors). Distance,
+         * angle and the field move then follow the first player still here. */
+        player_actor = mPlib_extra_player_at(0);
+    }
+
+    if (player_actor != NULL) {
+        mFI_FieldMove(player_actor->actor_class.world.position);
+    }
+#else
     mFI_FieldMove(player_actor->actor_class.world.position);
+#endif
     mBI_move(play);
 
     for (i = 0; i < ACTOR_PART_NUM; i++) {
@@ -872,13 +918,20 @@ extern void Actor_info_call_actor(GAME_PLAY* play, Actor_info* actor_info) {
                 } else {
                     play->game.doing_point_specific = 160;
                     xyz_t_move(&actor->last_world_position, &actor->world.position);
-                    actor->player_distance_xz =
-                        search_position_distanceXZ(&actor->world.position, &player_actor->actor_class.world.position);
-                    actor->player_distance_y = player_actor->actor_class.world.position.y - actor->world.position.y;
-                    actor->player_distance = actor->player_distance_xz * actor->player_distance_xz +
-                                             actor->player_distance_y * actor->player_distance_y;
-                    actor->player_angle_y =
-                        search_position_angleY(&actor->world.position, &player_actor->actor_class.world.position);
+#ifdef TARGET_PC
+                    if (player_actor != NULL) {
+#endif
+                        actor->player_distance_xz = search_position_distanceXZ(
+                            &actor->world.position, &player_actor->actor_class.world.position);
+                        actor->player_distance_y =
+                            player_actor->actor_class.world.position.y - actor->world.position.y;
+                        actor->player_distance = actor->player_distance_xz * actor->player_distance_xz +
+                                                 actor->player_distance_y * actor->player_distance_y;
+                        actor->player_angle_y = search_position_angleY(
+                            &actor->world.position, &player_actor->actor_class.world.position);
+#ifdef TARGET_PC
+                    }
+#endif
                     actor->state_bitfield &= ~ACTOR_STATE_24;
 
                     if ((actor->state_bitfield & (ACTOR_STATE_NO_MOVE_WHILE_CULLED | ACTOR_STATE_NO_CULL)) ||

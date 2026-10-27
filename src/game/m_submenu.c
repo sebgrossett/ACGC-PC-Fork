@@ -12,6 +12,10 @@
 #include "m_museum_display.h"
 #endif
 
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
+
 static int s_submenu_cur_slot = 0;
 
 extern int mSM_cur_slot(void) {
@@ -292,6 +296,24 @@ extern void load_player(Submenu* submenu) {
         return;
     }
 
+#ifdef TARGET_PC
+    /* Slot 0's overlay is shared. An indoor menu lives on the house play, so
+     * the town submenu stays WAIT and the outdoor player's actor lands here
+     * every move and every draw. Unlinking resets the house menu's drawer on
+     * the next house move: the open sound plays and the panel never draws. */
+    {
+        int world;
+
+        for (world = 1; world < PC_WORLD_MAX; world++) {
+            GAME_PLAY* child = pc_world_at(world);
+
+            if ((child != NULL) && (child->submenu.process_status != mSM_PROCESS_WAIT)) {
+                return;
+            }
+        }
+    }
+#endif
+
     if (SubmenuArea_visit != dlftbl) {
         if (SubmenuArea_visit != NULL) {
             SubmenuArea_DoUnlink(SubmenuArea_visit, submenu);
@@ -440,7 +462,13 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
      * opening a menu (menu_type is set but process_status is still WAIT for one
      * frame), otherwise it overwrites the actor's opener. */
     if (submenu->process_status == mSM_PROCESS_WAIT && submenu->menu_type == mSM_OVL_NONE) {
-        mPlib_set_menu_opener(GET_PLAYER_ACTOR(play), 0, (int)Common_Get(player_no));
+        PLAYER_ACTOR* host = GET_PLAYER_ACTOR(play);
+
+        /* The town submenu stays idle while the indoor menu is open. Writing
+         * a NULL opener here cleared the indoor player before the draw. */
+        if (host != NULL) {
+            mPlib_set_menu_opener(host, 0, (int)Common_Get(player_no));
+        }
     }
 
     open_inventory = mSM_find_inventory_press(play, &press_player, &press_pad);

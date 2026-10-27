@@ -10,6 +10,8 @@
 #include "ac_uki.h"
 #ifdef TARGET_PC
 #include "pc_bswap.h"
+#include "pc_settings.h"
+#include "pc_world.h"
 #endif
 
 int g_mPlib_wade_disabled = FALSE;
@@ -1306,6 +1308,75 @@ static int s_guest_slot = -1;
 static PLAYER_ACTOR* s_bound_actor = NULL;
 static PLAYER_ACTOR* s_view_player_actor = NULL;
 
+#ifdef TARGET_PC
+extern void mPlib_world_store(PLAYER_ACTOR** players, Private_c** privates, int* pads, int* guest_slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        players[i] = s_player_by_slot[i];
+        privates[i] = s_private_by_slot[i];
+        pads[i] = s_pad_by_slot[i];
+    }
+
+    *guest_slot = s_guest_slot;
+}
+
+extern void mPlib_world_load(PLAYER_ACTOR** players, Private_c** privates, int* pads, int guest_slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        s_player_by_slot[i] = players[i];
+        s_private_by_slot[i] = privates[i];
+        s_pad_by_slot[i] = pads[i];
+    }
+
+    s_guest_slot = guest_slot;
+}
+
+extern void mPlib_world_keep_slot(int slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (i == slot) {
+            continue;
+        }
+
+        s_player_by_slot[i] = NULL;
+        s_private_by_slot[i] = NULL;
+        s_pad_by_slot[i] = -1;
+    }
+}
+
+extern void mPlib_world_clear_bind(void) {
+    s_bound_actor = NULL;
+    s_view_player_actor = NULL;
+}
+
+extern void mPlib_look_bank_store(int* dst) {
+    dst[0] = Player_bank_ID_Index;
+    dst[1] = Player_face_bank_ID_Index;
+    dst[2] = Player_Tex_bank_ID[0];
+    dst[3] = Player_Tex_bank_ID[1];
+    dst[4] = Player_Pallet_bank_ID[0];
+    dst[5] = Player_Pallet_bank_ID[1];
+    dst[6] = Player_face_tex_bank_ID;
+    dst[7] = Player_face_pallet_bank_ID[0];
+    dst[8] = Player_face_pallet_bank_ID[1];
+}
+
+extern void mPlib_look_bank_load(const int* src) {
+    Player_bank_ID_Index = src[0];
+    Player_face_bank_ID_Index = src[1];
+    Player_Tex_bank_ID[0] = src[2];
+    Player_Tex_bank_ID[1] = src[3];
+    Player_Pallet_bank_ID[0] = src[4];
+    Player_Pallet_bank_ID[1] = src[5];
+    Player_face_tex_bank_ID = src[6];
+    Player_face_pallet_bank_ID[0] = src[7];
+    Player_face_pallet_bank_ID[1] = src[8];
+}
+#endif
+
 extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player) {
     int i;
 
@@ -1342,6 +1413,29 @@ extern int mPlib_pad_for_player_slot(int slot) {
 
     return s_pad_by_slot[slot];
 }
+
+#ifdef TARGET_PC
+extern void mPlib_repair_guest_pads(void) {
+    int session = (int)Common_Get(player_no);
+    int row;
+
+    for (row = 1; row < PC_PLAYER_COUNT; row++) {
+        int slot = g_pc_coop_guest_slot[row];
+
+        if ((g_pc_coop_joined[row] == 0) || (slot < 0) || (slot >= PLAYER_NUM) || (slot == session)) {
+            continue;
+        }
+
+        if (s_player_by_slot[slot] == NULL) {
+            continue;
+        }
+
+        if (s_pad_by_slot[slot] != row) {
+            mPlib_register_player_pad(slot, row);
+        }
+    }
+}
+#endif
 
 /* Controls pad of a player actor: 0 for the selected resident, the registered
  * Controls row for a guest. -1 when the actor is not an active player. */
@@ -1394,11 +1488,24 @@ extern int mPlib_guest_slot_ready(void) {
         return -1;
     }
 
-    if ((session < 0) || (session >= PLAYER_NUM) || (s_player_by_slot[session] == NULL)) {
+    if ((session < 0) || (session >= PLAYER_NUM)) {
         return -1;
     }
 
-    return s_guest_slot;
+    if (s_player_by_slot[session] != NULL) {
+        return s_guest_slot;
+    }
+
+#ifdef TARGET_PC
+    /* The selected resident is indoors, so this play has no actor in their
+     * slot. The queued pad is still the other resident. Falling through to
+     * the session slot made the joiner come out of the wrong door. */
+    if (pc_world_any_player() != FALSE) {
+        return s_guest_slot;
+    }
+#endif
+
+    return -1;
 }
 
 extern int mPlib_take_guest_slot(void) {
@@ -1524,6 +1631,10 @@ extern Private_c* mPlib_private_for_slot(int slot) {
     }
 
     return s_private_by_slot[slot];
+}
+
+extern PLAYER_ACTOR* mPlib_bound_player_actor(void) {
+    return s_bound_actor;
 }
 
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player) {
@@ -1723,8 +1834,23 @@ extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play) {
         }
     }
 
-    /* Select screen keeps the actor on the old slot, then player_no changes. */
+    /* Select screen keeps the actor on the old slot, then player_no changes.
+     * A guest pad stays put: moving that actor onto the selected slot clears
+     * the pad, and the split disappears with it. */
     if (found == 1) {
+        int only_pad = -1;
+
+        for (i = 0; i < PLAYER_NUM; i++) {
+            if (s_player_by_slot[i] == only) {
+                only_pad = s_pad_by_slot[i];
+                break;
+            }
+        }
+
+        if (only_pad > 0) {
+            return NULL;
+        }
+
         mPlib_register_player_slot(slot, only);
         return only;
     }
@@ -2110,9 +2236,19 @@ extern void mPlib_request_main_demo_get_golden_item_from_submenu(void) {
 
 extern void mPlib_request_main_mail_land_from_submenu(void) {
     mPlayer_change_data_from_submenu_c* change_data_from_submenu_p = mPlib_Get_change_data_from_submenu_p();
+#ifdef TARGET_PC
+    int owner = mPlib_menu_opener_priv_for_slot(mSM_cur_slot());
+#endif
 
     change_data_from_submenu_p->requested_main_index = mPlayer_INDEX_MAIL_LAND;
     change_data_from_submenu_p->requested_index_pending = TRUE;
+#ifdef TARGET_PC
+    /* Get() above records player_no. That is the resident who is indoors, so
+     * their actor clears this order and the guest stays in the mailbox jump. */
+    if (owner >= 0) {
+        change_data_from_submenu_owner = owner;
+    }
+#endif
 }
 
 extern void mPlib_request_main_demo_wait_from_submenu(ACTOR* speak_actor_p) {
@@ -2139,16 +2275,21 @@ extern int mPlib_Get_unable_wade(void) {
 }
 
 extern int mPlib_Check_able_force_speak_label(GAME* game, ACTOR* label) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
+
+    if (player == NULL) {
         return FALSE;
     }
 
-    return GET_PLAYER_ACTOR_GAME(game)->Check_able_force_speak_label_proc(game, label);
+    return player->Check_able_force_speak_label_proc(game, label);
 }
 
 extern void mPlib_Set_able_force_speak_label(ACTOR* label) {
-    if (Common_Get(player_actor_exists)) {
-        GET_PLAYER_ACTOR_NOW()->able_force_speak_label = (u32)label;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    /* The selected resident can be in another play (indoors). */
+    if (player != NULL) {
+        player->able_force_speak_label = (u32)label;
     }
 }
 
@@ -3050,12 +3191,16 @@ extern int mPlib_able_submenu_type1_player(GAME* game, PLAYER_ACTOR* player) {
 }
 
 extern int mPlib_able_submenu_type1(GAME* game) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
     int res = FALSE;
 
-    if (GET_PLAYER_ACTOR_GAME(game)->check_request_main_priority_proc(game, mPlayer_REQUEST_PRIORITY_19) > 0 &&
+    /* Host gate. A guest uses mPlib_able_submenu_type1_player. While the
+     * selected resident is indoors this is FALSE instead of a NULL call. */
+    if (player != NULL &&
+        player->check_request_main_priority_proc(game, mPlayer_REQUEST_PRIORITY_19) > 0 &&
         mPlib_Check_SetOrderSubmenu() == FALSE && mPlib_check_request_change_item() == FALSE &&
         mPlib_check_player_warp_forEvent() == FALSE &&
-        GET_PLAYER_ACTOR_GAME(game)->able_submenu_request_main_index_proc(game) && mPlib_CheckScene_AbleSubmenu()) {
+        player->able_submenu_request_main_index_proc(game) && mPlib_CheckScene_AbleSubmenu()) {
         res = TRUE;
     }
 
@@ -3192,6 +3337,14 @@ extern int mPlib_able_player_warp_forEvent(void) {
     if (mPlib_check_DynamicLinkFile_m_player() == FALSE) {
         return FALSE;
     }
+
+#ifdef TARGET_PC
+    /* The selected resident can be in another world (co-op interior). Nothing
+     * here can warp them, and every check below reads that actor. */
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
+        return FALSE;
+    }
+#endif
 
     if (mPlib_check_player_warp_forEvent()) {
         return FALSE;
@@ -3404,10 +3557,22 @@ static ACTOR* mPlib_Search_exist_ball_forScoop(GAME* game, const xyz_t* pos_p) {
 extern int mPlib_Check_scoop_after(GAME* game, xyz_t* pos_p, mActor_name_t* item_p, ACTOR** reflect_actor_pp,
                                    int gold_scoop) {
     ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
-    xyz_t* player_pos_p = &player_actor->world.position;
+    xyz_t* player_pos_p;
     int player_ux;
     int player_uz;
     int field_type = Common_Get(field_type);
+
+#ifdef TARGET_PC
+    if (player_actor == NULL) {
+        if (reflect_actor_pp != NULL) {
+            *reflect_actor_pp = NULL;
+        }
+        *item_p = EMPTY_NO;
+        return 0;
+    }
+#endif
+
+    player_pos_p = &player_actor->world.position;
 
     if (reflect_actor_pp != NULL) {
         *reflect_actor_pp = NULL;
@@ -3930,8 +4095,10 @@ extern void mPlib_SetData2_controller_data_for_title_demo(mActor_name_t item) {
 }
 
 extern int mPlib_Check_CorrectPlayerPos_forEvent(void) {
-    if (Common_Get(player_actor_exists)) {
-        int main_index = GET_PLAYER_ACTOR_NOW()->now_main_index;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    if (player != NULL) {
+        int main_index = player->now_main_index;
 
         if (mPlayer_MAIN_INDEX_VALID(main_index) != FALSE) {
             // clang-format off
@@ -4068,9 +4235,9 @@ extern int mPlib_Check_CorrectPlayerPos_forEvent(void) {
 }
 
 extern int mPlib_Check_UKI_COMEBACK_STATUS(void) {
-    if (Common_Get(player_actor_exists)) {
-        PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
 
+    if (player != NULL) {
         if (player->fishing_rod_actor_p) {
             UKI_ACTOR* uki_actor = (UKI_ACTOR*)player->fishing_rod_actor_p;
 
@@ -4094,7 +4261,7 @@ extern int mPlib_Check_tree_shaken_big(const xyz_t* pos_p) {
 }
 
 extern mActor_name_t mPlib_Get_itemNo_forWindow(void) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
         return EMPTY_NO;
     }
 
@@ -4115,7 +4282,7 @@ extern int mPlib_able_birth_bee(void) {
 }
 
 extern int mPlib_check_able_change_camera_normal_index(void) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
         return EMPTY_NO;
     }
 

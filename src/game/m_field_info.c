@@ -7,6 +7,7 @@
 #include "m_play.h"
 #include "libultra/libultra.h"
 #include "m_player_lib.h"
+#include <string.h>
 #include "m_bg_type.h"
 #include "m_fg_type.h"
 
@@ -2158,7 +2159,7 @@ extern int mFI_GetNextBlockNum(int* bx, int* bz) {
     int res = FALSE;
     int res2;
 
-    if (Common_Get(player_actor_exists)) {
+    if (Common_Get(player_actor_exists) && GET_PLAYER_ACTOR_NOW() != NULL) {
         res = ((*GET_PLAYER_ACTOR_NOW()->Get_WadeEndPos_proc)(gamePT, &end_pos));
     }
 
@@ -3636,3 +3637,41 @@ extern void mFI_PullTanukiPathTrees() {
         }
     }
 }
+
+#ifdef TARGET_PC
+typedef struct {
+    mFI_register_bg_info_c bg[mFM_VISIBLE_BLOCK_NUM];
+    mFI_col_keep_c keep[mFI_NUM_COL_KEEP];
+    mFI_block_area_info_c barea;
+    u32 player_bk_kind;
+    int player_wade;
+    int now_bg_num;
+    int climate;
+} mFI_world_state_c;
+
+_Static_assert(sizeof(mFI_world_state_c) <= PC_MFI_STATE_BYTES, "field world state");
+
+extern void mFI_world_store(void* dst) {
+    mFI_world_state_c* state = (mFI_world_state_c*)dst;
+
+    memcpy(state->bg, l_register_bg_info, sizeof(state->bg));
+    memcpy(state->keep, l_keepcld, sizeof(state->keep));
+    state->barea = l_barea;
+    state->player_bk_kind = l_mfi_player_bk_kind;
+    state->player_wade = l_player_wade;
+    state->now_bg_num = mFI_now_bg_num;
+    state->climate = l_mFI_climate;
+}
+
+extern void mFI_world_load(const void* src) {
+    const mFI_world_state_c* state = (const mFI_world_state_c*)src;
+
+    memcpy(l_register_bg_info, state->bg, sizeof(state->bg));
+    memcpy(l_keepcld, state->keep, sizeof(state->keep));
+    l_barea = state->barea;
+    l_mfi_player_bk_kind = state->player_bk_kind;
+    l_player_wade = state->player_wade;
+    mFI_now_bg_num = state->now_bg_num;
+    l_mFI_climate = state->climate;
+}
+#endif
