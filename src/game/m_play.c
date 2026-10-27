@@ -2091,6 +2091,13 @@ static void Game_play_draw(GAME_PLAY* play) {
     if ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 82) != 0)) {
         setupFog(play, graph);
         PC_DIAG(3, "Game_play_draw: fog done\n");
+#ifdef TARGET_PC
+        /* The last split frame leaves the scissor on the right half. One
+         * player again draws the inventory figure in that half. */
+        if (play_split_live(play) == FALSE) {
+            play_set_view_player(play, 0, 1);
+        }
+#endif
         setupViewer(play);
         PC_DIAG(3, "Game_play_draw: viewer done\n");
         setupViewMatrix(play, graph, graph);
