@@ -718,9 +718,11 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
          * world; binding or clearing here drops the outdoor sign talk. */
         if (s_world_move_primary) {
             mPlib_demo_context_begin(play);
+            mDemo_side_begin_frame();
         }
         mDemo_Main(play);
         if (s_world_move_primary) {
+            mDemo_side_try(play);
             mPlib_demo_context_end(play);
             mDemo_side_sync_player(play);
             if (mDemo_CheckDemo() == FALSE) {
@@ -810,7 +812,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         mMsg_Main(game);
 #ifdef TARGET_PC
         mPlib_demo_context_end(play);
-        mDemo_side_msg(play);
+        if (s_world_move_primary) {
+            mDemo_side_msg(play);
+        }
 #endif
     } else {
         mVibctl_set_force_stop(2);
@@ -837,7 +841,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             mMsg_Main(game);
 #ifdef TARGET_PC
             mPlib_demo_context_end(play);
-            mDemo_side_msg(play);
+            if (s_world_move_primary) {
+                mDemo_side_msg(play);
+            }
 #endif
         }
 #endif
@@ -1080,7 +1086,15 @@ static void Game_play_move(GAME* game) {
     mEnv_WindMove();
 #endif
     game->doing_point = 3;
+#ifdef TARGET_PC
+    if (s_world_move_primary) {
+        watch_my_step_move(play);
+    } else {
+        watch_my_step_other_world(play);
+    }
+#else
     watch_my_step_move(play);
+#endif
     game->doing_point = 4;
 #ifdef TARGET_PC
     if (s_world_move_primary) {

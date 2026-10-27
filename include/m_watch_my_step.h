@@ -31,6 +31,10 @@ extern Gfx mny_win_mojiT_model[];
 
 extern void watch_my_step_ct();
 extern void watch_my_step_move(GAME_PLAY* play);
+#ifdef TARGET_PC
+/* One interior frame per turn: light prompt and shop bell. Not the item popup. */
+extern void watch_my_step_other_world(GAME_PLAY* play);
+#endif
 extern void watch_my_step_draw(GAME_PLAY* play);
 
 #ifdef TARGET_PC

@@ -69,6 +69,12 @@ typedef struct mybell_confirmation_s {
 
 static mWt_mybell_confirmation_c S_mybell_conf;
 
+#ifdef TARGET_PC
+/* The town move runs first. An interior move may step the prompt and the
+ * bell once after that. A second interior in the same frame does not. */
+static int s_other_world_stepped;
+#endif
+
 extern void watch_my_step_ct() {
     bzero(&S_watch_my_step, sizeof(mWt_watch_my_step_c));
     S_watch_my_step.item_no = EMPTY_NO;
@@ -82,8 +88,18 @@ extern void watch_my_step_move(GAME_PLAY* play) {
     int can_show =
         play->camera.now_main_index == CAMERA2_PROCESS_NORMAL && play->camera.main_data.normal.morph_counter > 20;
 
+#ifdef TARGET_PC
+    /* Another world steps the indoor prompt and the shop bell. Stepping them
+     * here as well applied dt twice and let the town scene clear the bell. */
+    s_other_world_stepped = FALSE;
+    if (pc_world_live() < 2) {
+        navigate_camera_move(play);
+        mWt_mybell_confirmation_move(play);
+    }
+#else
     navigate_camera_move(play);
     mWt_mybell_confirmation_move(play);
+#endif
 
     S_watch_my_step.draw_type = 0;
 
@@ -134,7 +150,7 @@ extern void watch_my_step_move(GAME_PLAY* play) {
             }
         }
 
-        if (S_watch_my_step.mode != 0) {
+        if ((S_watch_my_step.mode != 0) && (player_actor != NULL)) {
             xyz_t position = player_actor->actor_class.world.position;
             xyz_t screen_pos;
             position.y += 30.0f;
@@ -193,6 +209,18 @@ extern void watch_my_step_move(GAME_PLAY* play) {
         }
     }
 }
+
+#ifdef TARGET_PC
+extern void watch_my_step_other_world(GAME_PLAY* play) {
+    if (s_other_world_stepped != FALSE) {
+        return;
+    }
+
+    s_other_world_stepped = TRUE;
+    navigate_camera_move(play);
+    mWt_mybell_confirmation_move(play);
+}
+#endif
 
 extern void watch_my_step_draw(GAME_PLAY* play) {
     GAME* game = (GAME*)play;

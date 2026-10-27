@@ -40,7 +40,9 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 
 ## Verdict
 
-**Proceed.** No P0. P1 is a small consolidation that should land before the per-player-state slice; P2s are opportunistic.
+**Fix-first** (2026-10-27 co-op surface pass). No P0. A7 before shops, the museum, and the map board. Detail is under "Answers" below.
+
+The 2026-10-26 menu pass stands: proceed, A1–A5 done.
 
 ## Open mitigations
 
@@ -51,7 +53,12 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 | A3 | P2 | Unify the per-frame wait-actor setup | done |
 | A4 | P2 | Remove/gate the `[PAUSE]` debug printfs | done |
 | A5 | P2 | Instance-count accumulator statics (6 sites) | done |
-| A6 | P1 | Co-op surface audit: world snapshot, inventory, entrances, performance. Charter only. | in_progress |
+| A6 | P1 | Co-op surface audit: world snapshot, inventory, entrances, performance. Charter only. | done |
+| A7 | P1 | Gate `watch_my_step_move` and side-talk stepping to the town world | done |
+| A8 | P2 | Remove `pc_world_trace` / `transition_log.txt`. Keep `crash_log.txt` through the shop playtests | done |
+| A9 | P2 | Keep the bind copy. Do not switch it to a pointer swap | open |
+| A10 | P2 | Leave inventory and the pending order where they are | open |
+| A11 | P2 | Entrances are already one path. Shop NULL guards stay as they are | open |
 
 ## Pass log
 
@@ -61,11 +68,13 @@ Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 com
 - 2026-10-26: A1 done on `feature/audit-a1`. New helper `mSM_player_menu_open_by_slot(GAME_PLAY*, slot)` in `m_submenu.c` (primary busy with this slot as opener, or this slot's side-slot menu open/transitioning; slot-based because `PLAYER_ACTOR` is not visible in `m_submenu.h`). Reworked onto it: `mDemo_owner_menu_open` (now a one-line wrapper, pad param dropped), `banti_player_menu_open` (deleted; the clock fade gate calls the helper via `mPlib_player_slot_of`), and `pc_session_menu_can_open` (helper + the two retail `mode` tails kept inline as scoped extras). MINGW32 clean. Smoke regression owed by the operator: clock fade during a menu, demo guard vs a menu holder's A, session gate block.
 - 2026-10-26: A1 smoke passed by the operator. A2+A3+A4 done on the same branch, MINGW32 clean. A2: `mSM_side_open_ok(play, target, player)` (target idle + reset clear + refuse clear + per-player able check) now backs the guest inventory, guest map and board open paths, each keeping only its specifics (FirstIntro, menu_type actor-open guard, map flag/position). A3: `play_session_wait_actors_add` + `play_side_menu_wait_actors_add` merged into `play_menu_wait_actors_add(play)` (primary opener added only when the primary menu is open, side openers, session rows); the `Actor_info_set_wait_actor`/`s_wait_actor` mechanism is deleted as dead (the consumer's `is_wait_actor` already checks both, and add+clear covers everything). A4: the two `[PAUSE]` debug printfs removed. A5 stays open (opportunistic). Operator smoke of the full menu-flow regression passed.
 - 2026-10-26: Rom-path narrowed to `rom/`-only on the same branch (operator request): `find_disc_image` in `pc_disc.c` no longer scans `.`, `orig/` or the repo-root fallback; the pc_disc.h comment, the missing-ROM dialog in `pc_main.c`, `DOCUMENTATION.md`'s fallback chain and `plan.md` §6 updated. A disc-image file picker is recorded as a future-update goal in `plan.md` §7. MINGW32 clean after the game was closed (the first link failed with Permission denied because the exe was running). Next: merge, then the per-player-state slice.
+- 2026-10-27: A7 and A8 on `feature/audit-a7`. Item popup steps on the town only. The light prompt and the shop bell step once on the first interior, and on the town when no interior is live. Side-talk begin/try/msg run only while the town world is bound; the interior still runs its own `mDemo_Main`. `pc_world_trace` and the attach `fopen` are gone. `crash_log.txt` stays. MINGW32 `./build_pc.sh` clean. Playtest owed: P1 inside, P2 outside, the indoor light prompt still on P1's half, a side talk does not close early, no `transition_log.txt`.
+- 2026-10-27: A6 done. Verdict fix-first on A7. Bind stays a copy (A9). Inventory and the order stay put (A10). Entrances are already one path (A11). `pc_world_trace` is the leftover probe (A8); `crash_log.txt` stays through shops. No code.
 - 2026-10-27: A6 opened. Playtest 40 is `0181c0c`. Charter below. Examination has not started. No code until a finding is picked.
 
 ## Co-op surface audit (2026-10-27)
 
-Charter only. The operator is refreshing context so this pass starts clean. Do not change code until they pick a finding. Safe return: `0181c0c` on `feature/indoors-split` (not pushed). Shops, the museum, and the map board wait on the verdict.
+Charter is below. The pass is done; answers follow it. Safe return: `0181c0c` on `feature/indoors-split` (not pushed). Shops, the museum, and the map board wait on A7.
 
 Scope: the whole co-op surface, not one building. Backend (native C / GL). Principles: maintainability, KISS, DRY, small surface, efficiency.
 
@@ -101,7 +110,7 @@ These held through playtest 40. A cleanup that deletes one of them is a regressi
 - The first town load uses the retail door. The walk-out clip runs only after `pc_world_spawn_return` (`s_door_return`).
 - A structure name that already has an actor is not spawned again.
 - The indoor light prompt draws in the indoor view with the half ortho.
-- Diagnostics (`pc_world_trace`, `crash_log.txt`) stay until a playtest holds after they are removed.
+- `pc_world_trace` is removed (A8). `crash_log.txt` stays. The next playtest is the one that has to hold without the transition log.
 
 ### Read first
 
@@ -116,3 +125,49 @@ These held through playtest 40. A cleanup that deletes one of them is a regressi
 ### Output of the pass
 
 Update this file with checklist notes, ranked findings, and a verdict (`proceed` to the buildings, or `fix-first`). Add an open-mitigation row per new finding. Add a `tasks.md` checkbox for each new P0/P1. One dated Progress row. No code in the same pass as the ranking.
+
+## Answers (2026-10-27)
+
+No code in this pass.
+
+### Checklist notes
+
+- **Structure.** Enter and leave are already one path: `pc_scene_splits` → `pc_world_transition` → `pc_world_open_scene` / `pc_world_spawn_return`. The house door clip (`s_pc_exit_opened` in `ac_my_house_move.c_inc`) is outdoor-only because the town play is kept. Shop `TARGET_PC` blocks are the empty-town door compare, not a second entrance.
+- **State.** The pocket is the save `Private_c` behind the snapshotted `now_private`. The open indoor menu is that play's `Submenu`, parked onto the town draw. Side slots stay process-global and step only on the town move. The pending order is one global (`change_data_from_submenu`) with a slot owner.
+- **Perf.** A 2-world frame runs the town move, then a full `Game_play_move` per interior, and binds on the way in, the way back, and once per drawn view. The bulk of each bind is `l_VecInf` (128 embedded unit records, on the order of 8 KB) plus `actor_dlftbls` (32 bytes times the live count, cap 256). Tens of KB per frame. The empty-town actor loop stays on purpose (`play_world_has_player`).
+- **Probes.** No `probe_log` / `mbx:` / `ssn:` / `pause:` writers left. `dummyprobe.c` is an empty upstream stub and stays. `PC_DIAG` is compiled out without `PC_VERBOSE_DIAG` and stays. `pc_world_trace` was removed in A8. `crash_log.txt` is still the SEH filter in `pc_main.c`.
+
+### 1. Per-play state — P2 (A9)
+
+Keep the copy. A pointer swap only works if every reader of `l_VecInf`, `l_ActorInf`, `l_mBgMgr`, the dlftbls, and the other stored statics goes through a pointer. That is a wider edit than the memcpy. One bind is a store plus a load.
+
+### 2. Globals still shared — P1 (A7)
+
+Already contained, and not moved into the snapshot: `mco_work` (cleared at the end of each world's `CollisionCheck_clear`, and zeroed in `pc_world_destroy_child`), `now_home` (menu context swaps it), `triforce_accum` in `fbdemo_triforce_move`, the one mic.
+
+Next statics a town frame and an interior frame both write:
+
+- `S_watch_my_step`, `S_navigate`, `S_mybell_conf`, `S_se_play_flg` in `m_watch_my_step.c`. `Game_play_move` calls `watch_my_step_move` on every world (`m_play.c`). The interior runs second, so it overwrites the item-name popup and applies `dt` again. The bell widget keys off `scene_no`. The town pass is not a shop, so it clears `update_money` every frame before a shop pass can keep it. `place_chk` in that function is the shop list.
+- `s_side` in `m_demo.c`. It is not in `mDemo_world_store`. `mDemo_Main` calls `mDemo_side_begin_frame` and `mDemo_side_try` on the interior, and `mDemo_side_msg` runs there too. A live side talk is stepped twice and can close a frame early.
+
+Fix: the same `s_world_move_primary` gate `banti_move` already uses. Do not start a per-player mic. The indoor light prompt draw stays in the indoor view.
+
+### 3. Inventory — P2 (A10)
+
+Leave it. The pocket is already the player private. The pending order already records the slot (`mPlib_change_data_owner`). The payload stays one global because `Player_actor_request_main_change_from_submenu` (`m_player.c`) reads and clears that one record, and only the mailbox jumper consumes a land order. Moving the payload onto the slot means every consumer selects by slot, and that land check gets redone. What breaks if it moves now: a second pending order with no reader, or the jumper left in `MAIL_JUMP`.
+
+### 4. Rooms, exits, entrances — P2 (A11)
+
+One path already. Only the house is playtested. The six `open_wait` NULL returns (`ac_shop_move.c_inc`, `ac_conveni_move.c_inc`, `ac_super_move.c_inc`, `ac_depart_move.c_inc`, `ac_buggy_move.c_inc`, `ac_br_shop_move.c_inc`) and the six constructor `mPlib_extra_player_at(0)` fallbacks are the empty-town door compare. Do not add another copy of that test. `plan.md` §7's "Player 2 indoors is deferred" lead is stale.
+
+### 5. Performance — P2
+
+No change. The duplicated walk is the town `Actor_info_call_actor` (kept so the outdoor door, birth, and structures still run) plus one full interior `Game_play_move`. The per-frame `transition_log.txt` append is the part that is pure waste (A8).
+
+### 6. Copied gates — P2
+
+The copies are those six `open_wait` returns and six constructors. Position fallbacks already listed in `plan.md` §4 stay.
+
+### Probes and logs — P2 (A8)
+
+Remove `pc_world_trace` and the attach `fopen` in `pc/src/pc_world.c` (both marked TEMP DIAG). Then one playtest, because the do-not-re-break line says those diagnostics stay until a playtest holds after they are removed. Keep `crash_log.txt` until a shop playtest has used it. Keep `dummyprobe.c` and `PC_DIAG`.

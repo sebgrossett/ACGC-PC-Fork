@@ -25,7 +25,6 @@
 #include "ac_intro_demo.h"
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 #define PC_DLFTBL_CAP 256
@@ -77,16 +76,6 @@ static s8 s_slot_world[PLAYER_NUM];
 static s8 s_door_return[PLAYER_NUM];
 /* Pad 0's resident. Cleared from the town table once they are indoors. */
 static int s_pad0_slot = 0;
-
-/* TEMP DIAG: stage trace for the indoors transition. Remove once confirmed. */
-static void pc_world_trace(const char* text, int a, int b) {
-    FILE* f = fopen("transition_log.txt", "a");
-
-    if (f != NULL) {
-        fprintf(f, "pw: %s (%d, %d)\n", text, a, b);
-        fclose(f);
-    }
-}
 
 static int pc_scene_splits(int scene) {
     /* One list for every interior. The house proved the switch; the other
@@ -225,15 +214,6 @@ void pc_world_attach_primary(GAME* game) {
     s_world[0].game = game;
     s_bound = 0;
     s_live = 1;
-    /* TEMP DIAG */
-    {
-        FILE* f = fopen("transition_log.txt", "w");
-
-        if (f != NULL) {
-            fprintf(f, "pw: attach\n");
-            fclose(f);
-        }
-    }
     pc_world_capture(0);
 }
 
@@ -344,17 +324,14 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
 
     index = pc_world_free_slot();
     if (index < 0) {
-        pc_world_trace("open no slot", scene, resident_slot);
         return FALSE;
     }
 
     child = (GAME*)malloc(sizeof(GAME_PLAY));
     if (child == NULL) {
-        pc_world_trace("open no malloc", scene, resident_slot);
         return FALSE;
     }
 
-    pc_world_trace("open begin", scene, resident_slot);
     pc_world_bind(0);
     pc_world_capture(0);
     Common_Set(last_scene_no, Save_Get(scene_no));
@@ -364,18 +341,15 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
     s_child_init = TRUE;
     game_child_ct(child, play_init, primary->game.graph);
     s_child_init = FALSE;
-    pc_world_trace("open init", index, scene);
 
     /* The child play registered its own player into the shared slot table.
      * Keep that player only, then snapshot the interior. */
     mPlib_world_keep_slot(resident_slot);
     s_world[index].game = child;
     pc_world_capture(index);
-    pc_world_trace("open capture", index, scene);
     pc_world_restore(0);
     s_bound = 0;
     s_live++;
-    pc_world_trace("open restore", index, scene);
 
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
         s_slot_world[resident_slot] = (s8)index;
@@ -386,13 +360,11 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
      * stays for the player still outside. Priority 9 beats the door request. */
     Camera2_request_main_normal(primary, 1, 9);
     Camera2_process(primary);
-    pc_world_trace("open camera", index, scene);
     /* The door queued a silent BGM wipe. Retail clears it in game_ct of the
      * new play. This play is still the town, so outdoor music comes back.
      * One stream: the indoor player hears it too. */
     mBGM_init();
     pc_world_drop_player(primary);
-    pc_world_trace("open drop", index, scene);
     return TRUE;
 }
 
@@ -404,7 +376,6 @@ static void pc_world_destroy_child(int index) {
     }
 
     child = s_world[index].game;
-    pc_world_trace("destroy begin", index, 0);
     pc_world_bind(index);
     s_child_cleanup = TRUE;
     play_cleanup(child);
@@ -414,7 +385,6 @@ static void pc_world_destroy_child(int index) {
     gamealloc_cleanup(&child->gamealloc);
     free(child);
     memset(&s_world[index], 0, sizeof(s_world[index]));
-    pc_world_trace("destroy end", index, 0);
     if (s_live > 1) {
         s_live--;
     }
@@ -540,7 +510,6 @@ int pc_world_transition(GAME_PLAY* play) {
 
     scene = play->next_scene_no;
     child = pc_world_child_index(play);
-    pc_world_trace("transition", child, scene);
 
     if (child < 0) {
         if (play != (GAME_PLAY*)s_world[0].game) {
@@ -566,25 +535,19 @@ int pc_world_transition(GAME_PLAY* play) {
      * for it and put the child's state back before this transition returns. */
     slot = pc_world_slot_in(child);
     door = Common_Get(door_data);
-    pc_world_trace("exit begin", child, scene);
     pc_world_bind(0);
-    pc_world_trace("exit town", child, slot);
 
     if ((scene == s_world[0].scene_no) || (pc_scene_splits(scene) == FALSE)) {
         pc_world_fade_in_town(play, pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot));
-        pc_world_trace("exit spawn", child, slot);
         mBGM_init();
     } else if (pc_world_open_scene((GAME_PLAY*)s_world[0].game, scene, slot) == FALSE) {
         pc_world_fade_in_town(play, pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot));
-        pc_world_trace("exit reopen failed", child, slot);
         mBGM_init();
     } else {
-        pc_world_trace("exit reopen", child, slot);
     }
 
     s_world[child].destroy = TRUE;
     pc_world_bind(child);
-    pc_world_trace("exit pending", child, slot);
     return TRUE;
 }
 
@@ -603,9 +566,7 @@ void pc_world_move_rest(void (*move)(GAME*)) {
         }
 
         pc_world_bind(i);
-        pc_world_trace("move child", i, 0);
         move(s_world[i].game);
-        pc_world_trace("move child done", i, 0);
     }
 
     if (saved >= 0) {

@@ -218,6 +218,8 @@ extern int mDemo_side_closing(void);
 extern int mDemo_side_needs_setup(ACTOR* actor);
 extern void mDemo_side_clear_needs_setup(void);
 extern ACTOR* mDemo_side_player(void);
+extern void mDemo_side_begin_frame(void);
+extern void mDemo_side_try(GAME_PLAY* play);
 extern void mDemo_side_sync_player(GAME_PLAY* play);
 extern void mDemo_side_msg(GAME_PLAY* play);
 extern void mDemo_world_store(mDemo_Data_c* dst);

@@ -1296,7 +1296,7 @@ static void mDemo_side_reset(void) {
     memset(&s_side, 0, sizeof(s_side));
 }
 
-static void mDemo_side_begin_frame(void) {
+extern void mDemo_side_begin_frame(void) {
     if (s_side.close_next) {
         mDemo_side_reset();
         return;
@@ -1400,7 +1400,7 @@ static void mDemo_side_apply_proc(GAME_PLAY* play, mDemo_Request_c* request) {
     demo->listen_actor = saved_listen;
 }
 
-static void mDemo_side_try(GAME_PLAY* play) {
+extern void mDemo_side_try(GAME_PLAY* play) {
     f32 best_weight = -1.0f;
     int best = -1;
     int i;
@@ -1575,13 +1575,7 @@ extern int mDemo_End(ACTOR* actor) {
 }
 
 extern void mDemo_Main(GAME_PLAY* play) {
-#ifdef TARGET_PC
-    mDemo_side_begin_frame();
-#endif
     main_proc();
-#ifdef TARGET_PC
-    mDemo_side_try(play);
-#endif
 }
 
 extern void mDemo_Init(GAME_PLAY* play) {
