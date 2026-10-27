@@ -894,12 +894,22 @@ static void play_coop_join_push(int pad) {
 
 /* A frame where a player can join or leave without interrupting a menu, demo,
  * fade or scene wipe. A guest's side-slot menu counts: its opener must not be
- * deleted or spawned over while it edits its pockets. */
+ * deleted or spawned over while it edits its pockets. An interior menu lives
+ * on that play, not this town submenu, and it counts the same way. */
 static int play_coop_safe(GAME_PLAY* play) {
     int slot;
+    int world;
 
     for (slot = 1; slot < mSM_SLOT_NUM; slot++) {
         if (mSM_side_slot_p(slot)->menu_type != mSM_OVL_NONE) {
+            return FALSE;
+        }
+    }
+
+    for (world = 1; world < PC_WORLD_MAX; world++) {
+        GAME_PLAY* child = pc_world_at(world);
+
+        if ((child != NULL) && (child->submenu.process_status != mSM_PROCESS_WAIT)) {
             return FALSE;
         }
     }
@@ -2185,6 +2195,13 @@ static void Game_play_draw(GAME_PLAY* play) {
                         OPEN_DISP(graph);
                         gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_CLEAR_DEPTH);
                         gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
+                        /* One player with a shop still loaded stays on this
+                         * split draw. The outdoor inventory turns stretch off
+                         * so the outfit viewport tracks the panel. Two players
+                         * keep the half-band squeeze instead. */
+                        if (count <= 1) {
+                            gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_WIDESCREEN_STRETCH_OFF);
+                        }
                         CLOSE_DISP(graph);
                         pc_gx_menu_mode = play_menu_mode(count, opener_index);
                         /* Side slots: swap the slot's Submenu in so the overlay
