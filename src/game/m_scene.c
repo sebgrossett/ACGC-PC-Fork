@@ -1,4 +1,7 @@
 #include "m_scene.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 #include "m_player_lib.h"
 #include "libultra/libultra.h"
@@ -537,6 +540,22 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
 
             restore_fgdata_all(play);
             play->game.pad_initialized = FALSE;
+#ifdef TARGET_PC
+            {
+                /* The wipe finishes after this demo ends. Remember who is
+                 * walking in so the interior spawns that resident. */
+                PLAYER_ACTOR* who = mPlib_demo_talker();
+                int slot = -1;
+
+                if (who != NULL) {
+                    slot = mPlib_player_slot_of(who);
+                }
+                if (slot < 0) {
+                    slot = (int)Common_Get(player_no);
+                }
+                pc_world_note_entering(slot);
+            }
+#endif
             res = 1; // success
         } else {
             res = 2; // already changing scenes

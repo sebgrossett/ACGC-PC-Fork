@@ -76,6 +76,8 @@ static s8 s_slot_world[PLAYER_NUM];
 static s8 s_door_return[PLAYER_NUM];
 /* Pad 0's resident. Cleared from the town table once they are indoors. */
 static int s_pad0_slot = 0;
+/* Resident a door is sending inside. -1 until a scene change notes one. */
+static int s_enter_slot = -1;
 
 static int pc_scene_splits(int scene) {
     /* One list for every interior. The house proved the switch; the other
@@ -301,8 +303,12 @@ static int pc_world_free_slot(void) {
     return -1;
 }
 
-static void pc_world_drop_player(GAME_PLAY* play) {
-    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+static void pc_world_drop_player(GAME_PLAY* play, int slot) {
+    PLAYER_ACTOR* host = get_player_actor_by_index(play, slot);
+
+    if (host == NULL) {
+        host = get_player_actor_withoutCheck(play);
+    }
 
     if (host == NULL) {
         return;
@@ -336,6 +342,20 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
     pc_world_capture(0);
     Common_Set(last_scene_no, Save_Get(scene_no));
     Save_Set(scene_no, scene);
+    /* The child play spawns whoever player_no names. The town snapshot already
+     * holds the selected resident, and restore puts that back. */
+    if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
+        Private_c* priv = mPlib_private_for_slot(resident_slot);
+
+        if (priv == NULL) {
+            priv = Save_GetPointer(private_data[resident_slot]);
+        }
+
+        Common_Set(player_no, resident_slot);
+        if (priv != NULL) {
+            Common_Set(now_private, priv);
+        }
+    }
 
     memset(child, 0, sizeof(GAME_PLAY));
     s_child_init = TRUE;
@@ -353,7 +373,9 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
 
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
         s_slot_world[resident_slot] = (s8)index;
-        s_pad0_slot = resident_slot;
+        if (mPlib_pad_for_player_slot(resident_slot) == 0) {
+            s_pad0_slot = resident_slot;
+        }
     }
 
     /* Retail throws this play away, so the door zoom dies with it. This play
@@ -364,8 +386,17 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
      * new play. This play is still the town, so outdoor music comes back.
      * One stream: the indoor player hears it too. */
     mBGM_init();
-    pc_world_drop_player(primary);
+    pc_world_drop_player(primary, resident_slot);
     return TRUE;
+}
+
+void pc_world_note_entering(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        s_enter_slot = -1;
+        return;
+    }
+
+    s_enter_slot = slot;
 }
 
 static void pc_world_destroy_child(int index) {
@@ -524,7 +555,11 @@ int pc_world_transition(GAME_PLAY* play) {
             return FALSE;
         }
 
-        slot = (int)Common_Get(player_no);
+        slot = s_enter_slot;
+        s_enter_slot = -1;
+        if ((slot < 0) || (slot >= PLAYER_NUM)) {
+            slot = (int)Common_Get(player_no);
+        }
         return pc_world_open_scene(play, scene, slot);
     }
 

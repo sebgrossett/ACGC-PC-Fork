@@ -943,6 +943,16 @@ static int choice_demo_sub() {
             mPlib_demo_context_begin((GAME_PLAY*)gamePT);
             check_ok = talk_check() != FALSE;
             mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        } else if (((type == mDemo_TYPE_DOOR) || (type == mDemo_TYPE_DOOR2)) && (request->pc_owner_pad > 0)) {
+            /* A guest at a door. The priority check has to see that player. */
+            int saved_slot = mPlib_demo_talker_slot();
+
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+            mPlib_set_demo_talker_by_slot(request->pc_owner_slot);
+            mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+            check_ok = (*check_func[type])() != FALSE;
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+            mPlib_set_demo_talker_by_slot(saved_slot);
         } else {
             check_ok = (*check_func[type])() != FALSE;
         }

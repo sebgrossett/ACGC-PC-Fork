@@ -1,7 +1,8 @@
 # Tasks
 
 ## Now
-- P2 into Cranny on the same `pc_world_transition`. The scene list and the door utilities already take a player. Then the other shops, the museum, and the map board.
+- P2 into their own house on `pc_world_transition`. The door names the resident who pressed A, and the interior spawns that resident. Built, needs a playtest. Then P2 into Cranny on the same note.
+- Then the other shops, the museum, and the map board.
 - After those buildings: held tools (this save has none), then 3-4 player validation last (needs 3 controllers and 3-4 residents).
 - `crash_log.txt` stays through the shop playtests. `transition_log.txt` is gone.
 
@@ -19,5 +20,5 @@
 - [x] Nook's Cranny, P1 in and out, inventory figure held (`feature/nook-shop`, `4af98a6`). P2's door is still open
 
 ## Progress
-- 2026-10-27: Cranny P1 in/out held, and the inventory figure held after P2 left (`4af98a6`). The enter crash was the town insect net range reading the resident who had left. Next is P2's door.
+- 2026-10-27: P2's house door. `goto_other_scene` notes the demo resident, and the interior spawns and drops that resident. The house A check walks guests. Playtest: P2 enters and leaves their own house while P1 stays outside. P1's door should stay as it was.
 - 2026-10-27: A7+A8 playtest held. Older playtest rows were folded; the detail is in git history.

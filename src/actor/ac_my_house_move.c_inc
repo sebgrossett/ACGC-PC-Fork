@@ -169,8 +169,7 @@ static f32 aMHS_player_chk_f[2] = { 1.0f, -1.0f };
 static u16 aMHS_player_chk_angl0[2] = { DEG2SHORT_ANGLE(-180.0f), DEG2SHORT_ANGLE(90.0f) };
 static u16 aMHS_player_chk_angl1[2] = { DEG2SHORT_ANGLE(-90.0f), DEG2SHORT_ANGLE(-180.0f) };
 
-static int aMHS_check_player_sub(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+static int aMHS_player_at_door(STRUCTURE_ACTOR* my_house, PLAYER_ACTOR* player, int pad) {
     int direct = my_house->action & 1;
     f32 dist_x;
     f32 dist_z;
@@ -188,7 +187,7 @@ static int aMHS_check_player_sub(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
         u16 angle_y = player->actor_class.shape_info.rotation.y;
 
         if (angle_y > aMHS_player_chk_angl0[direct] && angle_y < aMHS_player_chk_angl1[direct]) {
-            if (chkTrigger(BUTTON_A) == FALSE) {
+            if (chkTrigger_pad(pad, BUTTON_A) == FALSE) {
                 return FALSE;
             }
 
@@ -201,6 +200,10 @@ static int aMHS_check_player_sub(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
     }
 
     return res;
+}
+
+static int aMHS_check_player_sub(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
+    return aMHS_player_at_door(my_house, GET_PLAYER_ACTOR(play), 0);
 }
 
 static int aMHS_check_player_in_intro_demo(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
@@ -281,6 +284,25 @@ static int aMHS_check_player(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
             } else if (aMHS_check_player_sub(my_house, play)) {
                 mDemo_Request(mDemo_TYPE_DOOR, (ACTOR*)my_house, &aMHS_set_demo_info);
             }
+#ifdef TARGET_PC
+            else {
+                int i;
+                int count = mPlib_extra_player_count();
+
+                for (i = 0; i < count; i++) {
+                    PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+                    int pad = mPlib_pad_for_player(guest);
+
+                    if ((pad <= 0) || (aMHS_player_at_door(my_house, guest, pad) == FALSE)) {
+                        continue;
+                    }
+
+                    mPlib_set_request_owner(guest);
+                    mDemo_Request(mDemo_TYPE_DOOR, (ACTOR*)my_house, &aMHS_set_demo_info);
+                    break;
+                }
+            }
+#endif
         }
     }
 
@@ -447,8 +469,21 @@ static void aMHS_wait(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
 
 static void aMHS_open_door_wait(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
     ACTOR* actorx = (ACTOR*)my_house;
+    PLAYER_ACTOR* player;
 
-    if (actorx == (*GET_PLAYER_ACTOR_NOW()->get_door_label_proc)(gamePT)) {
+#ifdef TARGET_PC
+    player = mPlib_demo_talker();
+    if (player == NULL) {
+        player = GET_PLAYER_ACTOR_NOW();
+    }
+#else
+    player = GET_PLAYER_ACTOR_NOW();
+#endif
+
+    /* The label lives on the player who is in the door walk. The host lookup
+     * is the selected resident, who may still be outside. */
+    if ((player != NULL) && (player->now_main_index == mPlayer_INDEX_DOOR) &&
+        (actorx == (ACTOR*)player->main_data.door.label)) {
         mBGMPsComp_make_ps_wipe(0x249);
         aMHS_setup_animation(my_house, 0.5f);
         aMHS_setup_action(my_house, aMHS_ACTION_OPEN_DOOR);

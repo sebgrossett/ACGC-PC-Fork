@@ -22,6 +22,10 @@ struct game_s* pc_world_primary(void);
  * game swap must not run. */
 int pc_world_transition(struct game_play_s* play);
 
+/* The resident a door just sent inside. The wipe ends later, after the demo
+ * talker is gone, so the transition reads this instead of the selected slot. */
+void pc_world_note_entering(int slot);
+
 /* Step every world but the primary. `move` is Game_play_move for one play.
  * Primary stays bound on return. */
 void pc_world_move_rest(void (*move)(struct game_s*));
