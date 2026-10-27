@@ -1,7 +1,8 @@
 # Tasks
 
 ## Now
-- Nook's Cranny (`SCENE_SHOP0`), P1 in and out while P2 stays outside. Same `pc_world_transition` as the house. Branch `feature/nook-shop`. Other residents' doors are the next slice, after this playtest holds. Then the other shops, the museum, and the map board.
+- Inventory outfit figure is in the wrong place after P2 leaves and P1 is alone. Menus still open. That is next, before another door.
+- Then P2 into Cranny on the same `pc_world_transition`. Then the other shops, the museum, and the map board.
 - After those buildings: held tools (this save has none), then 3-4 player validation last (needs 3 controllers and 3-4 residents).
 - `crash_log.txt` stays through the shop playtests. `transition_log.txt` is gone.
 
@@ -15,13 +16,9 @@
 - [x] Phase 3: split-screen viewport, camera, HUD (2 players playtested; quadrants are phase 5)
 - [x] Phase 4: co-op menu, queued join/leave. The gyroid save is the only write
 - [ ] Phase 5: tie-break, group events, 3-4 player pass on the PC build
-- [x] One player indoors, playtest 40 (`0181c0c`). A7+A8 playtest held on `feature/audit-a7`
+- [x] One player indoors, playtest 40. A7+A8 held on `feature/audit-a7`
+- [x] Nook's Cranny, P1 in and out (`feature/nook-shop`, playtest 2026-10-27). P2's door is still open
 
 ## Progress
-- 2026-10-27: Nook fade, then crash (`rva 0x2D7021`, NULL + `0x134C`). A town ladybug read the removed resident's net. The net label, the stopped net, and the scoop take a player and follow the player still outside. Playtest is still P1 in and out.
-- 2026-10-27: Nook door. The town shop stays in the into-wait after P1 leaves the play, and the next frame read the removed resident. It returns to open-wait. Playtest is P1 in and out, P2 outside. Other residents' doors are next.
-- 2026-10-27: A7+A8 playtest held. Shops are next. Older playtest rows were folded; the detail is in git history.
-- 2026-10-27: A7+A8 on `feature/audit-a7` (`6e59e1b`). Item popup and side talk step on the town. Light prompt and shop bell step once on the interior. `pc_world_trace` removed. `crash_log.txt` stays.
-- 2026-10-27: Co-op surface audit. Bind stays a copy. Inventory and the pending order stay put. Entrances are already one path.
-- 2026-10-27: Indoors split playtest 40 holds (`0181c0c`). House enter/leave, mailbox, rejoin, return to title.
-- 2026-10-26: Menus, clock, join/leave, spawn-at-house, gyroid, guest map, and A1–A5 playtested. A1–A5 are on `master`.
+- 2026-10-27: Cranny playtest held (`af85e90`). P1 enter, leave, re-enter. P2 leave inside and rejoin. P1 enter alone. After P2 leaves, P1's inventory outfit figure is in the wrong place. Menus still open. That figure is next.
+- 2026-10-27: A7+A8 playtest held. Older playtest rows were folded; the detail is in git history.
