@@ -2480,7 +2480,11 @@ static int Player_actor_Set_Item_net_catch_request_table(ACTOR* actorx, GAME* ga
                                                          const xyz_t* pos_p, f32 radius) {
     PLAYER_ACTOR* player = (PLAYER_ACTOR*)actorx;
 
-    if (mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_SWING_NET) {
+    /* The table belongs to this actor. The selected resident may already be
+     * indoors, so the action check cannot go through the host lookup. */
+    (void)game;
+
+    if (player->now_main_index == mPlayer_INDEX_SWING_NET) {
         int catch_num = player->item_net_catch_request_use_count;
 
         if ((catch_num >= 0 && catch_num < mPlayer_NET_CATCH_TABLE_COUNT) &&
