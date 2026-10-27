@@ -148,6 +148,18 @@ static void Player_actor_Set_start_refuse(ACTOR* actorx, GAME* game) {
     int idx = player->now_main_index;
     GAME_PLAY* play = (GAME_PLAY*)game;
 
+#ifdef TARGET_PC
+    /* This submenu belongs to the play's own resident. A guest in the door
+     * used to raise start_refuse here, and it stayed up after they went in. */
+    {
+        int slot = mPlib_player_slot_of(player);
+
+        if ((slot >= 0) && (slot != (int)Common_Get(player_no))) {
+            return;
+        }
+    }
+#endif
+
     if (mPlayer_MAIN_INDEX_VALID(idx) != FALSE) {
         if (data[idx]) {
             play->submenu.start_refuse = FALSE;

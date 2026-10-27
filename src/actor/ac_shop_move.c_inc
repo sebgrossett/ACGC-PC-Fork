@@ -90,33 +90,26 @@ static void aSHOP_rewrite_out_data(ACTOR* actor, GAME_PLAY* play) {
     mBGMPsComp_make_ps_wipe(0x2168);
 }
 
-static int aSHOP_check_player2(GAME_PLAY* play) {
-    PLAYER_ACTOR* player;
+static int aSHOP_player_walking_in(PLAYER_ACTOR* player) {
     u16 y;
-    int res;
 
-    player = GET_PLAYER_ACTOR(play);
-    y = player->actor_class.world.angle.y;
-
-    res = 0;
-    if ((y > DEG2SHORT_ANGLE2(90.0f)) && (y < DEG2SHORT_ANGLE2(180.0f)) &&
-        (player->actor_class.speed > 0.0f)) { // 0x6000 && 0xA000
-        res = 1;
+    if (player == NULL) {
+        return 0;
     }
 
-    return res;
+    y = player->actor_class.world.angle.y;
+    if ((y > DEG2SHORT_ANGLE2(90.0f)) && (y < DEG2SHORT_ANGLE2(180.0f)) &&
+        (player->actor_class.speed > 0.0f)) { // 0x6000 && 0xA000
+        return 1;
+    }
+
+    return 0;
 }
 
-static int aSHOP_check_player(ACTOR* actor, GAME_PLAY* play) {
+static int aSHOP_player_at_door(PLAYER_ACTOR* player, ACTOR* actor) {
     u16 y;
     f32 xOffs;
     f32 zOffs;
-    f32 t;
-    int res;
-    PLAYER_ACTOR* player;
-
-    player = GET_PLAYER_ACTOR(play);
-    res = 0;
 
     if (player == NULL) {
         return 0;
@@ -125,14 +118,82 @@ static int aSHOP_check_player(ACTOR* actor, GAME_PLAY* play) {
     y = player->actor_class.shape_info.rotation.y;
     xOffs = SQ(player->actor_class.world.position.x - (actor->world.position.x - 38.0f));
     zOffs = SQ(player->actor_class.world.position.z - (actor->world.position.z + 42.0f));
-    t = (xOffs) + (zOffs);
 
-    if ((y > DEG2SHORT_ANGLE2(90.0f)) && (y < DEG2SHORT_ANGLE2(180.0f)) && (t < 550.0f)) {
-        res = 1;
+    if ((y > DEG2SHORT_ANGLE2(90.0f)) && (y < DEG2SHORT_ANGLE2(180.0f)) && ((xOffs + zOffs) < 550.0f)) {
+        return 1;
     }
 
-    return res;
+    return 0;
 }
+
+static int aSHOP_check_player2(GAME_PLAY* play) {
+    return aSHOP_player_walking_in(GET_PLAYER_ACTOR(play));
+}
+
+static int aSHOP_check_player(ACTOR* actor, GAME_PLAY* play) {
+    return aSHOP_player_at_door(GET_PLAYER_ACTOR(play), actor);
+}
+
+#ifdef TARGET_PC
+static int aSHOP_anyone_at_door(ACTOR* actor, GAME_PLAY* play) {
+    PLAYER_ACTOR* host = GET_PLAYER_ACTOR(play);
+    int i;
+    int count;
+
+    if (aSHOP_player_at_door(host, actor) != FALSE) {
+        return TRUE;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        if (aSHOP_player_at_door(mPlib_extra_player_at(i), actor) != FALSE) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* The selected resident is not the only one who can walk in. The first match
+ * is the host, so P1's door stays as it was. */
+static PLAYER_ACTOR* aSHOP_guest_at_door(ACTOR* actor) {
+    int i;
+    int count = mPlib_extra_player_count();
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+        if (aSHOP_player_at_door(guest, actor) && aSHOP_player_walking_in(guest)) {
+            return guest;
+        }
+    }
+
+    return NULL;
+}
+
+static PLAYER_ACTOR* aSHOP_player_in_this_door(ACTOR* shop, GAME_PLAY* play) {
+    PLAYER_ACTOR* host = GET_PLAYER_ACTOR(play);
+    int i;
+    int count;
+
+    if ((host != NULL) && (host->now_main_index == mPlayer_INDEX_DOOR) &&
+        ((ACTOR*)host->main_data.door.label == shop)) {
+        return host;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+        if ((guest != NULL) && (guest->now_main_index == mPlayer_INDEX_DOOR) &&
+            ((ACTOR*)guest->main_data.door.label == shop)) {
+            return guest;
+        }
+    }
+
+    return NULL;
+}
+#endif
 
 static void aSHOP_set_talk_info_close_wait(ACTOR* actor) {
     rgba_t window_color;
@@ -230,19 +291,35 @@ static void aSHOP_open_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     ACTOR* actor;
     GAME* game;
     xyz_t pos;
+    int host_busy;
+    PLAYER_ACTOR* host;
 
     actor = &shop->actor_class;
     game = &play->game;
+    host = get_player_actor_withoutCheck(play);
+    host_busy = FALSE;
 
 #ifdef TARGET_PC
     /* Town has no selected resident while the host is indoors. OutDoorMove
-     * reads now_main_index on that NULL. */
-    if (get_player_actor_withoutCheck(play) == NULL) {
+     * reads now_main_index on that NULL. A guest can still walk in. */
+    if ((host == NULL) && (mPlib_extra_player_count() == 0)) {
+        return;
+    }
+#else
+    if (host == NULL) {
         return;
     }
 #endif
-    if (mPlib_check_player_actor_main_index_OutDoorMove(&play->game) != FALSE) {
-        return;
+    if (host != NULL) {
+        host_busy = mPlib_check_player_actor_main_index_OutDoorMove(&play->game);
+    }
+    if (host_busy != FALSE) {
+#ifdef TARGET_PC
+        if (mPlib_extra_player_count() == 0)
+#endif
+        {
+            return;
+        }
     }
 
     if (mSP_ShopOpen() != mSP_SHOP_STATUS_OPEN && mSP_ShopOpen() != mSP_SHOP_STATUS_OPENEVENT) {
@@ -251,17 +328,47 @@ static void aSHOP_open_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
         return;
     }
 
-    if (aSHOP_check_player(actor, play) == 1 && aSHOP_check_player2(play) == TRUE) {
-        pos.x = actor->world.position.x - 50.0f;
-        pos.y = GET_PLAYER_ACTOR(play)->actor_class.world.position.y;
-        pos.z = actor->world.position.z + 50.0f;
-        mSP_SetTanukiShopStatus();
+    {
+        PLAYER_ACTOR* who = NULL;
 
-        if (mPlib_request_main_door_type1(game, &pos, DEG2SHORT_ANGLE(135.0f), TRUE, actor) == 0) { // 0x6000
-            return;
+        if ((host_busy == FALSE) && (aSHOP_check_player(actor, play) == 1) && (aSHOP_check_player2(play) == TRUE)) {
+            who = GET_PLAYER_ACTOR(play);
         }
+#ifdef TARGET_PC
+        if (who == NULL) {
+            who = aSHOP_guest_at_door(actor);
+        }
+#endif
+        if (who != NULL) {
+            int requested;
 
-        aSHOP_setup_action(shop, aSHOP_ACTION_PL_INTO_WAIT);
+            pos.x = actor->world.position.x - 50.0f;
+            pos.y = who->actor_class.world.position.y;
+            pos.z = actor->world.position.z + 50.0f;
+            mSP_SetTanukiShopStatus();
+
+#ifdef TARGET_PC
+            {
+                int slot = mPlib_player_slot_of(who);
+                int pad = mPlib_pad_for_player(who);
+
+                if (pad > 0) {
+                    mPlib_slot_context_begin(play, slot, pad);
+                }
+                requested = mPlib_request_main_door_type1(game, &pos, DEG2SHORT_ANGLE(135.0f), TRUE, actor);
+                if (pad > 0) {
+                    mPlib_slot_context_end(play);
+                }
+            }
+#else
+            requested = mPlib_request_main_door_type1(game, &pos, DEG2SHORT_ANGLE(135.0f), TRUE, actor);
+#endif
+            if (requested == 0) { // 0x6000
+                return;
+            }
+
+            aSHOP_setup_action(shop, aSHOP_ACTION_PL_INTO_WAIT);
+        }
     }
 }
 
@@ -283,17 +390,36 @@ static void aSHOP_open_door(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
 }
 
 static void aSHOP_pl_into_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
+    PLAYER_ACTOR* who;
+
 #ifdef TARGET_PC
     /* Retail destroys this play on the way in. The town shop stays, and the
      * next frame would read the removed resident. */
-    if (get_player_actor_withoutCheck(play) == NULL) {
+    if ((get_player_actor_withoutCheck(play) == NULL) && (mPlib_extra_player_count() == 0)) {
         aSHOP_setup_action(shop, aSHOP_ACTION_OPEN_WAIT);
         return;
     }
-#endif
-    if (shop != GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+
+    who = aSHOP_player_in_this_door((ACTOR*)shop, play);
+    /* The walk is requested before this action runs. A miss on the first
+     * frames still has someone in the doorway. Once they are inside, this
+     * actor would otherwise sit here and ignore the next walk-up. */
+    if (who == NULL) {
+        if ((play->fb_fade_type == FADE_TYPE_NONE) && (aSHOP_anyone_at_door((ACTOR*)shop, play) == FALSE)) {
+            aSHOP_setup_action(shop, aSHOP_ACTION_OPEN_WAIT);
+        }
         return;
     }
+
+    /* The wipe ends after this player is gone. Name them before the scene
+     * change, or the shop spawns the selected resident. */
+    mPlib_set_demo_talker(who);
+#else
+    who = GET_PLAYER_ACTOR_NOW();
+    if ((who == NULL) || (shop != who->get_door_label_proc(gamePT))) {
+        return;
+    }
+#endif
 
     aSHOP_rewrite_out_data(&shop->actor_class, play);
     goto_other_scene(play, &aSHOP_shop_door_data, FALSE);

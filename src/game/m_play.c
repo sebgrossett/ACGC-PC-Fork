@@ -1469,8 +1469,25 @@ static void play_draw_talk_msg(GAME_PLAY* play, mMsg_Window_c* msg, PLAYER_ACTOR
     }
 
     saved = play->view.screen;
-    count = 1 + mPlib_extra_player_count();
+    /* An indoor resident is off the town actor list, so the extra count is 1
+     * and the retail window spans the whole screen. The session still has
+     * their half. */
+    count = play_player_count();
     index = play_actor_view_index(play, talker);
+    {
+        /* The indoor actor is not in the town table, so the actor lookup is
+         * P1's half. The demo owner slot is the resident who is talking. */
+        int slot = mPlib_demo_talker_slot();
+        int view;
+
+        if ((slot < 0) && (talker != NULL)) {
+            slot = mPlib_player_slot_of(talker);
+        }
+        view = pc_world_slot_view(slot);
+        if (view >= 0) {
+            index = view;
+        }
+    }
     play_set_view_talk(play, count, index);
     showSplitHudView(&play->view);
     mMsg_set_use_window(msg);
@@ -1604,6 +1621,10 @@ static void play_guest_camera_reset(int pad) {
     s_ofs_ready[pad] = FALSE;
 }
 
+extern void pc_play_guest_camera_reset(int pad) {
+    play_guest_camera_reset(pad);
+}
+
 static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz_t* eye, xyz_t* center) {
     xyz_t* guest_pos = &guest->actor_class.world.position;
     xyz_t goal_center;
@@ -1615,6 +1636,25 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz
     if ((pad < 0) || (pad >= PLAYER_NUM)) {
         return;
     }
+
+#ifdef TARGET_PC
+    /* The saved follow is still the plaza. The walk-out has to start on the
+     * door, once, without clearing the house's return flag. */
+    {
+        int slot = mPlib_player_slot_of(guest);
+        static int s_return_snap[PLAYER_NUM];
+
+        if ((slot >= 0) && (pc_world_door_return_pending(slot) != FALSE)) {
+            if (s_return_snap[pad] == FALSE) {
+                s_follow_ready[pad] = FALSE;
+                s_ofs_ready[pad] = FALSE;
+                s_return_snap[pad] = TRUE;
+            }
+        } else {
+            s_return_snap[pad] = FALSE;
+        }
+    }
+#endif
 
     if (play->camera.now_main_index == CAMERA2_PROCESS_NORMAL) {
         Camera2_GetNormalCenterGoal(play, guest, &goal_center);
@@ -1672,6 +1712,23 @@ static void play_view_camera(GAME_PLAY* play, int index, xyz_t* eye, xyz_t* cent
     }
 
     guest = mPlib_extra_player_at(index - 1);
+    if (guest == NULL) {
+        int i;
+
+        /* The return body is not in the extra list yet. This half would keep
+         * the plaza camera and then chase the door. */
+        for (i = 0; i < PLAYER_NUM; i++) {
+            if (pc_world_door_return_pending(i) == FALSE) {
+                continue;
+            }
+
+            guest = get_player_actor_by_index(play, i);
+            if (guest != NULL) {
+                break;
+            }
+        }
+    }
+
     if (guest == NULL) {
         return;
     }
@@ -2303,11 +2360,21 @@ static void Game_play_draw(GAME_PLAY* play) {
 
                         opener_index = play_actor_view_index(play, mPlib_menu_opener_for_slot(slot));
                         /* An indoor resident is not in the town actor list, so
-                         * the actor lookup is P1's half. The save slot is theirs. */
+                         * the actor lookup is P1's half. The save slot is theirs.
+                         * A parked shop menu keeps that resident even when the
+                         * opener slot is still the player outside. */
                         {
                             int resident = mPlib_menu_opener_priv_for_slot(slot);
-                            int view = pc_world_slot_view(resident);
+                            int view;
 
+                            if ((indoor_menu != FALSE) && (slot == 0) && (indoor_play != NULL)) {
+                                int indoor_slot = pc_world_play_slot(indoor_play);
+
+                                if (indoor_slot >= 0) {
+                                    resident = indoor_slot;
+                                }
+                            }
+                            view = pc_world_slot_view(resident);
                             if (view >= 0) {
                                 opener_index = view;
                             }
@@ -2405,6 +2472,9 @@ static void play_move_child(GAME* child) {
             int pad = (slot >= 0) ? mPlib_pad_for_player_slot(slot) : 0;
 
             if ((pad > 0) && (pad < MAXCONTROLLERS)) {
+                /* Talk and the shop read pad 0. This play's resident is the
+                 * other controller. */
+                child->pads[0] = child->pads[pad];
                 mCon_calc(&child->mcon, (f32)child->pads[pad].now.stick_x, (f32)child->pads[pad].now.stick_y);
             } else {
                 child->mcon = primary->mcon;
@@ -2414,6 +2484,9 @@ static void play_move_child(GAME* child) {
 
     s_world_move_primary = FALSE;
     Game_play_move(child);
+    /* The shop demo borrows this resident through the message. Leaving that
+     * borrow up makes the next town menu read them instead of P1. */
+    mPlib_demo_context_end((GAME_PLAY*)child);
     s_world_move_primary = TRUE;
 }
 #endif

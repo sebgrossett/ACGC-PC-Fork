@@ -279,8 +279,13 @@ static int change_camera(int camera_type) {
     play = (GAME_PLAY*)gamePT;
 
 #ifdef TARGET_PC
-    /* The talk camera is play->view, which is the other player's picture.
-     * A guest's setup still asks for it. Leave that view on its follow. */
+    /* A door camera on this play swings the picture that is already here.
+     * The walk-out of somebody else must not pull it from the plaza to the
+     * shop. A guest talk keeps the follow that was already running. */
+    if ((camera_type == CAMERA2_PROCESS_DOOR) && (player != NULL) &&
+        (player != get_player_actor_by_index(play, (int)Common_Get(player_no)))) {
+        return FALSE;
+    }
     if ((mPlib_demo_talker_is_guest() != FALSE) && (camera_type != CAMERA2_PROCESS_NORMAL)) {
         camera_type = CAMERA2_PROCESS_NORMAL;
     }
@@ -1251,8 +1256,13 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
 
                     pad = mPlib_pad_for_player(owner);
                 } else {
+                    /* Shop talk names no one. The interior's player_no is the
+                     * resident inside, and their buttons are not pad 0. */
                     slot = (int)Common_Get(player_no);
-                    pad = 0;
+                    pad = mPlib_pad_for_player_slot(slot);
+                    if (pad < 0) {
+                        pad = 0;
+                    }
                 }
 
                 /* A player with a menu open must not have a demo started on them. */
@@ -1585,6 +1595,26 @@ extern int mDemo_End(ACTOR* actor) {
 }
 
 extern void mDemo_Main(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* The town move clears the talker whenever its own demo is idle. Name
+     * this world's owner again or the window stays on the other half. */
+    if (demo->state != mDemo_STATE_WAIT) {
+        int slot = demo->current.pc_owner_slot;
+
+        if ((slot < 0) || (slot >= PLAYER_NUM)) {
+            slot = (int)Common_Get(player_no);
+        }
+
+        mPlib_set_demo_talker_by_slot(slot);
+        if (mPlib_demo_talker() == NULL) {
+            PLAYER_ACTOR* who = GET_PLAYER_ACTOR(play);
+
+            if (who != NULL) {
+                mPlib_set_demo_talker(who);
+            }
+        }
+    }
+#endif
     main_proc();
 }
 

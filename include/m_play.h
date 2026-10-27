@@ -136,6 +136,8 @@ extern void Game_play_start_fade_in_player(GAME_PLAY* play, int wipe_type, struc
 /* Footsteps use the scene that is bound. A house load must not leave the
  * town on the indoor floor. */
 extern void Game_play_set_sound_room(int scene);
+/* Next guest view starts on the player instead of springing across town. */
+extern void pc_play_guest_camera_reset(int pad);
 #endif
 
 #ifdef __cplusplus

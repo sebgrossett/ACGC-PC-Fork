@@ -501,12 +501,17 @@ static void pc_world_fade_in_town(GAME_PLAY* leaving, ACTOR* who) {
         return;
     }
 
-    /* Entering already does this. The door camera stays on the town while the
-     * resident is inside, so the exit view is that camera: black, in the door.
-     * Priority 9 is what beats it on the way in. */
-    Camera2_request_main_normal(town, 1, 9);
-    if (get_player_actor_withoutCheck(town) != NULL) {
-        Camera2_process(town);
+    /* Entering already aims this camera at whoever stayed outside. Doing it
+     * again on the way out follows the body that just appeared in the door
+     * and the view races from the plaza to the shop. Only pull it back when
+     * a door camera is still sitting on the town. */
+    mPlib_unbind_player_actor();
+    if ((who == NULL) || ((ACTOR*)get_player_actor_by_index(town, (int)Common_Get(player_no)) == who) ||
+        (Camera2_Check_main_index(town, CAMERA2_PROCESS_NORMAL) == FALSE)) {
+        Camera2_request_main_normal(town, 0, 9);
+        if (get_player_actor_withoutCheck(town) != NULL) {
+            Camera2_process(town);
+        }
     }
 
     /* A join fade is already closed over the other player. Restarting it
@@ -592,6 +597,10 @@ static ACTOR* pc_world_spawn_return(GAME_PLAY* primary, Door_data_c* door, int r
     }
 
     actor->world.position.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(actor->world.position, 0.0f);
+    if (pad > 0) {
+        /* The old follow is still at the plaza. Start this view on the door. */
+        pc_play_guest_camera_reset(pad);
+    }
 
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
         s_slot_world[resident_slot] = 0;

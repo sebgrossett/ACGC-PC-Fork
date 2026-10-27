@@ -304,7 +304,9 @@ extern void load_player(Submenu* submenu) {
     {
         int world;
 
-        for (world = 1; world < PC_WORLD_MAX; world++) {
+        /* The indoor player also lands here while their menu is idle. The
+         * outdoor inventory is the one that must stay linked. */
+        for (world = 0; world < PC_WORLD_MAX; world++) {
             GAME_PLAY* child = pc_world_at(world);
 
             if ((child != NULL) && (child->submenu.process_status != mSM_PROCESS_WAIT)) {
@@ -397,6 +399,53 @@ static int mSM_check_open_map_new(GAME_PLAY* play) {
 
     return mSM_check_map_position(GET_PLAYER_ACTOR(play));
 }
+
+/* The menu's save slot. player_no on an interior is still the resident who
+ * stayed outside, and that put this panel on their half. */
+static int mSM_menu_owner_slot(GAME_PLAY* play, PLAYER_ACTOR* player) {
+    int slot = mPlib_player_slot_of(player);
+
+    if (slot >= 0) {
+        return slot;
+    }
+
+#ifdef TARGET_PC
+    slot = pc_world_play_slot(play);
+    if (slot >= 0) {
+        return slot;
+    }
+#else
+    (void)play;
+#endif
+
+    return (int)Common_Get(player_no);
+}
+
+#ifdef TARGET_PC
+/* Town map button. chkTrigger reads pads[0], which a guest talk borrows. */
+static int mSM_host_pressed_map(GAME_PLAY* play) {
+    int slot;
+    int pad;
+    PLAYER_ACTOR* host;
+
+    if (pc_world_play_slot(play) >= 0) {
+        return mSM_check_open_map_new(play);
+    }
+
+    slot = (int)Common_Get(player_no);
+    pad = mPlib_pad_for_player_slot(slot);
+    host = get_player_actor_by_index(play, slot);
+    if (pad < 0) {
+        pad = 0;
+    }
+
+    if ((chkTrigger_pad(pad, mSM_MAP_BUTTON) == FALSE) || (Common_Get(map_flag) != TRUE)) {
+        return FALSE;
+    }
+
+    return mSM_check_map_position(host);
+}
+#endif
 
 /* First active player pressing Start/Y, in controller-index order (ties go to
  * the lower index). */
@@ -496,7 +545,7 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
             }
 #ifdef TARGET_PC
             if (mSM_other_menu_open(play) == FALSE) {
-                mPlib_set_menu_opener(host, pad, (int)Common_Get(player_no));
+                mPlib_set_menu_opener(host, pad, mSM_menu_owner_slot(play, host));
             }
 #else
             mPlib_set_menu_opener(host, 0, (int)Common_Get(player_no));
@@ -535,8 +584,14 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
 
     /* A guest's map button (X) routes to their side slot, with the same gates
      * as their inventory plus the map's own position checks at their position.
-     * Start/Y wins when both are pressed the same frame, like retail. */
+     * Start/Y wins when both are pressed the same frame, like retail.
+     * An interior resident is this play's own menu. Their pad is also an
+     * "extra", and opening both menus on the one overlay crashes. */
+#ifdef TARGET_PC
+    if ((open_inventory == FALSE) && (pc_world_play_slot(play) < 0)) {
+#else
     if (open_inventory == FALSE) {
+#endif
         int count = 1 + mPlib_extra_player_count();
 
         for (i = 1; i < count; i++) {
@@ -568,15 +623,57 @@ extern void mSM_submenu_ctrl(GAME_PLAY* play) {
         }
     }
 
+#ifdef TARGET_PC
+    /* A guest's door index raises the town flag and never clears it, because
+     * the player outside does not change pose. Their own index still allows
+     * the menu. The player link is restored here too: the move that used to
+     * do it runs after this gate, so the open was already refused. */
+    if ((pc_world_play_slot(play) < 0) && (mSM_other_menu_open(play) == FALSE) &&
+        (submenu->process_status == mSM_PROCESS_WAIT)) {
+        int host_slot = (int)Common_Get(player_no);
+        PLAYER_ACTOR* host_player = get_player_actor_by_index(play, host_slot);
+
+        load_player(submenu);
+        if (host_player != NULL) {
+            int idx = host_player->now_main_index;
+
+            if ((idx == mPlayer_INDEX_WAIT) || (idx == mPlayer_INDEX_WALK) || (idx == mPlayer_INDEX_RUN) ||
+                (idx == mPlayer_INDEX_DASH)) {
+                submenu->start_refuse = FALSE;
+            }
+        }
+    }
+#endif
+
     if (((open_inventory && Common_Get(reset_flag) == FALSE) ||
+#ifdef TARGET_PC
+         (mSM_host_pressed_map(play) == TRUE && Common_Get(reset_flag) == FALSE)) &&
+#else
          (mSM_check_open_map_new(play) == TRUE && Common_Get(reset_flag) == FALSE)) &&
+#endif
         submenu->process_status == mSM_PROCESS_WAIT &&
-        submenu->start_refuse == FALSE && submenu->start_refuse_timer == 0 && mPlib_able_submenu_type1((GAME*)play) &&
+        submenu->start_refuse == FALSE && submenu->start_refuse_timer == 0 &&
+#ifdef TARGET_PC
+        ((pc_world_play_slot(play) < 0)
+             ? ((mSM_other_menu_open(play) == FALSE) &&
+                (mPlib_able_submenu_type1_player(
+                     (GAME*)play, get_player_actor_by_index(play, (int)Common_Get(player_no))) != FALSE))
+             : (mPlib_able_submenu_type1((GAME*)play) != FALSE)) &&
+#else
+        mPlib_able_submenu_type1((GAME*)play) &&
+#endif
         mEv_CheckFirstIntro() == FALSE) {
         if (open_inventory) {
-            mPlib_set_menu_opener(press_player, press_pad, mPlib_player_slot_of(press_player));
+            mPlib_set_menu_opener(press_player, press_pad, mSM_menu_owner_slot(play, press_player));
             mSM_open_submenu(submenu, mSM_OVL_INVENTORY, 0, 0);
         } else {
+            PLAYER_ACTOR* map_player = GET_PLAYER_ACTOR(play);
+            int map_pad = mPlib_pad_for_player(map_player);
+
+            if (map_pad < 0) {
+                map_pad = 0;
+            }
+            mPlib_set_menu_opener(map_player, map_pad, mSM_menu_owner_slot(play, map_player));
             mSM_open_submenu(submenu, mSM_OVL_MAP, 1, 0);
         }
 

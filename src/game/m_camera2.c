@@ -10,6 +10,9 @@
 #include "m_scene_table.h"
 #include "m_common_data.h"
 #include "m_field_make.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 #if VERSION >= VER_GAFU01_00
 #define CAMERA2_STAFFROLL_CENTER_X_ROT_STEP_DIVISOR 3333
@@ -587,8 +590,41 @@ static void Camera2_Get_GoalDistanceAndDirection_forPlayer(GAME_PLAY* play, PLAY
     Camera2_main_Normal_AdjustDistanceAndDirection(play, dist, dir);
 }
 
+#ifdef TARGET_PC
+/* The town picture follows the resident who stayed outside. A guest walking
+ * out is what get_player returns for that animation, and the view then races
+ * from the plaza to the door. */
+static PLAYER_ACTOR* Camera2_follow_player(GAME_PLAY* play) {
+    int session = (int)Common_Get(player_no);
+    PLAYER_ACTOR* session_actor;
+    int i;
+
+    if ((session < 0) || (session >= PLAYER_NUM)) {
+        session = 0;
+    }
+
+    session_actor = get_player_actor_by_index(play, session);
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if ((i != session) && (pc_world_door_return_pending(i) != FALSE) && (session_actor != NULL)) {
+            return session_actor;
+        }
+    }
+
+    if (session_actor != NULL) {
+        return session_actor;
+    }
+
+    return get_player_actor_withoutCheck(play);
+}
+#endif
+
 static void Camera2_Get_GoalDistanceAndDirection(GAME_PLAY* play, f32* dist, s_xyz* dir) {
+#ifdef TARGET_PC
+    Camera2_Get_GoalDistanceAndDirection_forPlayer(play, Camera2_follow_player(play), dist, dir);
+#else
     Camera2_Get_GoalDistanceAndDirection_forPlayer(play, get_player_actor_withoutCheck(play), dist, dir);
+#endif
 }
 
 /* Goal distance and direction for one player, including its own top-edge swing.
@@ -1462,7 +1498,11 @@ static void Camera2_main_Normal_SetEndCenterPos_forPlayer(GAME_PLAY* play, PLAYE
 }
 
 static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_t* end_center_pos) {
+#ifdef TARGET_PC
+    PLAYER_ACTOR* player = Camera2_follow_player(play);
+#else
     PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+#endif
     int block_x;
     int block_z;
 
@@ -2057,6 +2097,22 @@ static void Camera2_Door_SetTalking_Cull(GAME_PLAY* play) {
 }
 
 static void Camera2_main_Door(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* A guest's walk-out asked for the door camera. Put the town picture back
+     * on the resident who stayed outside before it can leave the plaza. */
+    {
+        int session = (int)Common_Get(player_no);
+        int i;
+
+        for (i = 0; i < PLAYER_NUM; i++) {
+            if ((i != session) && (pc_world_door_return_pending(i) != FALSE)) {
+                Camera2_request_main_normal(play, 0, 99);
+                Camera2_change_main_index(play);
+                return;
+            }
+        }
+    }
+#endif
     Camera2_SetPos_Door(play);
     Camera2_sound_Set_Ground(play);
     Camera2_SetMicPos(play);
