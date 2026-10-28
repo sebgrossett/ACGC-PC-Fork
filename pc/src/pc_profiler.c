@@ -1,4 +1,6 @@
 #include "pc_profiler.h"
+#include <stdio.h>
+#include <stdarg.h>
 
 int g_pc_profile_enabled = 0;
 int g_pc_profile_interval = 120;
@@ -161,6 +163,22 @@ static void pc_profiler_accum_frame(void) {
     }
 }
 
+
+/* The report also lands in profile_log.txt next to the exe: console pipes
+ * (PowerShell Tee) and NUL-redirected stdout lose it otherwise. */
+static FILE* s_log_file;
+
+static void prof_printf(const char* fmt, ...) {
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    if (s_log_file != NULL) {
+        vfprintf(s_log_file, fmt, ap);
+    }
+    va_end(ap);
+}
+
 static void pc_profiler_print_report(void) {
     double n = (double)s_frames;
     double avg_frame = s_accum.frame_ms / n;
@@ -173,20 +191,22 @@ static void pc_profiler_print_report(void) {
 
     if (non_submit_ms < 0.0) non_submit_ms = 0.0;
 
-    printf("[PROFILE] frames=%d avg=%.3fms %.1ffps peak=%.3fms draws=%.1f flushes=%.1f verts=%.0f idx=%.0f\n",
+    s_log_file = fopen("profile_log.txt", "a");
+
+    prof_printf("[PROFILE] frames=%d avg=%.3fms %.1ffps peak=%.3fms draws=%.1f flushes=%.1f verts=%.0f idx=%.0f\n",
            s_frames, avg_frame, fps, s_peak.frame_ms,
            (double)s_accum.draws / n, (double)s_accum.flushes / n,
            (double)s_accum.vertices / n, (double)s_accum.indices / n);
-    printf("[PROFILE] cpu_other=%.3fms gx_flush=%.3fms poll=%.3fms swap=%.3fms pace=%.3fms audio_fill=%.0f\n",
+    prof_printf("[PROFILE] cpu_other=%.3fms gx_flush=%.3fms poll=%.3fms swap=%.3fms pace=%.3fms audio_fill=%.0f\n",
            non_submit_ms, submit_ms, poll_ms, swap_ms, pace_ms, (double)s_accum.audio_fill / n);
 
-    printf("[PROFILE] timers");
+    prof_printf("[PROFILE] timers");
     for (int i = 0; i < PC_PROF_TIMER_COUNT; i++) {
-        printf(" %s=%.3f", s_timer_names[i], s_accum.timers_ms[i] / n);
+        prof_printf(" %s=%.3f", s_timer_names[i], s_accum.timers_ms[i] / n);
     }
-    printf("\n");
+    prof_printf("\n");
 
-    printf("[PROFILE] gl calls/state per frame: uniforms=%.1f lookups=%.1f tex_binds=%.1f buf_uploads=%.1f %.1fKB shader_switch=%.1f state=%.1f cmds=%.1f tris=%.1f vtxcmd=%.1f dl=%.1f cull=%.1f/%.1f\n",
+    prof_printf("[PROFILE] gl calls/state per frame: uniforms=%.1f lookups=%.1f tex_binds=%.1f buf_uploads=%.1f %.1fKB shader_switch=%.1f state=%.1f cmds=%.1f tris=%.1f vtxcmd=%.1f dl=%.1f cull=%.1f/%.1f\n",
            (double)s_accum.uniforms / n,
            (double)s_accum.uniform_lookups / n,
            (double)s_accum.texture_binds / n,
@@ -201,12 +221,12 @@ static void pc_profiler_print_report(void) {
            (double)s_accum.cull_visible / n,
            (double)s_accum.cull_rejected / n);
 
-    printf("[PROFILE] dirty groups per frame:");
+    prof_printf("[PROFILE] dirty groups per frame:");
     for (int i = 0; i < 16; i++) {
         double count = (double)s_accum.dirty_groups[i] / n;
-        if (count > 0.0) printf(" %s=%.1f", s_dirty_names[i], count);
+        if (count > 0.0) prof_printf(" %s=%.1f", s_dirty_names[i], count);
     }
-    printf("\n");
+    prof_printf("\n");
 }
 
 /* Marks the frame stats at VIWaitForRetrace but keeps the frame open: work

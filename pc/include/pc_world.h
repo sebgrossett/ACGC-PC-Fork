@@ -13,6 +13,7 @@ struct game_play_s;
 #define PC_WORLD_MAX 5
 
 void pc_world_attach_primary(struct game_s* game);
+void pc_world_detach_primary(void);
 int pc_world_live(void);
 int pc_world_init_is_child(void);
 int pc_world_cleanup_is_child(void);

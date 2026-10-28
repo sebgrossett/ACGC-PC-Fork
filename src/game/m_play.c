@@ -515,6 +515,11 @@ extern void play_cleanup(GAME* game) {
 #ifdef TARGET_PC
     if (pc_world_cleanup_is_child() == FALSE) {
         banti_dt();
+        /* The primary play's GAME is freed right after this cleanup. Drop
+         * every world reference (the town, the interiors) now, or the
+         * submenu's world scan reads the freed play before the next
+         * attach. */
+        pc_world_detach_primary();
     }
 #else
     banti_dt();

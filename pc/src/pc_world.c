@@ -238,6 +238,25 @@ void pc_world_attach_primary(GAME* game) {
     pc_world_capture(0);
 }
 
+/* The primary play is dying (retail reload, Return to Title, quit). Its GAME
+ * is about to be freed; drop every world reference now, or the submenu's
+ * world scan and the per-frame bind dance read the freed play. */
+void pc_world_detach_primary(void) {
+    int i;
+
+    s_hop_valid = FALSE;
+    s_enter_slot = -1;
+    s_pad0_slot = 0;
+    s_bound = -1;
+    s_live = 0;
+    memset(s_world, 0, sizeof(s_world));
+    for (i = 0; i < PLAYER_NUM; i++) {
+        s_slot_world[i] = 0;
+        s_door_return[i] = FALSE;
+        s_slot_pad[i] = -1;
+    }
+}
+
 void pc_world_mark_door_return(int slot) {
     if ((slot >= 0) && (slot < PLAYER_NUM)) {
         s_door_return[slot] = TRUE;
