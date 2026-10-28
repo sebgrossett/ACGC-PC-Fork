@@ -4,7 +4,7 @@ Backend (native C / GL). Principles: maintainability, KISS, DRY, small surface, 
 
 ## Verdict
 
-**Proceed** to shops, the museum, and the map board. No open P0 or P1. A9–A11 are accepted: no code.
+**Proceed** to the house-enter transition slice, the `GET_PLAYER_ACTOR_NOW()` NULL audit, and per-player villager scheduling. No open P0 or P1. A9–A11 are accepted: no code.
 
 ## Open mitigations
 
@@ -37,6 +37,7 @@ House enter/leave through playtest 40, plus A7. Detail is in `plan.md` §4. Shor
 - `crash_log.txt` stays until the shop playtests are done.
 
 ## Pass log
+- 2026-10-28: `feature/instant-block-dma` merged to `master` (`--no-ff`, 28 commits) on the operator's call. Carries the wide 5x5 draw/spawn windows, instant block DMA, spawn-pool raises, per-view prop cache, the tree-shake NULL fix, and the vsync pacing verdict (no code change). Next slices: house-enter transition, `GET_PLAYER_ACTOR_NOW()` audit, per-player villager scheduling.
 - 2026-10-28: Museum checkpoint 1 held and committed (`fd9735a`). All four rooms toured by P2, walker identity/pads/door data correct, no crashes. The insect-room outdoor tint shelved (cosmetic; the emulated RDP palette state persists across display-list executions — diagnosis and fix direction in plan.md §7). Probes removed.
 - 2026-10-27: Post office slice held and committed (`2453780`). Black screen root-caused (field-draw actor accumulation in the persistent town play), fixed with the spawn guard, the `aMHS_guest_walking_out` position check, and the stale transition-state clears. 10+ cycles plus the join door retested by the operator. Probes removed; `crash_log.txt` stays.
 - 2026-10-27: A7+A8 playtest held (operator). Item popup, side talk, indoor light prompt.
