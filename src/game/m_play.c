@@ -1652,6 +1652,7 @@ static f32 s_guest_dist[PLAYER_NUM];
 static int s_ofs_ready[PLAYER_NUM];
 static int s_follow_ready[PLAYER_NUM];
 static int s_outdoor_snap[PLAYER_NUM];
+static int s_cam_hold[PLAYER_NUM];
 
 static void play_guest_camera_reset(int pad) {
     if ((pad < 0) || (pad >= PLAYER_NUM)) {
@@ -1660,6 +1661,7 @@ static void play_guest_camera_reset(int pad) {
 
     s_follow_ready[pad] = FALSE;
     s_ofs_ready[pad] = FALSE;
+    s_cam_hold[pad] = FALSE;
     /* The guest camera does not run while they are indoors, so the latch
      * would still be set on the next leave and that view would spring. */
     s_outdoor_snap[pad] = FALSE;
@@ -1700,6 +1702,15 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz
 #endif
 
     if (play->camera.now_main_index == CAMERA2_PROCESS_NORMAL) {
+        if (s_cam_hold[pad] != FALSE) {
+            /* The play camera was on a door or a talk, and this view held its
+             * last offset through it. The follow goals are stale by whatever
+             * the guest walked meanwhile, so start them again from here
+             * instead of sweeping the camera across to them. */
+            s_cam_hold[pad] = FALSE;
+            s_follow_ready[pad] = FALSE;
+        }
+
         Camera2_GetNormalCenterGoal(play, guest, &goal_center);
         Camera2_GetNormalFollowGoal(play, guest, &goal_dist, &goal_dir);
 
@@ -1725,9 +1736,11 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz
         xyz_t_sub(&guest_center, guest_pos, &s_center_ofs[pad]);
         s_ofs_ready[pad] = TRUE;
     } else if (s_ofs_ready[pad] == TRUE) {
+        s_cam_hold[pad] = TRUE;
         xyz_t_add(guest_pos, &s_eye_ofs[pad], &guest_eye);
         xyz_t_add(guest_pos, &s_center_ofs[pad], &guest_center);
     } else {
+        s_cam_hold[pad] = TRUE;
         Camera2_GetNormalCenterGoal(play, guest, &guest_center);
         Camera2_GetNormalFollowGoal(play, guest, &goal_dist, &goal_dir);
         Camera2_SetEyePos_fromFollow(play, &goal_dir, goal_dist, &guest_center, &guest_eye);

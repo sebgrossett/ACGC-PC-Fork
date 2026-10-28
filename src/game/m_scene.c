@@ -580,8 +580,20 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
                 mPlib_request_main_invade_type1((GAME*)play);
             }
 
+#ifdef TARGET_PC
+            /* Retail restores the fg names and drops the pads because it frees
+             * this play at the end of the wipe. A player still in this play
+             * keeps it running, and their actors own those names: a restored
+             * name makes the next rescan clear a sign's unit to RSV_NO (the sign
+             * stops blocking while it still draws) or spawn a second prop. */
+            if ((mPlib_extra_player_count() + ((get_player_actor_withoutCheck(play) != NULL) ? 1 : 0)) <= 1) {
+                restore_fgdata_all(play);
+                play->game.pad_initialized = FALSE;
+            }
+#else
             restore_fgdata_all(play);
             play->game.pad_initialized = FALSE;
+#endif
 #ifdef TARGET_PC
             {
                 /* The wipe finishes after this demo ends. Remember who is
