@@ -415,23 +415,6 @@ void pc_world_note_entering(int slot) {
     s_enter_slot = slot;
 }
 
-void pc_world_leave_log(const char* msg) {
-    FILE* file;
-
-    if (msg == NULL) {
-        return;
-    }
-
-    file = fopen("leave_log.txt", "a");
-    if (file == NULL) {
-        return;
-    }
-
-    fprintf(file, "%s\n", msg);
-    fflush(file);
-    fclose(file);
-}
-
 static void pc_world_destroy_child(int index) {
     GAME* child;
 
@@ -440,7 +423,6 @@ static void pc_world_destroy_child(int index) {
     }
 
     child = s_world[index].game;
-    pc_world_leave_log("cleanup");
     pc_world_bind(index);
     s_child_cleanup = TRUE;
     play_cleanup(child);
@@ -453,7 +435,6 @@ static void pc_world_destroy_child(int index) {
     if (s_live > 1) {
         s_live--;
     }
-    pc_world_leave_log("cleanup done");
 
     /* The last interior move left its colliders in this global. The next town
      * pass reads them. The actors are already freed. */
@@ -571,6 +552,9 @@ static ACTOR* pc_world_spawn_return(GAME_PLAY* primary, Door_data_c* door, int r
             s_slot_world[resident_slot] = 0;
             s_slot_pad[resident_slot] = -1;
             s_door_return[resident_slot] = TRUE;
+            if (pad > 0) {
+                pc_play_guest_camera_reset(pad);
+            }
             return actor;
         }
     }
@@ -643,7 +627,6 @@ int pc_world_transition(GAME_PLAY* play) {
     Door_data_c door;
 
     if (s_in_transition != FALSE) {
-        pc_world_leave_log("reenter");
         return TRUE;
     }
 
@@ -683,6 +666,14 @@ int pc_world_transition(GAME_PLAY* play) {
             slot = (int)Common_Get(player_no);
         }
         opened = pc_world_open_scene(play, scene, slot);
+#ifdef TARGET_PC
+        /* The open consumed this transition. The play keeps running, so the
+         * pending scene must not survive it: a later forced scene end would
+         * re-enter the last building. */
+        if (opened != FALSE) {
+            play->next_scene_no = play->scene_id;
+        }
+#endif
         s_in_transition = FALSE;
         return opened;
     }
@@ -692,7 +683,6 @@ int pc_world_transition(GAME_PLAY* play) {
      * frame, so it is only marked here and freed after that move returns.
      * Spawning the returning actor needs the town's globals, so bind the town
      * for it and put the child's state back before this transition returns. */
-    pc_world_leave_log("leave begin");
     slot = pc_world_slot_in(child);
     /* The child is still bound, so player_no is who is indoors. */
     if ((slot < 0) || (slot >= PLAYER_NUM)) {
@@ -704,40 +694,48 @@ int pc_world_transition(GAME_PLAY* play) {
     if ((scene == s_world[0].scene_no) || (pc_scene_splits(scene) == FALSE)) {
         ACTOR* who;
 
-        pc_world_leave_log("leave spawn");
         who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
 
         if (who == NULL) {
-            pc_world_leave_log("leave spawn null");
             pc_world_bind(child);
             s_in_transition = FALSE;
             return TRUE;
         }
 
-        pc_world_leave_log("leave spawned");
         pc_world_fade_in_town(play, who);
         mBGM_init();
     } else if (pc_world_open_scene((GAME_PLAY*)s_world[0].game, scene, slot) == FALSE) {
         ACTOR* who;
 
-        pc_world_leave_log("leave spawn");
         who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
 
         if (who == NULL) {
-            pc_world_leave_log("leave spawn null");
             pc_world_bind(child);
             s_in_transition = FALSE;
             return TRUE;
         }
 
-        pc_world_leave_log("leave spawned");
         pc_world_fade_in_town(play, who);
         mBGM_init();
     } else {
     }
 
-    pc_world_leave_log("leave marked");
     s_world[child].destroy = TRUE;
+#ifdef TARGET_PC
+    /* The town play keeps running, so its pending transition and the door
+     * slot it was noted with must not survive the leave. A leftover
+     * next_scene_no re-enters the last building on any later forced scene
+     * end, and a leftover enter slot points the next open at the wrong
+     * resident. */
+    {
+        GAME_PLAY* town = (GAME_PLAY*)s_world[0].game;
+
+        if (town != NULL) {
+            town->next_scene_no = town->scene_id;
+        }
+    }
+    s_enter_slot = -1;
+#endif
     pc_world_bind(child);
     s_in_transition = FALSE;
     return TRUE;
@@ -857,6 +855,13 @@ int pc_world_session_count(void) {
     int n = pc_world_ordered_slots(slots);
 
     return (n > 0) ? n : 1;
+}
+
+int pc_world_town_stays(void) {
+    /* Retail destroys the town on the way in, so a door's last action can be
+     * a dead proc. This town stays while anyone else still has a view, and
+     * that door has to go back to waiting. */
+    return pc_world_session_count() > 1;
 }
 
 int pc_world_entering_slot(void) {

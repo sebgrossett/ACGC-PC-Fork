@@ -29,6 +29,9 @@ void pc_world_note_entering(int slot);
 /* How many residents still have a view, including one whose town actor was
  * removed because they are indoors. */
 int pc_world_session_count(void);
+/* The town play is not destroyed. An outdoor door must return to its wait
+ * action instead of the retail dead proc. */
+int pc_world_town_stays(void);
 int pc_world_entering_slot(void);
 int pc_world_slot_view(int slot);
 int pc_world_play_slot(struct game_play_s* play);
@@ -54,8 +57,4 @@ int pc_world_any_player(void);
 void pc_world_mark_door_return(int slot);
 int pc_world_door_return_pending(int slot);
 void pc_world_clear_door_return(int slot);
-
-/* Flushed stage line for a leave that hangs with no crash log. */
-void pc_world_leave_log(const char* msg);
-
 #endif

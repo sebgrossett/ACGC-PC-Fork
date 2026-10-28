@@ -401,6 +401,27 @@ static s8 s_pc_guest_open[mHS_HOUSE_NUM];
 /* Structure control sets the door once, when the town play is created. A
  * later exit keeps that play, so the door never hears it. The first load
  * still uses that retail door. Only a return marked by the world does this. */
+static int aMHS_player_near_my_door(STRUCTURE_ACTOR* my_house, PLAYER_ACTOR* player) {
+    /* The join/return spawn point, not the retail door-trigger point:
+     * Actor_info_resident_door puts the body at this house actor's position
+     * plus the house-side diagonal step, which sits ~40 units past the
+     * trigger radius. */
+    int side = my_house->action & 1;
+    f32 door_x = my_house->actor_class.world.position.x + ((side == 0) ? 48.29f : -48.29f);
+    f32 door_z = my_house->actor_class.world.position.z + 48.29f;
+    f32 dist_x;
+    f32 dist_z;
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    dist_x = player->actor_class.world.position.x - door_x;
+    dist_z = player->actor_class.world.position.z - door_z;
+
+    return (dist_x * dist_x) + (dist_z * dist_z) < (60.0f * 60.0f);
+}
+
 static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
     int owner = mHS_get_pl_no(my_house->action & 3);
     PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
@@ -408,7 +429,8 @@ static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
     int count = mPlib_extra_player_count();
 
     if ((host != NULL) && (mPlib_player_slot_of(host) == owner) &&
-        (host->now_main_index == mPlayer_INDEX_OUTDOOR) && (pc_world_door_return_pending(owner) != FALSE)) {
+        (host->now_main_index == mPlayer_INDEX_OUTDOOR) && (pc_world_door_return_pending(owner) != FALSE) &&
+        aMHS_player_near_my_door(my_house, host)) {
         return TRUE;
     }
 
@@ -416,7 +438,7 @@ static int aMHS_guest_walking_out(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
         PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
 
         if ((guest != NULL) && (mPlib_player_slot_of(guest) == owner) &&
-            (guest->now_main_index == mPlayer_INDEX_OUTDOOR)) {
+            (guest->now_main_index == mPlayer_INDEX_OUTDOOR) && aMHS_player_near_my_door(my_house, guest)) {
             return TRUE;
         }
     }
@@ -547,7 +569,7 @@ static void aMHS_open_door(STRUCTURE_ACTOR* my_house, GAME_PLAY* play) {
             /* Retail throws this play away, so the dead action is fine. With
              * someone still outside the town house stays, and it never takes
              * another A. */
-            if (mPlib_extra_player_count() > 0) {
+            if (pc_world_town_stays() != FALSE) {
                 next_act = aMHS_ACTION_WAIT;
             }
 #endif

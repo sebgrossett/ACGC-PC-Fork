@@ -229,13 +229,24 @@ static int s_allow_fade_in = FALSE;
 static void Game_play_fbdemo_fade_in_move_end(GAME_PLAY* play) {
 #ifdef TARGET_PC
     s_fade_player = NULL;
+    /* goto_other_scene clears pads because retail destroys the play. The
+     * return fade is this play still on screen. */
+    play->game.pad_initialized = TRUE;
 #endif
     Game_play_fbdemo_wipe_destroy(play);
 
     if (play->fb_mode == FBDEMO_MODE_MOVE) {
+#ifdef TARGET_PC
+        /* Retail frees the one capture and drops the frame rate to 3 because
+         * this play is about to be destroyed. Here the town stays. That free
+         * sits in the heap while the music thread keeps going, and the frame
+         * rate stays at 3, so both players look frozen. */
+        play->fb_mode = FBDEMO_MODE_NONE;
+#else
         fbdemo_cleanup(&fbdemo);
         play->fb_mode = FBDEMO_MODE_NONE;
         SetGameFrame(3);
+#endif
     }
 }
 
@@ -283,6 +294,8 @@ static void Game_play_fbdemo_wipe_move(GAME_PLAY* play) {
     int isDone = TRUE;
 
 #ifdef TARGET_PC
+    /* Out only. A return fade that is still opening must not be cut: that
+     * leaves the peephole, and the frame that drops the card never presents. */
     if (play->fb_fade_type == FADE_TYPE_OUT) {
         if (s_out_wipe_play != play) {
             s_out_wipe_play = play;
@@ -292,7 +305,6 @@ static void Game_play_fbdemo_wipe_move(GAME_PLAY* play) {
         if (s_out_wipe_ticks > 90) {
             s_out_wipe_ticks = 0;
             s_out_wipe_play = NULL;
-            pc_world_leave_log("wipe force");
             Game_play_change_scene_move_end(play);
             play->fb_fade_type = FADE_TYPE_NONE;
             return;
@@ -1611,6 +1623,7 @@ static s_xyz s_guest_dir[PLAYER_NUM];
 static f32 s_guest_dist[PLAYER_NUM];
 static int s_ofs_ready[PLAYER_NUM];
 static int s_follow_ready[PLAYER_NUM];
+static int s_outdoor_snap[PLAYER_NUM];
 
 static void play_guest_camera_reset(int pad) {
     if ((pad < 0) || (pad >= PLAYER_NUM)) {
@@ -1619,6 +1632,9 @@ static void play_guest_camera_reset(int pad) {
 
     s_follow_ready[pad] = FALSE;
     s_ofs_ready[pad] = FALSE;
+    /* The guest camera does not run while they are indoors, so the latch
+     * would still be set on the next leave and that view would spring. */
+    s_outdoor_snap[pad] = FALSE;
 }
 
 extern void pc_play_guest_camera_reset(int pad) {
@@ -1638,21 +1654,17 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz
     }
 
 #ifdef TARGET_PC
-    /* The saved follow is still the plaza. The walk-out has to start on the
-     * door, once, without clearing the house's return flag. */
-    {
-        int slot = mPlib_player_slot_of(guest);
-        static int s_return_snap[PLAYER_NUM];
-
-        if ((slot >= 0) && (pc_world_door_return_pending(slot) != FALSE)) {
-            if (s_return_snap[pad] == FALSE) {
-                s_follow_ready[pad] = FALSE;
-                s_ofs_ready[pad] = FALSE;
-                s_return_snap[pad] = TRUE;
-            }
-        } else {
-            s_return_snap[pad] = FALSE;
+    /* Every building walks out through this index. The first frame starts on
+     * the door. The latch re-arms when the walk ends, and when the return
+     * body is created, because this camera does not run indoors. */
+    if (guest->now_main_index == mPlayer_INDEX_OUTDOOR) {
+        if (s_outdoor_snap[pad] == FALSE) {
+            s_follow_ready[pad] = FALSE;
+            s_ofs_ready[pad] = FALSE;
+            s_outdoor_snap[pad] = TRUE;
         }
+    } else {
+        s_outdoor_snap[pad] = FALSE;
     }
 #endif
 
@@ -1718,14 +1730,18 @@ static void play_view_camera(GAME_PLAY* play, int index, xyz_t* eye, xyz_t* cent
         /* The return body is not in the extra list yet. This half would keep
          * the plaza camera and then chase the door. */
         for (i = 0; i < PLAYER_NUM; i++) {
-            if (pc_world_door_return_pending(i) == FALSE) {
+            PLAYER_ACTOR* who = get_player_actor_by_index(play, i);
+
+            if ((who == NULL) || (mPlib_pad_for_player_slot(i) <= 0)) {
                 continue;
             }
 
-            guest = get_player_actor_by_index(play, i);
-            if (guest != NULL) {
-                break;
+            if ((pc_world_door_return_pending(i) == FALSE) && (who->now_main_index != mPlayer_INDEX_OUTDOOR)) {
+                continue;
             }
+
+            guest = who;
+            break;
         }
     }
 

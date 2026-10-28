@@ -262,9 +262,16 @@ static void aNW_open_door_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
 static void aNW_open_door(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     if (cKF_SkeletonInfo_R_play(&shop->keyframe) == TRUE) {
         if (shop->request_type == 3) {
+            int next_act = aNW_ACTION_OPEN_UNKNOWN;
+
             aNW_rewrite_out_data(shop, play);
             goto_other_scene(play, &aNW_needlework_shop_door_data, FALSE);
-            aNW_setup_action(shop, aNW_ACTION_OPEN_UNKNOWN);
+#ifdef TARGET_PC
+            if (pc_world_town_stays() != FALSE) {
+                next_act = aNW_ACTION_WAIT;
+            }
+#endif
+            aNW_setup_action(shop, next_act);
             mDemo_End((ACTOR*)shop);
         } else {
             aNW_setup_action(shop, aNW_ACTION_WAIT);

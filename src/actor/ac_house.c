@@ -6,6 +6,9 @@
 #include "sys_matrix.h"
 #include "m_rcp.h"
 #include "m_debug.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 enum {
     aHUS_ACTION_WAIT,

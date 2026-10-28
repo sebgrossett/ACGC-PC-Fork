@@ -456,6 +456,11 @@ static void aHUS_open_door(HOUSE_ACTOR* house, GAME_PLAY* play) {
                 goto_other_scene(play, &aHUS_npc_house_door_data, FALSE);
                 play->fb_fade_type = FADE_TYPE_DEMO;
                 next_act = aHUS_ACTION_NEXT_SCENE_WAIT;
+#ifdef TARGET_PC
+                if (pc_world_town_stays() != FALSE) {
+                    next_act = aHUS_ACTION_WAIT;
+                }
+#endif
                 mDemo_End((ACTOR*)house);
                 break;
             case 1:

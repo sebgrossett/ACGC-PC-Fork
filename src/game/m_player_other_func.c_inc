@@ -1,9 +1,28 @@
 
 static void Player_actor_ct_other_func1(ACTOR* actor, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
+    Actor_info* actor_info = &play->actor_info;
+    Actor_list* list;
+    ACTOR* it;
+    int i;
 
     play->submenu.start_refuse = TRUE;
     actor->unknown_b4 = 1;
+
+#ifdef TARGET_PC
+    /* Retail spawns a field-draw actor with every player actor because the
+     * play dies with the scene. A co-op town play persists, so a second
+     * player actor would leave a second terrain actor behind and the draw
+     * list grows every interior visit. One per play. */
+    for (i = 0; i < ACTOR_PART_NUM; i++) {
+        list = &actor_info->list[i];
+        for (it = list->actor; it != NULL; it = it->next_actor) {
+            if (it->id == mAc_PROFILE_FIELD_DRAW) {
+                return;
+            }
+        }
+    }
+#endif
 
     Actor_info_make_actor(&play->actor_info, game, mAc_PROFILE_FIELD_DRAW, actor->world.position.x,
                           actor->world.position.y, actor->world.position.z, 0, 0, 0, -1, -1, -1, EMPTY_NO, -1, -1, -1);

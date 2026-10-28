@@ -605,9 +605,13 @@ static PLAYER_ACTOR* Camera2_follow_player(GAME_PLAY* play) {
 
     session_actor = get_player_actor_by_index(play, session);
 
+    /* Pad 0 is whoever stayed on this picture. A guest walking out of any
+     * building must not become the goal, or the view pans from the plaza. */
     for (i = 0; i < PLAYER_NUM; i++) {
-        if ((i != session) && (pc_world_door_return_pending(i) != FALSE) && (session_actor != NULL)) {
-            return session_actor;
+        PLAYER_ACTOR* who = get_player_actor_by_index(play, i);
+
+        if ((who != NULL) && (mPlib_pad_for_player_slot(i) == 0)) {
+            return who;
         }
     }
 
@@ -2105,7 +2109,13 @@ static void Camera2_main_Door(GAME_PLAY* play) {
         int i;
 
         for (i = 0; i < PLAYER_NUM; i++) {
-            if ((i != session) && (pc_world_door_return_pending(i) != FALSE)) {
+            PLAYER_ACTOR* who = get_player_actor_by_index(play, i);
+
+            if ((who == NULL) || (mPlib_pad_for_player_slot(i) <= 0)) {
+                continue;
+            }
+
+            if ((pc_world_door_return_pending(i) != FALSE) || (who->now_main_index == mPlayer_INDEX_OUTDOOR)) {
                 Camera2_request_main_normal(play, 0, 99);
                 Camera2_change_main_index(play);
                 return;

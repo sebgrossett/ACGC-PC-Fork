@@ -38,6 +38,7 @@ House enter/leave through playtest 40, plus A7. Detail is in `plan.md` §4. Shor
 
 ## Pass log
 
+- 2026-10-27: Post office slice held. Black screen root-caused (field-draw actor accumulation in the persistent town play), fixed with the spawn guard, the `aMHS_guest_walking_out` position check, and the stale transition-state clears. 10+ cycles plus the join door retested by the operator. Probes removed; `crash_log.txt` stays.
 - 2026-10-27: A7+A8 playtest held (operator). Item popup, side talk, indoor light prompt.
 - 2026-10-27: A7+A8 built on `feature/audit-a7` (`6e59e1b`). MINGW32 clean.
 - 2026-10-27: Surface audit. A9–A11 accepted with no code. A7 was fix-first; it has since held.
