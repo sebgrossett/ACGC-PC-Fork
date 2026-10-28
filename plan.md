@@ -1,6 +1,6 @@
 # Animal Crossing (GameCube) PC Port: Local Co-op Plan
 
-**Status:** Post office, both Crannies, P2's house, and museum checkpoint 1 are held. The perf/popping session is merged to `master` (wide 5x5 draw and spawn windows, instant block DMA, spawn-pool raises, per-view prop cache, tree-shake crash fix). Frame pacing is closed: vsync ON removes the co-op sprint judder, code left unchanged. Queued next: the house-enter transition slice (tree blink, input cut, position rollback), the `GET_PLAYER_ACTOR_NOW()` NULL audit, per-player villager scheduling. Multiplayer audio is logged for later. Held tools are second last. 3-4 players are last. Crash paths stay in §4.
+**Status:** Post office, both Crannies, P2's house, and museum checkpoint 1 are held. The perf/popping session is merged to `master` (wide 5x5 draw and spawn windows, instant block DMA, spawn-pool raises, per-view prop cache, tree-shake crash fix). Frame pacing is closed: vsync ON removes the co-op sprint judder and is now the shipped default (`vsync = 1`). Queued next: the house-enter transition slice (tree blink, input cut, position rollback), the `GET_PLAYER_ACTOR_NOW()` NULL audit, per-player villager scheduling. Multiplayer audio is logged for later. Held tools are second last. 3-4 players are last. Crash paths stay in §4.
 
 ## 1. Project overview
 

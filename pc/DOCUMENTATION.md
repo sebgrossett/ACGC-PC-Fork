@@ -278,7 +278,7 @@ Compiled under `PC_ENHANCEMENTS` define (enabled by default in CMakeLists.txt).
 window_width = 1280
 window_height = 720
 fullscreen = 0          # 0=windowed, 1=fullscreen, 2=borderless
-vsync = 0
+vsync = 1
 msaa = 4                # 0/2/4/8
 ```
 

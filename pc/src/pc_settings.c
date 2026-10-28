@@ -8,7 +8,7 @@ PCSettings g_pc_settings = {
     .window_width  = PC_SCREEN_WIDTH,
     .window_height = PC_SCREEN_HEIGHT,
     .fullscreen    = 0,
-    .vsync         = 0,
+    .vsync         = 1,
     .max_fps       = 60,
     .msaa          = 4,
     .texture_filtering = 1,
@@ -44,7 +44,7 @@ static const char* DEFAULT_SETTINGS =
     "fullscreen = 0\n"
     "\n"
     "# Vertical sync: 0 = off, 1 = on\n"
-    "vsync = 0\n"
+    "vsync = 1\n"
     "\n"
     "# Max FPS: 60, 120, 240, or 0 for uncapped\n"
     "max_fps = 60\n"
