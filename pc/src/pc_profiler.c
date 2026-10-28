@@ -27,6 +27,8 @@ typedef struct {
     int cull_rejected;
     double frame_ms;
     int audio_fill;
+    int events;
+    int had_event;
 } PCProfilerFrame;
 
 static PCProfilerFrame s_frame;
@@ -36,6 +38,33 @@ static int s_frames = 0;
 static int s_have_frame = 0;
 static int s_frame_marked = 0;
 static Uint64 s_freq = 0;
+
+/* Frame-time histogram, per report block. A 60fps-locked average with
+   visible judder means frames are delivered unevenly: these bins show how
+   many frames land past the vsync deadline (16.67ms+) and how deep. */
+static int s_hist[6];
+static const char* s_hist_names[6] = { "<16.7", "16.7-17", "17-18", "18-20", "20-25", ">25" };
+static int s_event_late = 0;
+
+static void pc_profiler_hist_add(double frame_ms) {
+    int bin;
+
+    if (frame_ms < 16.67) {
+        bin = 0;
+    } else if (frame_ms < 17.0) {
+        bin = 1;
+    } else if (frame_ms < 18.0) {
+        bin = 2;
+    } else if (frame_ms < 20.0) {
+        bin = 3;
+    } else if (frame_ms < 25.0) {
+        bin = 4;
+    } else {
+        bin = 5;
+    }
+
+    s_hist[bin]++;
+}
 
 static const char* s_timer_names[PC_PROF_TIMER_COUNT] = {
     "gx_begin", "dl_replay", "gx_flush", "buf_upload", "uniforms", "uniform_lookup",
@@ -69,6 +98,8 @@ void pc_profiler_begin_frame(void) {
             pc_profiler_print_report();
             memset(&s_accum, 0, sizeof(s_accum));
             memset(&s_peak, 0, sizeof(s_peak));
+            memset(s_hist, 0, sizeof(s_hist));
+            s_event_late = 0;
             s_frames = 0;
         }
     }
@@ -124,6 +155,14 @@ void pc_profiler_add_count_state_change_slow(void) {
     s_frame.state_changes++;
 }
 
+/* Marks a frame where a game-level event fired (acre crossing). The report
+   separates event frames so late frames can be attributed to them. */
+void pc_profiler_mark_event_slow(void) {
+    if (!s_have_frame) return;
+    s_frame.events++;
+    s_frame.had_event = 1;
+}
+
 void pc_profiler_add_dirty_mask_slow(unsigned int dirty) {
     if (!s_have_frame) return;
     for (int i = 0; i < 16; i++) {
@@ -157,6 +196,11 @@ static void pc_profiler_accum_frame(void) {
     s_accum.cull_rejected += s_frame.cull_rejected;
     s_accum.frame_ms += s_frame.frame_ms;
     s_accum.audio_fill += s_frame.audio_fill;
+    s_accum.events += s_frame.events;
+    s_accum.had_event += s_frame.had_event;
+    if (s_frame.had_event != 0 && s_frame.frame_ms >= 16.67) {
+        s_event_late++;
+    }
 
     if (s_frame.frame_ms > s_peak.frame_ms) {
         s_peak = s_frame;
@@ -200,6 +244,22 @@ static void pc_profiler_print_report(void) {
     prof_printf("[PROFILE] cpu_other=%.3fms gx_flush=%.3fms poll=%.3fms swap=%.3fms pace=%.3fms audio_fill=%.0f\n",
            non_submit_ms, submit_ms, poll_ms, swap_ms, pace_ms, (double)s_accum.audio_fill / n);
 
+    prof_printf("[PROFILE] frame ms histogram:");
+    {
+        int i;
+        int late = 0;
+
+        for (i = 0; i < 6; i++) {
+            prof_printf(" %s=%d", s_hist_names[i], s_hist[i]);
+            if (i > 0) {
+                late += s_hist[i];
+            }
+        }
+        prof_printf(" late=%d/%d\n", late, (int)n);
+    }
+
+    prof_printf("[PROFILE] crossing frames=%d late=%d\n", s_accum.had_event, s_event_late);
+
     prof_printf("[PROFILE] timers");
     for (int i = 0; i < PC_PROF_TIMER_COUNT; i++) {
         prof_printf(" %s=%.3f", s_timer_names[i], s_accum.timers_ms[i] / n);
@@ -237,6 +297,7 @@ void pc_profiler_end_frame(double frame_ms, int audio_fill) {
 
     s_frame.frame_ms = frame_ms;
     s_frame.audio_fill = audio_fill;
+    pc_profiler_hist_add(frame_ms);
     s_frame.emu64_cmds = pc_emu64_frame_cmds;
     s_frame.emu64_tris = pc_emu64_frame_tri_cmds;
     s_frame.emu64_vtx_cmds = pc_emu64_frame_vtx_cmds;

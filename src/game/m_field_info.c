@@ -10,6 +10,9 @@
 #include <string.h>
 #include "m_bg_type.h"
 #include "m_fg_type.h"
+#ifdef TARGET_PC
+#include "pc_profiler.h"
+#endif
 
 static mCoBG_Collision_u l_edge_ut = { { 0, 31, 31, 31, 31, 31, mCoBG_ATTRIBUTE_GRASS0 } };
 
@@ -26,6 +29,36 @@ static mFI_col_keep_c l_keepcld[mFI_NUM_COL_KEEP] = {
 
 extern void mFI_ClearFieldData() {
     g_fdinfo = NULL;
+}
+
+/* Per-acre fg generation for the PC per-view prop table cache: a prop table
+ * built for acre (bx,bz) stays valid until that acre's fg data is written or
+ * the field is (re)made. The epoch makes every acre of a freshly made field
+ * differ from every cached entry of the previous one. */
+static u32 l_fg_block_gen[BLOCK_TOTAL_NUM];
+static u32 l_fg_gen_epoch;
+
+extern u32 mFI_BlockFgGen(int bx, int bz) {
+    if (mFI_CheckFieldData() == FALSE || mFI_BlockCheck(bx, bz) == FALSE) {
+        return 0;
+    }
+
+    return l_fg_block_gen[mFI_GetBlockNum(bx, bz)];
+}
+
+extern void mFI_BumpBlockFgGen(int bx, int bz) {
+    if (mFI_BlockCheck(bx, bz) == TRUE) {
+        l_fg_block_gen[mFI_GetBlockNum(bx, bz)] = ++l_fg_gen_epoch;
+    }
+}
+
+extern void mFI_NewFieldFgGen() {
+    int i;
+
+    l_fg_gen_epoch++;
+    for (i = 0; i < BLOCK_TOTAL_NUM; i++) {
+        l_fg_block_gen[i] = l_fg_gen_epoch;
+    }
 }
 
 extern int mFI_CheckFieldData() {
@@ -1321,6 +1354,7 @@ extern int mFI_BlockUtNumtoFGSet(mActor_name_t item, int bx, int bz, int ut_x, i
 
         res = TRUE;
         fg_p[ut_num] = item;
+        mFI_BumpBlockFgGen(bx, bz);
     }
 
     return res;
@@ -1358,7 +1392,8 @@ extern int mFI_UtNumtoFGSet_common(mActor_name_t item, int ut_x, int ut_z, int u
 #endif
 
     g_fdinfo->block_info[block_num].fg_info.items_p[ut_num] = item;
-    
+    mFI_BumpBlockFgGen(bx, bz);
+
     if (update) {
         mFI_SetFGUpData();
     }
@@ -1382,6 +1417,7 @@ static int mFI_UtNum2FGSet_layer(mActor_name_t item, int ut_x, int ut_z, int lay
             mFI_GetUtNumInBK(&b_ut_x, &b_ut_z, ut_x, ut_z);
             num = mFI_GetUtNum(b_ut_x, b_ut_z);
             fg_layer_p[num] = item;
+            mFI_BumpBlockFgGen(bx, bz);
             mFI_SetFGUpData();
             res = TRUE;
         }
@@ -1666,6 +1702,9 @@ extern void mFI_SetBearActor(GAME_PLAY* play, xyz_t wpos, int set_flag) {
     int bx;
     int bz;
 
+#ifdef TARGET_PC
+    pc_profiler_mark_event();
+#endif
     g_fdinfo->born_actor = TRUE;
     mFI_Wpos2BlockNum(&bx, &bz, wpos);
 
@@ -2502,6 +2541,7 @@ static void mFI_ClearHoleBlock_sub(mActor_name_t* fg_items_p) {
 
 extern void mFI_ClearHoleBlock(int bx, int bz) {
     mFI_ClearHoleBlock_sub(mFI_BkNumtoUtFGTop(bx, bz));
+    mFI_BumpBlockFgGen(bx, bz);
 }
 
 extern void mFI_ClearBeecomb(int bx, int bz) {
@@ -2516,6 +2556,7 @@ extern void mFI_ClearBeecomb(int bx, int bz) {
 
             fg_items_p++;
         }
+        mFI_BumpBlockFgGen(bx, bz);
     }
 }
 

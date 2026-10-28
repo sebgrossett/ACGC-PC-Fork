@@ -3176,20 +3176,53 @@ static void bg_item_common_draw_blocks(GAME_PLAY* play, bg_item_draw_table_c* dr
  * 4:3 camera and props popped in at the edges (title demo, sprint
  * crossings). Every view with a player uses this path, single player
  * included. The selected resident's tables, the DMA window and the move-side
- * state are left alone: the next move still reads what it wrote. */
+ * state are left alone: the next move still reads what it wrote.
+ *
+ * The tables are per view slot: the views draw serially and each rebuild
+ * would otherwise clobber the last view's tables, forcing a full rebuild
+ * every frame (the profile's sprint game_logic jump). A block's table is
+ * reused while its fg generation (mFI_BlockFgGen) is unchanged, so a
+ * crossing only builds the acres that are new to the window; the per-view
+ * projection cull (bg_item_common_draw_check) still runs every frame. */
+typedef struct {
+    s16 bx;
+    s16 bz;
+    u16 field_id;
+    u32 gen;
+} bIT_view_cache_c;
+
 static void bg_item_common_draw_blocks_for_view(GAME_PLAY* play, ACTOR* actorx, bg_item_common_c* common,
                                                 bg_item_draw_part_table_c* draw_part_table, f32 shadow_pos,
                                                 rgba_t* shadow_color) {
 #define bIT_VIEW_BLOCK_NUM 25 /* matches the terrain draw window in ac_field_draw.c */
+#define bIT_VIEW_SLOT_NUM PLAYER_NUM
     static mFI_block_tbl_c view_block_tbl[bIT_VIEW_BLOCK_NUM];
-    static bg_item_draw_table_c view_draw_table[bIT_VIEW_BLOCK_NUM];
-    static u16 view_idx_table[bIT_VIEW_BLOCK_NUM][bIT_DRAW_TYPE_MAX];
+    static bg_item_draw_table_c view_draw_table[bIT_VIEW_SLOT_NUM][bIT_VIEW_BLOCK_NUM];
+    static u16 view_idx_table[bIT_VIEW_SLOT_NUM][bIT_VIEW_BLOCK_NUM][bIT_DRAW_TYPE_MAX];
+    static bIT_view_cache_c view_cache[bIT_VIEW_SLOT_NUM][bIT_VIEW_BLOCK_NUM];
     PLAYER_ACTOR* view_player = mPlib_view_player_actor(play);
+    int slot = mPlib_view_player_index();
+    mActor_name_t field_id = mFI_GetFieldId();
     int center_bx;
     int center_bz;
     int center_292 = FALSE;
     int count;
     int i;
+
+    if (slot < 0 || slot >= bIT_VIEW_SLOT_NUM) {
+        slot = 0;
+    }
+
+    if (common->pc_field_id != (u16)mFI_GetFieldId()) {
+        /* Transition window: the ambient field data belongs to another world
+         * (a child play's field make swaps the global mid-frame, and this
+         * play's own views draw without a re-bind). Rebuilding here would
+         * read the wrong field's fg — the trees-vanish-on-house-enter bug —
+         * so hold whatever this slot last built. */
+        bg_item_common_draw_blocks(play, view_draw_table[slot], bIT_VIEW_BLOCK_NUM, shadow_pos, shadow_color,
+                                   draw_part_table);
+        return;
+    }
 
     if (view_player == NULL) {
         bg_item_draw_table_c* draw_table = common->draw_table;
@@ -3216,23 +3249,48 @@ static void bg_item_common_draw_blocks_for_view(GAME_PLAY* play, ACTOR* actorx, 
         center_292 = TRUE;
     }
 
+    if (count == 0) {
+        /* The window could not be built (transition frames can swap the
+         * field data out from under this view). Hold the last tables this
+         * slot built instead of drawing nothing — props vanish for real the
+         * moment their acre leaves the window, so a held frame is only ever
+         * one frame stale. */
+        bg_item_common_draw_blocks(play, view_draw_table[slot], bIT_VIEW_BLOCK_NUM, shadow_pos, shadow_color,
+                                   draw_part_table);
+        return;
+    }
+
     for (i = 0; i < bIT_VIEW_BLOCK_NUM; i++) {
-        bg_item_draw_table_c* draw_table = &view_draw_table[i];
+        bg_item_draw_table_c* draw_table = &view_draw_table[slot][i];
 
-        draw_table->draw_flag = FALSE;
-        draw_table->draw_data.val = bIT_DRAW_TYPE_MAX - 1;
-        draw_table->draw_data.idx_p = view_idx_table[i];
+        if (i < count && (center_292 == FALSE || view_block_tbl[i].block_x != center_bx ||
+                          view_block_tbl[i].block_z != center_bz)) {
+            u32 gen = mFI_BlockFgGen(view_block_tbl[i].block_x, view_block_tbl[i].block_z);
+            bIT_view_cache_c* cache = &view_cache[slot][i];
 
-        if (i < count &&
-            (center_292 == FALSE || view_block_tbl[i].block_x != center_bx || view_block_tbl[i].block_z != center_bz)) {
-            bg_item_common_set_draw_tbl(play, draw_table, &view_block_tbl[i],
-                                        common->common_info.type_data_table_p, draw_part_table);
+            if (cache->field_id != (u16)field_id || cache->gen != gen || cache->bx != view_block_tbl[i].block_x ||
+                cache->bz != view_block_tbl[i].block_z) {
+                draw_table->draw_data.val = bIT_DRAW_TYPE_MAX - 1;
+                draw_table->draw_data.idx_p = view_idx_table[slot][i];
+                bg_item_common_set_draw_tbl(play, draw_table, &view_block_tbl[i],
+                                            common->common_info.type_data_table_p, draw_part_table);
+                cache->bx = view_block_tbl[i].block_x;
+                cache->bz = view_block_tbl[i].block_z;
+                cache->gen = gen;
+                cache->field_id = (u16)field_id;
+            }
+
+            draw_table->draw_flag = TRUE;
             bg_item_common_draw_check(play, common, actorx, draw_table);
+        } else {
+            draw_table->draw_flag = FALSE;
         }
     }
 
-    bg_item_common_draw_blocks(play, view_draw_table, bIT_VIEW_BLOCK_NUM, shadow_pos, shadow_color, draw_part_table);
+    bg_item_common_draw_blocks(play, view_draw_table[slot], bIT_VIEW_BLOCK_NUM, shadow_pos, shadow_color,
+                               draw_part_table);
 #undef bIT_VIEW_BLOCK_NUM
+#undef bIT_VIEW_SLOT_NUM
 }
 
 static void bg_item_common_draw(GAME_PLAY* play, ACTOR* actorx, bg_item_common_c* common,
@@ -3288,4 +3346,7 @@ static void bg_item_common_construct(GAME* game, bg_item_common_c* common) {
     common->drop_info.count = bIT_DROP_NUM;
     common->fruit_drop_info.drop_p = common->fruit_drop;
     common->fruit_drop_info.count = bIT_FRUIT_DROP_NUM;
+#ifdef TARGET_PC
+    common->pc_field_id = (u16)mFI_GetFieldId();
+#endif
 }

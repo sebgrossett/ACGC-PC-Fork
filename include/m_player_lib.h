@@ -66,6 +66,8 @@ extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);
 /* Player whose split view is being drawn. NULL falls back to the selected resident. */
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
+extern void mPlib_set_view_player_index(int index);
+extern int mPlib_view_player_index();
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
 #ifdef TARGET_PC
 /* Is this resident slot / Controls pad already driven by an actor? */

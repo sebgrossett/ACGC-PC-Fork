@@ -9,6 +9,7 @@
 #include "m_bg_item.h"
 #include "m_lights.h"
 #include "m_collision_obj.h"
+#include "ac_birth_control.h"
 #include "libforest/gbi_extensions.h"
 #include "sys_matrix.h"
 #include "libultra/libultra.h"
@@ -429,6 +430,7 @@ static void Actor_delete_check(ACTOR* actor, GAME* game) {
                  * alive so structures, gates and signs do not pop at the
                  * screen edge. */
                 if (Actor_is_near_active_player(play, actor, 2) == FALSE) {
+                    aBC_ClearBuiltBitForBlock(play, actor->block_x, actor->block_z);
                     Actor_delete(actor);
                 }
 #else

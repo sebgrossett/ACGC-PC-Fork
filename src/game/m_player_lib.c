@@ -1658,6 +1658,17 @@ extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player) {
     s_view_player_actor = player;
 }
 
+/* Which split view slot is currently drawing (for per-view caches). */
+static int s_view_player_index;
+
+extern void mPlib_set_view_player_index(int index) {
+    s_view_player_index = index;
+}
+
+extern int mPlib_view_player_index() {
+    return s_view_player_index;
+}
+
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
     if (s_view_player_actor != NULL) {
         return s_view_player_actor;
@@ -4320,16 +4331,50 @@ extern int mPlib_Check_UKI_COMEBACK_STATUS(void) {
     return FALSE;
 }
 
+/* GET_PLAYER_ACTOR_NOW() is the selected resident, who can be indoors while
+ * insects near the other player still run these checks. Fall back to the
+ * first player still in this play. ~50 more unguarded sites of this pattern
+ * exist and need their own audit (see tasks.md). */
+static PLAYER_ACTOR* mPlib_now_player_or_town(void) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    return player;
+}
+
 extern int mPlib_Check_tree_shaken(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_proc(&player->actor_class, pos_p);
 }
 
 extern int mPlib_Check_tree_shaken_little(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_little_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_little_proc(&player->actor_class, pos_p);
 }
 
 extern int mPlib_Check_tree_shaken_big(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_big_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_big_proc(&player->actor_class, pos_p);
 }
 
 extern mActor_name_t mPlib_Get_itemNo_forWindow(void) {

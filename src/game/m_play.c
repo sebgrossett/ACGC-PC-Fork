@@ -1601,6 +1601,7 @@ static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int c
     setupViewMatrix(play, graph, graph);
     /* Field draw follows the view's own player instead of the selected resident. */
     mPlib_set_view_player_actor(play_view_player(play, index));
+    mPlib_set_view_player_index(index);
     Actor_info_draw_actor(play, &play->actor_info);
     mPlib_set_view_player_actor(NULL);
 }

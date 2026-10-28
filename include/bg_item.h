@@ -242,6 +242,13 @@ struct bg_common_s {
     u16 flags;
     int _139E0[mFM_VISIBLE_BLOCK_NUM];
     int _139F4[mFM_VISIBLE_BLOCK_NUM];
+#ifdef TARGET_PC
+    /* The field this play's prop tables were built under. A transition can
+     * swap the global field data out from under a still-drawing play (a child
+     * play's field make); the draw side holds its tables instead of
+     * rebuilding from the wrong field. */
+    u16 pc_field_id;
+#endif
 };
 
 extern ACTOR_PROFILE BgItem_Profile;

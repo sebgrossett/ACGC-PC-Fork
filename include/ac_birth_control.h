@@ -33,6 +33,9 @@ struct birth_control_s {
 extern ACTOR_PROFILE Birth_Control_Profile;
 
 void aBC_RequestNearbyRefresh(void);
+#ifdef TARGET_PC
+extern void aBC_ClearBuiltBitForBlock(GAME_PLAY* play, int bx, int bz);
+#endif
 
 #ifdef __cplusplus
 }

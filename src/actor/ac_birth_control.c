@@ -8,6 +8,11 @@
 
 static void aBC_actor_ct(ACTOR*, GAME*);
 static void aBC_actor_move(ACTOR*, GAME*);
+#ifdef TARGET_PC
+static int aBC_wide_block_is_built(BIRTH_CONTROL_ACTOR*, int, int);
+static void aBC_wide_block_set_built(BIRTH_CONTROL_ACTOR*, int, int);
+static void aBC_wide_block_clear_built(BIRTH_CONTROL_ACTOR*, int, int);
+#endif
 
 ACTOR_PROFILE Birth_Control_Profile = {
   mAc_PROFILE_BIRTH_CONTROL,
@@ -42,7 +47,7 @@ static f32 aBC_pos_table[UT_BASE_NUM] = {
   mFI_UT_WORLDSIZE_X_F * 15 + mFI_UT_WORLDSIZE_HALF_X_F   // 620.0f
 };
 
-static void aBC_deleteActor_part(GAME_PLAY* play, int part) {
+static void aBC_deleteActor_part(BIRTH_CONTROL_ACTOR* birth_control, GAME_PLAY* play, int part) {
   mFI_block_tbl_c* last_block_table = &play->last_block_table;
   s8 last_bx = last_block_table->block_x;
   s8 last_bz = last_block_table->block_z;
@@ -79,6 +84,9 @@ static void aBC_deleteActor_part(GAME_PLAY* play, int part) {
       /* Keep actors in adjacent acres alive so borderless camera movement does not cause pop-in. */
       if (check_bx >= 0 && check_bz >= 0) {
         if (dx > 1 || dz > 1) {
+#ifdef TARGET_PC
+          aBC_wide_block_clear_built(birth_control, check_bx, check_bz);
+#endif
           Actor_delete(actor);
         }
       }
@@ -88,6 +96,9 @@ static void aBC_deleteActor_part(GAME_PLAY* play, int part) {
         (check_bx >= 0 && check_bx != last_bx && check_bx != now_bx) &&
         (check_bz >= 0 && check_bz != last_bz && check_bz != now_bz)
       ) {
+#ifdef TARGET_PC
+        aBC_wide_block_clear_built(birth_control, check_bx, check_bz);
+#endif
         Actor_delete(actor);
       }
     }
@@ -524,6 +535,25 @@ static void aBC_wide_block_set_built(BIRTH_CONTROL_ACTOR* birth_control, int bx,
     birth_control->built_bits[bit >> 3] |= (u8)(1 << (bit & 7));
 }
 
+static void aBC_wide_block_clear_built(BIRTH_CONTROL_ACTOR* birth_control, int bx, int bz) {
+    int bit = bz * BLOCK_X_NUM + bx;
+
+    birth_control->built_bits[bit >> 3] &= (u8)~(1 << (bit & 7));
+}
+
+/* An actor in acre (bx,bz) was deleted from outside the birth control pass
+ * (the draw-time cull delete). The acre must rescan, or its deleted
+ * structures never respawn: the acre re-enters a window with its built bit
+ * still set and the pass skips it. */
+extern void aBC_ClearBuiltBitForBlock(GAME_PLAY* play, int bx, int bz) {
+    BIRTH_CONTROL_ACTOR* birth_control =
+        (BIRTH_CONTROL_ACTOR*)Actor_info_name_search(&play->actor_info, mAc_PROFILE_BIRTH_CONTROL, ACTOR_PART_ITEM);
+
+    if (birth_control != NULL && mFI_BlockCheck(bx, bz) == TRUE) {
+        aBC_wide_block_clear_built(birth_control, bx, bz);
+    }
+}
+
 static void aBC_wide_clear_built_bits(BIRTH_CONTROL_ACTOR* birth_control) {
     bzero(birth_control->built_bits, sizeof(birth_control->built_bits));
 }
@@ -689,7 +719,7 @@ static void aBC_actor_move(ACTOR* actorx, GAME* game) {
   
   if (play->game.pad_initialized == TRUE) {
     if (birth_control->setup_actor_flag) {
-      aBC_deleteActor_part(play, ACTOR_PART_ITEM);
+      aBC_deleteActor_part(birth_control, play, ACTOR_PART_ITEM);
       birth_control->setup_actor_flag =
         aBC_setupActor(birth_control, play, play->block_table.block_x, play->block_table.block_z, NULL);
     }
@@ -698,7 +728,7 @@ static void aBC_actor_move(ACTOR* actorx, GAME* game) {
       int bx = play->block_table.block_x;
       int bz = play->block_table.block_z;
 
-      aBC_deleteActor_part(play, ACTOR_PART_NPC);
+      aBC_deleteActor_part(birth_control, play, ACTOR_PART_NPC);
       birth_control->move_actor_bitfield = aBC_setupMvActor(birth_control, play, birth_control->move_actor_bitfield,
                                                             birth_control->move_actor_data[0],
                                                             play->block_table.block_x, play->block_table.block_z,

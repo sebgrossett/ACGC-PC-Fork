@@ -1224,6 +1224,7 @@ extern void mFM_FieldInit(GAME_PLAY* play) {
     }
 
     g_fdinfo = mFM_MakeField(scene, bg_disp_size, bg_disp_num);
+    mFI_NewFieldFgGen();
     mFI_InitMoveActorBitData();
     mFI_ClearColKeep();
     mFI_InitAreaInfo();
