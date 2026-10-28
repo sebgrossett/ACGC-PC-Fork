@@ -314,6 +314,24 @@ typedef int (*aNPC_CLIP_THINK_PROC)(NPC_ACTOR*, GAME_PLAY*, int, int);
 typedef int (*aNPC_FORCE_CALL_REQ_PROC)(NPC_ACTOR*, int);
 typedef void (*aNPC_SET_START_POS_PROC)(ACTOR* actorx);
 
+/* Pool sizes for the NPC clip. Retail sized them for its 4-block spawn
+ * window; the PC wide window keeps more villagers and special NPCs alive at
+ * once, so PC widens them. The 0x-prefixed comments below describe the
+ * retail layout. */
+#ifdef TARGET_PC
+#define aNPC_KEEP_ACTOR_NUM 24
+#define aNPC_N_OVERLAY_NUM 1
+#define aNPC_S_OVERLAY_NUM 6
+#define aNPC_K_OVERLAY_NUM 6
+#define aNPC_E_OVERLAY_NUM 4
+#else
+#define aNPC_KEEP_ACTOR_NUM 9
+#define aNPC_N_OVERLAY_NUM 1
+#define aNPC_S_OVERLAY_NUM 2
+#define aNPC_K_OVERLAY_NUM 3
+#define aNPC_E_OVERLAY_NUM 2
+#endif
+
 struct ac_npc_clip_s {
     /* 0x000 */ aNPC_SETUP_ACTOR_PROC setupActor_proc;
     /* 0x004 */ aNPC_GET_OVERLAY_AREA_PROC get_overlay_area_proc;
@@ -322,12 +340,12 @@ struct ac_npc_clip_s {
     /* 0x010 */ aNPC_FREE_ACTOR_AREA_PROC free_actor_area_proc;
     /* 0x014 */ aNPC_DMA_DRAW_DATA_PROC dma_draw_data_proc;
     /* 0x018 */ aNPC_SET_ATTENTION_REQUEST_PROC set_attention_request_proc;
-    /* 0x01C */ NPC_ACTOR* keep_actors[9];
-    /* 0x040 */ int keep_actor_used[9];
-    /* 0x064 */ aNPC_overlay_c keep_n_overlay[1];
-    /* 0x06C */ aNPC_overlay_c keep_s_overlay[2];
-    /* 0x07C */ aNPC_overlay_c keep_k_overlay[3];
-    /* 0x094 */ aNPC_overlay_c keep_e_overlay[2];
+    /* 0x01C */ NPC_ACTOR* keep_actors[aNPC_KEEP_ACTOR_NUM];
+    /* 0x040 */ int keep_actor_used[aNPC_KEEP_ACTOR_NUM];
+    /* 0x064 */ aNPC_overlay_c keep_n_overlay[aNPC_N_OVERLAY_NUM];
+    /* 0x06C */ aNPC_overlay_c keep_s_overlay[aNPC_S_OVERLAY_NUM];
+    /* 0x07C */ aNPC_overlay_c keep_k_overlay[aNPC_K_OVERLAY_NUM];
+    /* 0x094 */ aNPC_overlay_c keep_e_overlay[aNPC_E_OVERLAY_NUM];
     /* 0x0A4 */ aNPC_attention_c attention_request;
     /* 0x0B8 */ aNPC_attention_c attention;
     /* 0x0CC */ aNPC_BIRTH_CHECK_PROC birth_check_proc;

@@ -12,7 +12,9 @@ extern "C" {
 #endif
 
 #ifdef TARGET_PC
-#define aSTR_ACTOR_TBL_COUNT 32
+/* Retail sized the pool for its 4-block spawn window; the PC wide window
+ * keeps more structures alive at once. */
+#define aSTR_ACTOR_TBL_COUNT 64
 #else
 #define aSTR_ACTOR_TBL_COUNT 9
 #endif

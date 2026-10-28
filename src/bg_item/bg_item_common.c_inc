@@ -3158,32 +3158,40 @@ static void bIT_actor_pit_draw(GAME* game, bg_item_common_info_c* common_info, b
     }
 }
 
-static void bg_item_common_draw_blocks(GAME_PLAY* play, bg_item_draw_table_c* draw_table, f32 shadow_pos,
-                                       rgba_t* shadow_color, bg_item_draw_part_table_c* draw_part_table) {
+static void bg_item_common_draw_blocks(GAME_PLAY* play, bg_item_draw_table_c* draw_table, int block_num,
+                                       f32 shadow_pos, rgba_t* shadow_color,
+                                       bg_item_draw_part_table_c* draw_part_table) {
     int i;
 
-    for (i = 0; i < mFM_VISIBLE_BLOCK_NUM; i++, draw_table++) {
+    for (i = 0; i < block_num; i++, draw_table++) {
         if (draw_table->draw_flag == TRUE) {
             bg_item_common_draw_item(play, draw_table, shadow_pos, shadow_color, draw_part_table);
         }
     }
 }
 
-/* Props follow the selected resident's 4-block window. A split view whose
- * player is elsewhere builds its own tables from that player, so a distant
- * view keeps its trees, weeds and flowers. The selected resident's tables and
- * the DMA window are left alone: the next move still reads them. */
+/* Props draw from a per-view 5x5 block window built from that view's player
+ * (mFI_GetViewBlocksAround), so a widescreen view keeps its trees, weeds and
+ * flowers out to the screen edge. Retail's 4-block window was sized for the
+ * 4:3 camera and props popped in at the edges (title demo, sprint
+ * crossings). Every view with a player uses this path, single player
+ * included. The selected resident's tables, the DMA window and the move-side
+ * state are left alone: the next move still reads what it wrote. */
 static void bg_item_common_draw_blocks_for_view(GAME_PLAY* play, ACTOR* actorx, bg_item_common_c* common,
                                                 bg_item_draw_part_table_c* draw_part_table, f32 shadow_pos,
                                                 rgba_t* shadow_color) {
-    static mFI_item_table_c view_item_table;
-    static bg_item_draw_table_c view_draw_table[mFM_VISIBLE_BLOCK_NUM];
-    static u16 view_idx_table[mFM_VISIBLE_BLOCK_NUM][bIT_DRAW_TYPE_MAX];
+#define bIT_VIEW_BLOCK_NUM 25 /* matches the terrain draw window in ac_field_draw.c */
+    static mFI_block_tbl_c view_block_tbl[bIT_VIEW_BLOCK_NUM];
+    static bg_item_draw_table_c view_draw_table[bIT_VIEW_BLOCK_NUM];
+    static u16 view_idx_table[bIT_VIEW_BLOCK_NUM][bIT_DRAW_TYPE_MAX];
     PLAYER_ACTOR* view_player = mPlib_view_player_actor(play);
+    int center_bx;
+    int center_bz;
+    int center_292 = FALSE;
+    int count;
     int i;
 
-    if ((view_player == NULL) || (view_player == get_player_actor_withoutCheck(play)) ||
-        (mFI_GetViewItemTable(&view_item_table, view_player->actor_class.world.position) == FALSE)) {
+    if (view_player == NULL) {
         bg_item_draw_table_c* draw_table = common->draw_table;
 
         /* Move culled these against whatever projection matrix the last view
@@ -3194,25 +3202,37 @@ static void bg_item_common_draw_blocks_for_view(GAME_PLAY* play, ACTOR* actorx, 
             }
         }
 
-        bg_item_common_draw_blocks(play, common->draw_table, shadow_pos, shadow_color, draw_part_table);
+        bg_item_common_draw_blocks(play, common->draw_table, mFM_VISIBLE_BLOCK_NUM, shadow_pos, shadow_color,
+                                   draw_part_table);
         return;
     }
 
-    for (i = 0; i < mFM_VISIBLE_BLOCK_NUM; i++) {
+    count = mFI_GetViewBlocksAround(view_block_tbl, bIT_VIEW_BLOCK_NUM, view_player->actor_class.world.position);
+
+    /* BG_TYPE_292 acres keep the retail rule: their props do not come from
+     * the fg window, so the centre block is skipped. */
+    if (mFI_Wpos2BlockNum(&center_bx, &center_bz, view_player->actor_class.world.position) &&
+        mFI_BkNum2CombinationType(center_bx, center_bz) == BG_TYPE_292) {
+        center_292 = TRUE;
+    }
+
+    for (i = 0; i < bIT_VIEW_BLOCK_NUM; i++) {
         bg_item_draw_table_c* draw_table = &view_draw_table[i];
 
         draw_table->draw_flag = FALSE;
         draw_table->draw_data.val = bIT_DRAW_TYPE_MAX - 1;
         draw_table->draw_data.idx_p = view_idx_table[i];
 
-        if (i < view_item_table.count) {
-            bg_item_common_set_draw_tbl(play, draw_table, &view_item_table.block_info_tbl[i],
+        if (i < count &&
+            (center_292 == FALSE || view_block_tbl[i].block_x != center_bx || view_block_tbl[i].block_z != center_bz)) {
+            bg_item_common_set_draw_tbl(play, draw_table, &view_block_tbl[i],
                                         common->common_info.type_data_table_p, draw_part_table);
             bg_item_common_draw_check(play, common, actorx, draw_table);
         }
     }
 
-    bg_item_common_draw_blocks(play, view_draw_table, shadow_pos, shadow_color, draw_part_table);
+    bg_item_common_draw_blocks(play, view_draw_table, bIT_VIEW_BLOCK_NUM, shadow_pos, shadow_color, draw_part_table);
+#undef bIT_VIEW_BLOCK_NUM
 }
 
 static void bg_item_common_draw(GAME_PLAY* play, ACTOR* actorx, bg_item_common_c* common,

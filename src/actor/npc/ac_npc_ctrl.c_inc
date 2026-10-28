@@ -555,18 +555,21 @@ static void aNPC_get_overlay_area_proc_sub(ACTOR_DLFTBL* dlftbl, size_t size, si
 static void aNPC_get_overlay_area_proc(ACTOR_DLFTBL* dlftbl, u8* name_p, size_t size, mActor_name_t npc_name) {
     switch (ITEM_NAME_GET_TYPE(npc_name)) {
         case NAME_TYPE_NPC:
-            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x800, CLIP(npc_clip)->keep_n_overlay, 1, npc_name);
+            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x800, CLIP(npc_clip)->keep_n_overlay,
+                                           aNPC_N_OVERLAY_NUM, npc_name);
             break;
         case NAME_TYPE_SPNPC: {
             mNpc_EventNpc_c* event_npc = mNpc_GetSameEventNpc(npc_name);
 
             if (event_npc != NULL) {
-                aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x2800, CLIP(npc_clip)->keep_e_overlay, 2, npc_name);
+                aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x2800, CLIP(npc_clip)->keep_e_overlay,
+                                               aNPC_E_OVERLAY_NUM, npc_name);
             } else {
                 mNpc_MaskNpc_c* mask_npc = mNpc_GetSameMaskNpc(npc_name);
 
                 if (mask_npc != NULL) {
-                    aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x3000, CLIP(npc_clip)->keep_k_overlay, 3, npc_name);
+                    aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x3000, CLIP(npc_clip)->keep_k_overlay,
+                                                   aNPC_K_OVERLAY_NUM, npc_name);
                 } else {
                     switch (npc_name) {
                         case SP_NPC_KABUPEDDLER:
@@ -581,12 +584,12 @@ static void aNPC_get_overlay_area_proc(ACTOR_DLFTBL* dlftbl, u8* name_p, size_t 
                         case SP_NPC_SENDO:
                         case SP_NPC_MASK_CAT:
                         case SP_NPC_GO_HONE_NPC:
-                            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x3000, CLIP(npc_clip)->keep_k_overlay, 3,
-                                                           npc_name);
+                            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x3000, CLIP(npc_clip)->keep_k_overlay,
+                                                           aNPC_K_OVERLAY_NUM, npc_name);
                             break;
                         default:
-                            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x2000, CLIP(npc_clip)->keep_s_overlay, 2,
-                                                           npc_name);
+                            aNPC_get_overlay_area_proc_sub(dlftbl, size, 0x2000, CLIP(npc_clip)->keep_s_overlay,
+                                                           aNPC_S_OVERLAY_NUM, npc_name);
                             break;
                     }
                 }
@@ -600,7 +603,7 @@ static void aNPC_free_overlay_area_proc(ACTOR_DLFTBL* dlftbl) {
     int i;
 
     overlay_p = CLIP(npc_clip)->keep_n_overlay;
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < aNPC_N_OVERLAY_NUM; i++) {
         if (overlay_p->buf == dlftbl->alloc_buf) {
             overlay_p->used = FALSE;
             dlftbl->alloc_buf = NULL;
@@ -611,7 +614,7 @@ static void aNPC_free_overlay_area_proc(ACTOR_DLFTBL* dlftbl) {
     }
 
     overlay_p = CLIP(npc_clip)->keep_s_overlay;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < aNPC_S_OVERLAY_NUM; i++) {
         if (overlay_p->buf == dlftbl->alloc_buf) {
             overlay_p->used = FALSE;
             dlftbl->alloc_buf = NULL;
@@ -622,7 +625,7 @@ static void aNPC_free_overlay_area_proc(ACTOR_DLFTBL* dlftbl) {
     }
 
     overlay_p = CLIP(npc_clip)->keep_k_overlay;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < aNPC_K_OVERLAY_NUM; i++) {
         if (overlay_p->buf == dlftbl->alloc_buf) {
             overlay_p->used = FALSE;
             dlftbl->alloc_buf = NULL;
@@ -633,7 +636,7 @@ static void aNPC_free_overlay_area_proc(ACTOR_DLFTBL* dlftbl) {
     }
 
     overlay_p = CLIP(npc_clip)->keep_e_overlay;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < aNPC_E_OVERLAY_NUM; i++) {
         if (overlay_p->buf == dlftbl->alloc_buf) {
             overlay_p->used = FALSE;
             dlftbl->alloc_buf = NULL;
@@ -660,7 +663,7 @@ static ACTOR* aNPC_get_actor_area_proc(size_t size, const char* actor_name, int 
         return NULL;
     }
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < aNPC_KEEP_ACTOR_NUM; i++) {
         if (*actor != NULL && *used == FALSE) {
             *used = TRUE;
             return (ACTOR*)*actor;
@@ -681,7 +684,7 @@ static void aNPC_free_actor_area_proc(ACTOR* actorx) {
     int* used = CLIP(npc_clip)->keep_actor_used;
     int i;
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < aNPC_KEEP_ACTOR_NUM; i++) {
         if (*actor == nactorx) {
             *used = FALSE;
             break;
@@ -735,18 +738,18 @@ typedef struct {
     u8 buf[0x2800];
 } aNPC_e_overlay_c;
 
-static aNPC_actor_class_overlay_c aNPC_n_actor_cl_tbl[9];
-static aNPC_n_overlay_c aNPC_n_overlay[1];
-static aNPC_s_overlay_c aNPC_s_overlay[2];
-static aNPC_k_overlay_c aNPC_k_overlay[3];
-static aNPC_e_overlay_c aNPC_e_overlay[2];
+static aNPC_actor_class_overlay_c aNPC_n_actor_cl_tbl[aNPC_KEEP_ACTOR_NUM];
+static aNPC_n_overlay_c aNPC_n_overlay[aNPC_N_OVERLAY_NUM];
+static aNPC_s_overlay_c aNPC_s_overlay[aNPC_S_OVERLAY_NUM];
+static aNPC_k_overlay_c aNPC_k_overlay[aNPC_K_OVERLAY_NUM];
+static aNPC_e_overlay_c aNPC_e_overlay[aNPC_E_OVERLAY_NUM];
 
 static void aNPC_keep_actor_class(void) {
     NPC_ACTOR** actor = CLIP(npc_clip)->keep_actors;
     int* used = CLIP(npc_clip)->keep_actor_used;
     int i;
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < aNPC_KEEP_ACTOR_NUM; i++) {
         *actor = (NPC_ACTOR*)ALIGN_NEXT((u32)aNPC_n_actor_cl_tbl[i].buf, 16);
         *used = FALSE;
 
@@ -759,7 +762,7 @@ static void aNPC_free_actor_class(void) {
     NPC_ACTOR** actor = CLIP(npc_clip)->keep_actors;
     int i;
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < aNPC_KEEP_ACTOR_NUM; i++) {
         if (*actor != NULL) {
             *actor = NULL;
         }
@@ -770,7 +773,7 @@ static void aNPC_free_actor_class(void) {
 static void aNPC_keep_n_overlay_area(aNPC_overlay_c* overlay_p) {
     int i;
 
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < aNPC_N_OVERLAY_NUM; i++) {
         overlay_p->buf = (u8*)&aNPC_n_overlay[i].buf;
         overlay_p->used = FALSE;
         overlay_p++;
@@ -780,7 +783,7 @@ static void aNPC_keep_n_overlay_area(aNPC_overlay_c* overlay_p) {
 static void aNPC_keep_s_overlay_area(aNPC_overlay_c* overlay_p) {
     int i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < aNPC_S_OVERLAY_NUM; i++) {
         overlay_p->buf = (u8*)&aNPC_s_overlay[i].buf;
         overlay_p->used = FALSE;
         overlay_p++;
@@ -790,7 +793,7 @@ static void aNPC_keep_s_overlay_area(aNPC_overlay_c* overlay_p) {
 static void aNPC_keep_k_overlay_area(aNPC_overlay_c* overlay_p) {
     int i;
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < aNPC_K_OVERLAY_NUM; i++) {
         overlay_p->buf = (u8*)&aNPC_k_overlay[i].buf;
         overlay_p->used = FALSE;
         overlay_p++;
@@ -800,7 +803,7 @@ static void aNPC_keep_k_overlay_area(aNPC_overlay_c* overlay_p) {
 static void aNPC_keep_e_overlay_area(aNPC_overlay_c* overlay_p) {
     int i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < aNPC_E_OVERLAY_NUM; i++) {
         overlay_p->buf = (u8*)&aNPC_e_overlay[i].buf;
         overlay_p->used = FALSE;
         overlay_p++;

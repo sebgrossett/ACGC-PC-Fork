@@ -619,7 +619,12 @@ static void mFI_DmaBg() {
                        Common_Get(remove_cut_tree_info_bitfield) | (1 << bg_info->bg_num));
             bg_info->dma_active = FALSE;
 
+#ifndef TARGET_PC
+            /* Retail paced the hardware DMA at one block per frame, and props
+             * gated on dma_loaded popped in behind their terrain. On PC the
+             * "DMA" is instant, so complete every pending block. */
             break;
+#endif
         }
 
         bg_info++;
@@ -1571,69 +1576,51 @@ extern int mFI_GetItemTable(mFI_item_table_c* item_table, xyz_t wpos, char* file
     return mFI_GetItemTable_NoReset(item_table, wpos);
 }
 
-static void mFI_AddViewItemBlock(mFI_item_table_c* item_table, int block_x, int block_z) {
-    if ((item_table->count >= mFM_VISIBLE_BLOCK_NUM) || (mFI_BlockCheck(block_x, block_z) == FALSE)) {
-        return;
-    }
-
-    mFI_SetBlockTable(&item_table->block_info_tbl[item_table->count], block_x, block_z);
-    item_table->count++;
-}
-
-/* Blocks retail would show around one position: the block the position is in
- * plus the nearest blocks toward the edges the position is near. Mirrors the
- * choice in mFI_BGDisplayListRefresh, but reads block item data directly, so a
- * split view can build its own prop table without touching the DMA window or
- * the selected resident's tables. */
-extern int mFI_GetViewItemTable(mFI_item_table_c* item_table, xyz_t wpos) {
-    u8 where_bitfield = 0;
-    int block_x = 0;
-    int block_z = 0;
+/* The block window around one position: 5x5 blocks, bottom row (+z) to top
+ * row (-z), left to right — the same pattern the terrain draw table uses
+ * (aFD_SetBlockTable). Retail drew 3x3 terrain and a 4-block prop window,
+ * both sized for the 4:3 camera; the widescreen window sees past them and
+ * content popped in at the screen edge (title demo, sprint crossings).
+ * Fills up to max_num mFI_block_tbl_c entries via mFI_SetBlockTable — it
+ * reads block item data directly and does not touch
+ * remove_cut_tree_info_bitfield, mFI_DmaBg or the DMA window. Returns how
+ * many blocks were filled (0 when wpos is off the field). */
+extern int mFI_GetViewBlocksAround(mFI_block_tbl_c* block_tbl, int max_num, xyz_t wpos) {
+    static s8 draw_block_offset_table[25][2] = {
+        { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },
+        { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },
+        { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },
+        { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 },
+        { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 },
+    };
+    int count = 0;
+    int block_x;
+    int block_z;
     int i;
 
-    item_table->count = 0;
-
     if (mFI_Wpos2BlockNum(&block_x, &block_z, wpos) == FALSE) {
-        return FALSE;
+        return 0;
     }
 
-    mFI_WhereisInBlock(&where_bitfield, wpos);
+    for (i = 0; i < 25 && count < max_num; i++) {
+        int bx = block_x + draw_block_offset_table[i][0];
+        int bz = block_z + draw_block_offset_table[i][1];
 
-    if (g_fdinfo->block_info[mFI_GetBlockNum(block_x, block_z)].bg_info.bg_id.combination_type != BG_TYPE_292) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z);
-    }
-
-    if ((where_bitfield & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x - 1, block_z);
-    } else if (((where_bitfield >> 2) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x + 1, block_z);
-    }
-
-    if (((where_bitfield >> 3) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z - 1);
-
-        if ((where_bitfield & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x - 1, block_z - 1);
-        } else if (((where_bitfield >> 2) & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x + 1, block_z - 1);
-        }
-    } else if (((where_bitfield >> 5) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z + 1);
-
-        if ((where_bitfield & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x - 1, block_z + 1);
-        } else if (((where_bitfield >> 2) & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x + 1, block_z + 1);
+        if (mFI_BlockCheck(bx, bz)) {
+            mFI_SetBlockTable(&block_tbl[count], bx, bz);
+            count++;
         }
     }
 
-    for (i = item_table->count; i < mFM_VISIBLE_BLOCK_NUM; i++) {
-        item_table->block_info_tbl[i].block_x = 0xFF;
-        item_table->block_info_tbl[i].block_z = 0xFF;
-        item_table->block_info_tbl[i].items = NULL;
+    return count;
+}
+
+extern int mFI_BkNum2CombinationType(int bx, int bz) {
+    if (mFI_CheckFieldData() == FALSE || mFI_BlockCheck(bx, bz) == FALSE) {
+        return -1;
     }
 
-    return TRUE;
+    return g_fdinfo->block_info[mFI_GetBlockNum(bx, bz)].bg_info.bg_id.combination_type;
 }
 
 extern int mFI_FGisUpDate() {
@@ -2098,6 +2085,20 @@ extern mFM_move_actor_c* mFI_MoveActorListDma(int bx, int bz) {
     }
 
     return move_actor_list;
+}
+
+/* Same copy into a caller-owned buffer. BIRTH_CONTROL_ACTOR.move_actor_data
+ * aliases the shared static behind mFI_MoveActorListDma, so the wide window
+ * spawn (which DMAs many acres per frame) must not touch it. */
+extern mFM_move_actor_c* mFI_MoveActorListDmaTo(mFM_move_actor_c* dst, int bx, int bz) {
+    int num = mFI_GetBlockNum(bx, bz);
+
+    if (mFI_BlockCheck(bx, bz)) {
+        bcopy(g_fdinfo->block_info[num].fg_info.move_actors, dst, mFM_MOVE_ACTOR_NUM * sizeof(mFM_move_actor_c));
+        return dst;
+    }
+
+    return NULL;
 }
 
 extern void mFI_InitMoveActorBitData() {

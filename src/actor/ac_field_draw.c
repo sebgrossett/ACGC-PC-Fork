@@ -213,36 +213,28 @@ static PLAYER_ACTOR* aFD_Player(GAME_PLAY* play) {
 }
 
 static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player) {
-    /*
-      6 7 8
-      3 4 5
-      0 1 2
-    */
-    static aFD_offset_c draw_block_offset_table[] = {
-        { -1, 1 },  // bot-left
-        { 0, 1 },   // bot
-        { 1, 1 },   // bot-right
-        { -1, 0 },  // left
-        { 0, 0 },   // current
-        { 1, 0 },   // right
-        { -1, -1 }, // top-left
-        { 0, -1 },  // top
-        { 1, -1 },  // top-right
-    };
-
+    mFI_block_tbl_c block_tbl[aFD_BLOCK_DRAW_NUM];
     aFD_block_c* block = field_draw->block;
-    int bx = 0;
-    int bz = 0;
+    int count;
     int i;
 
-    mFI_Wpos2BlockNum(&bx, &bz, player->actor_class.world.position);
+    /* 5x5 around the player (mFI_GetViewBlocksAround), bottom row to top row.
+     * Retail drew 3x3, sized for the 4:3 camera — the widescreen window sees
+     * past it, so blocks appeared all at once entering the 3x3 (title demo,
+     * sprint crossings). Off-screen blocks die at the per-block DL cull
+     * (aFD_cull_set_model), so the extra entries are cheap. */
+    count = mFI_GetViewBlocksAround(block_tbl, aFD_BLOCK_DRAW_NUM, player->actor_class.world.position);
 
     for (i = 0; i < aFD_BLOCK_DRAW_NUM; i++) {
-        block->bx = bx + draw_block_offset_table[i].offset_x;
-        block->bz = bz + draw_block_offset_table[i].offset_z;
-        mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
-        block->wpos.y = mFI_BkNum2BaseHeight(block->bx, block->bz);
-        block->exist = TRUE;
+        if (i < count) {
+            block->bx = block_tbl[i].block_x;
+            block->bz = block_tbl[i].block_z;
+            mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
+            block->wpos.y = mFI_BkNum2BaseHeight(block->bx, block->bz);
+            block->exist = TRUE;
+        } else {
+            block->exist = FALSE;
+        }
         block++;
     }
 }

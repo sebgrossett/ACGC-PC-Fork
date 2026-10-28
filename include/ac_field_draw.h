@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define aFD_BLOCK_DRAW_NUM 9
+#define aFD_BLOCK_DRAW_NUM 25
 
 typedef struct field_draw_s FIELD_DRAW_ACTOR;
 

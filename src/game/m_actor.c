@@ -385,12 +385,6 @@ extern int Actor_is_near_active_player(GAME_PLAY* play, ACTOR* actor, int keep_r
     int checked = FALSE;
     int i;
 
-    if (count > 1) {
-        /* A view can see one block past its player, so a guest keeps the
-         * actors around it alive even when the selected resident is far. */
-        keep_range = 1;
-    }
-
     for (i = 0; i < count; i++) {
         if (i == 0) {
             /* Independent of any bound guest context: a guest's move must not
@@ -430,12 +424,15 @@ static void Actor_delete_check(ACTOR* actor, GAME* game) {
          (ACTOR_STATE_NO_MOVE_WHILE_CULLED | ACTOR_STATE_NO_DRAW_WHILE_CULLED | ACTOR_STATE_NO_CULL)) == 0) {
         if (actor->npc_id != EMPTY_NO) {
             if (actor->block_x >= 0 && actor->block_z >= 0) {
-                int keep_range = g_mPlib_wade_disabled ? 1 : 0;
 #ifdef TARGET_PC
-                if (Actor_is_near_active_player(play, actor, keep_range) == FALSE) {
+                /* PC draws a 5x5 window around every player; keep its actors
+                 * alive so structures, gates and signs do not pop at the
+                 * screen edge. */
+                if (Actor_is_near_active_player(play, actor, 2) == FALSE) {
                     Actor_delete(actor);
                 }
 #else
+                int keep_range = g_mPlib_wade_disabled ? 1 : 0;
                 int dx = ABS(actor->block_x - play->block_table.block_x);
                 int dz = ABS(actor->block_z - play->block_table.block_z);
 
