@@ -2897,8 +2897,19 @@ static void bg_item_common_culling_check_talk_loop(GAME_PLAY* play, ACTOR* actor
     }
 }
 
-static int bg_item_common_check_talk_tree(bg_item_common_c* common, int idx) {
+static int bg_item_common_check_talk_tree(GAME_PLAY* play, bg_item_common_c* common, int idx) {
     int res = FALSE;
+
+#ifdef TARGET_PC
+    /* The talk and door culling area is built from this play's camera and the
+     * view's own player. A guest drawn in the resident's world has a camera of
+     * their own, so that area stretches over the guest's half and their props
+     * vanish while the resident enters a house. Keep the retail cull for the
+     * view this play is actually driving. */
+    if (mPlib_view_player_actor(play) != get_player_actor_withoutCheck(play)) {
+        return FALSE;
+    }
+#endif
 
     if ((common->flags & 1) && common->talk_display_limit_check_proc(idx)) {
         res = TRUE;
@@ -2918,7 +2929,7 @@ static void bg_item_common_draw_check(GAME_PLAY* play, bg_item_common_c* common,
         if (*start_idx_p != 0) {
             draw_pos = &draw_tbl->draw_data.draw_pos[*start_idx_p];
 
-            if (bg_item_common_check_talk_tree(common, i) == TRUE) {
+            if (bg_item_common_check_talk_tree(play, common, i) == TRUE) {
                 bg_item_common_culling_check_talk_loop(play, actorx, draw_pos);
             } else {
                 bg_item_common_culling_check_loop(play, actorx, draw_pos);
