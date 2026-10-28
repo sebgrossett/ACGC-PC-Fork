@@ -11,6 +11,9 @@
 #include "sys_matrix.h"
 #include "m_rcp.h"
 #include "libforest/gbi_extensions.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 enum {
     Cottage_DATA_PLAYER_STANDARD,
@@ -810,7 +813,14 @@ static void Cottage_move_open_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
         play->fb_fade_type = FADE_TYPE_DEMO;
         mDemo_End(&cottage->actor_class);
 
-        Cottage_move_next_init(cottage);
+#ifdef TARGET_PC
+        if (pc_world_town_stays() != FALSE) {
+            Cottage_move_closed_init(cottage);
+        } else
+#endif
+        {
+            Cottage_move_next_init(cottage);
+        }
     } else {
         Cottage_move_closed_init(cottage);
     }

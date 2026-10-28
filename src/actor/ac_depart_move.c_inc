@@ -268,6 +268,11 @@ static void aDPT_open_wait(DEPART_ACTOR* depart, GAME_PLAY* play) {
     xyz_t pos;
 
     actorx = (ACTOR*)depart;
+#ifdef TARGET_PC
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        return;
+    }
+#endif
     if (!mPlib_check_player_actor_main_index_OutDoorMove((GAME*)play)) {
         if (mSP_ShopOpen() != mSP_SHOP_STATUS_OPEN && mSP_ShopOpen() != mSP_SHOP_STATUS_OPENEVENT) {
             aDPT_setup_action(depart, aDPT_ACTION_CLOSE_DOOR);

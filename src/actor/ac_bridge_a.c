@@ -117,12 +117,23 @@ static void aBridgeA_actor_dt(ACTOR* actorx, GAME* game) {
 
 static f32 aBridge_player_check(STRUCTURE_ACTOR* bridge, GAME_PLAY* play) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
-    xyz_t player_pos = player->actor_class.world.position;
+    xyz_t player_pos;
     xyz_t bridge_pos = bridge->actor_class.world.position;
     xyz_t player_dist_from_bridge;
-    f32 bridge_run_speed = player->actor_class.speed * (0.75f + (f32)GETREG(TAKREG, 23) * 0.01f);
+    f32 bridge_run_speed;
     f32 dist0;
     f32 dist1;
+
+    if (player == NULL) {
+        /* The selected resident is in another play (co-op interior): let the
+         * bridge settle instead of following nobody. */
+        bridge->arg0_f = 0.0f;
+        add_calc(&bridge->arg1_f, 0.0f, 0.08f, 0.1f, 0.01f);
+        return 0.0f;
+    }
+
+    player_pos = player->actor_class.world.position;
+    bridge_run_speed = player->actor_class.speed * (0.75f + (f32)GETREG(TAKREG, 23) * 0.01f);
 
     xyz_t_sub(&player_pos, &bridge_pos, &player_dist_from_bridge);
     if (bridge->actor_class.npc_id == BRIDGE_A1) {

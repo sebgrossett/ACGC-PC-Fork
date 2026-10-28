@@ -48,10 +48,14 @@ void pc_profiler_add_count_texture_bind_slow(void);
 void pc_profiler_add_count_buffer_upload_slow(size_t bytes);
 void pc_profiler_add_count_state_change_slow(void);
 void pc_profiler_add_dirty_mask_slow(unsigned int dirty);
+void pc_profiler_mark_event_slow(void);
 
 /* Hot-path wrappers: with profiling off these cost one predicted branch, no call. */
 static inline Uint64 pc_profiler_begin_timer(void) {
     return g_pc_profile_enabled ? SDL_GetPerformanceCounter() : 0;
+}
+static inline void pc_profiler_mark_event(void) {
+    if (g_pc_profile_enabled) pc_profiler_mark_event_slow();
 }
 static inline void pc_profiler_add_time(PCProfilerTimer timer, Uint64 start) {
     if (g_pc_profile_enabled) pc_profiler_add_time_slow(timer, start);

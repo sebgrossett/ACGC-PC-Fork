@@ -120,6 +120,10 @@ static void return_to_title(void) {
     g_pc_paused = 0;
     g_pc_pause_input_drain = 1;
     pc_session_menu_close_all();
+    /* The house stays up until the fade finishes. Dropping it here pulls every
+     * view onto the town camera, so the half that is not fading zooms. The
+     * fade end frees the interiors before trademark. */
+    g_pc_coop_session = 0;
 
     if (gamePT == NULL) {
         return;

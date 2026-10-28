@@ -62,6 +62,26 @@ extern void aQMgr_talk_snap_restore(aQMgr_talk_snap_c* snap) {
     }
 }
 
+#ifdef TARGET_PC
+extern void aQMgr_world_store(aQMgr_world_c* dst) {
+    dst->client = l_client_p;
+    dst->mode = l_quest_manager_mode;
+    dst->memory = l_quest_memory_p;
+    dst->actor = l_quest_actor_p;
+    dst->hello = l_quest_manager_hello;
+    dst->hand = l_aQMgr_hand_start;
+}
+
+extern void aQMgr_world_load(const aQMgr_world_c* src) {
+    l_client_p = src->client;
+    l_quest_manager_mode = src->mode;
+    l_quest_memory_p = src->memory;
+    l_quest_actor_p = src->actor;
+    l_quest_manager_hello = src->hello;
+    l_aQMgr_hand_start = src->hand;
+}
+#endif
+
 // clang-format off
 static aQMgr_set_data_c l_set_delivery_data[] = {
     {
@@ -1501,6 +1521,10 @@ static void aQMgr_actor_ct(ACTOR* actorx, GAME* game) {
 
 static void aQMgr_actor_dt(ACTOR* actorx, GAME* game) {
     QUEST_MANAGER_ACTOR* manager = (QUEST_MANAGER_ACTOR*)actorx;
+
+    if (l_quest_actor_p == manager) {
+        l_quest_actor_p = NULL;
+    }
 
     if (Common_Get(clip).quest_manager_clip != NULL) {
         zelda_free(Common_Get(clip).quest_manager_clip);

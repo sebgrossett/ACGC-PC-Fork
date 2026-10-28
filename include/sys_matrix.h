@@ -17,6 +17,11 @@ extern MtxF MtxF_clear;
 extern Mtx Mtx_clear;
 
 extern void new_Matrix(GAME* game);
+#ifdef TARGET_PC
+/* The stack lives in the play's arena. Each world keeps its own pointer. */
+extern void Matrix_world_store(MtxF** now, MtxF** stack);
+extern void Matrix_world_load(MtxF* now, MtxF* stack);
+#endif
 extern void Matrix_push();
 extern void Matrix_pull();
 extern void Matrix_get(MtxF* m);

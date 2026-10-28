@@ -125,6 +125,10 @@ static void aBT_sync_field_to_destination(BOAT_ACTOR* boat_actor, GAME_PLAY* pla
     int player_bx;
     int player_bz;
 
+    if (player == NULL) {
+        return;
+    }
+
     if (mFI_Wpos2BlockNum(&boat_bx, &boat_bz, boat_actor->actor_class.world.position) == TRUE &&
         mFI_Wpos2BlockNum(&player_bx, &player_bz, player->actor_class.world.position) == TRUE &&
         boat_bx == player_bx && boat_bz == player_bz &&
@@ -464,6 +468,10 @@ static void aBT_pl_ride_off_start_wait(BOAT_ACTOR* boat_actor, GAME_PLAY* play) 
         s16 dir = boat_actor->actor_class.shape_info.rotation.y + DEG2SHORT_ANGLE(-90.0f);
         f32 z = cos_s(dir);
         f32 x = sin_s(dir);
+
+        if (player == NULL) {
+            return;
+        }
 
         pos.x = player->actor_class.world.position.x + x * 47.0f;
         pos.y = 40.0f;

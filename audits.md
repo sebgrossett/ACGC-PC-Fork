@@ -1,61 +1,45 @@
 # Audits
 
-Scope of this audit: the co-op work landed 2026-10-24 through 2026-10-26 (55 commits, ~88 files, +4151/-456 under `src/`, `include/`, `pc/src`). Backend (native C / GL port); no frontend. Principles: maintainability, KISS, DRY, small surface, efficiency.
-
-## Checklist notes
-
-- **Structure / ownership of concerns**
-  - Per-slot menu state lives correctly in `m_submenu.c` (storage, copy-in/out, open gates); per-player identity in `m_player_lib.c` (pad/openers/slots tables); view/layout in `m_play.c`; session/pause UI in `pc/`. The layering held up across seven slices.
-  - `m_play.c` is large with co-op logic interleaved into the decomp file. Accepted: `src/` mirrors decomp structure and the helpers need `m_play.c` statics; do not split without a strong reason.
-  - Four separate "owner" state systems exist: per-slot menu openers (`s_menu_opener_*_tbl`), demo talker (`s_demo_talker_*`), request owner (`mPlib_request_owner`), and the change-data order owner. They overlap conceptually and each has its own clear/swap discipline. See P1.
-- **Duplication vs justified reuse**
-  - "Does player P have a game menu open / owns the open menu" is implemented three times with subtly different conditions: `mDemo_owner_menu_open` (`m_demo.c`), `banti_player_menu_open` (`m_banti.c`), and inline in `pc_session_menu_can_open`. See P1.
-  - `mSM_submenu_ctrl` runs three near-identical open-gate chains (guest inventory, guest map, board loop): slot-idle + refuse + reset + FirstIntro + able. See P2.
-  - The per-frame wait-actor setup is three calls (retail `Actor_info_set_wait_actor` + session rows + side-slot openers). See P2.
-  - The per-slot copy-in/out + context-wrap appears in both the move loop and the draw pass. Justified (different call shapes); do not abstract.
-  - Session/pause menus already share `pc_menu_util`/`pc_text_draw` ✓.
-- **State / rebuild surface**
-  - Side-slot `Submenu` swap is sound (backup + restore; `item_p` re-pointed both ways; per-frame tick keeps refuse timers alive; scene cleanup resets). The swap's implicit invariant — everything inside the window sees the side copy — is documented in comments and `plan.md` §4.
-  - Receiver-ignoring `PLAYER_ACTOR` procs are wrapped with `_for` forms; the retail wrappers are byte-identical. Pattern is recorded in `plan.md` §4.
-- **Mock vs real seams** — N/A (no test seams; playtests are the verification path).
-- **Dependency weight** — no new dependencies beyond SDL2 (already required). ✓
-- **Perf risks**
-  - Per-frame overhead measured/assessed: idle side-slot move copies (~2.6 KB/frame) — negligible; per-view HUD/clock loops — negligible; per-open-menu panel passes (flush/restart/`emu64_refresh`) — acceptable at 2 players, watch at 3-4 (deferred validation covers it).
-  - Shared-accumulator audit complete: the only draw-path (per-view) accumulator was the mailbox ping — fixed and playtested. Singleton systems with statics are safe. Instance-count move-side statics remain (low, see mitigations).
-  - Positional mic anomaly (`play->camera.mic_pos` garbage in one probe log) — dismissed by the operator as a pre-fix artifact.
-- **Accessibility baseline** — N/A (game port); input isolation per player is the relevant proxy and is playtested.
-- **Tests on critical paths** — no automated tests; every slice is playtested before merge (established workflow). No change recommended.
-
-## Findings
-
-### P1
-1. **Consolidate the menu-open ownership checks.** One helper in `m_submenu.c`, e.g. `mSM_player_menu_open(GAME_PLAY*, PLAYER_ACTOR*)` (and a slot form), covering: primary busy with this player as opener, and this player's side slot open/transitioning. Rework the three current implementations onto it. Do this BEFORE the per-player-state slice, which will otherwise copy the pattern again.
-
-### P2
-2. Extract the repeated open-gate chain in `mSM_submenu_ctrl` into one per-target helper (guest inventory / guest map / board loop keep their specifics).
-3. Unify the per-frame wait-actor setup into one `play_menu_wait_actors_add(play)` (primary opener + side openers + session rows) in `m_play.c`.
-4. Remove or `--verbose`-gate the two `printf("[PAUSE] ...")` lines in `pc_pause_menu.c` (debug debris).
-5. Instance-count accumulator statics in move-side code (`ef_turi_mizu`, `ef_motiyuge`, `ac_train0`, `ac_s_car`, `ac_kamakura_indoor`, `m_msg_cursol`): gate rate scales with active instance count. Retail used global frame parity. Low impact; fix opportunistically when touching those files.
-6. Accepted as-is: idle side-slot per-frame copies; per-open-menu panel passes. Revisit only if profiling flags them. The mid-game `Actor_info_save_game` snapshot was removed when join/leave stopped writing the file (2026-10-26).
+Backend (native C / GL). Principles: maintainability, KISS, DRY, small surface, efficiency.
 
 ## Verdict
 
-**Proceed.** No P0. P1 is a small consolidation that should land before the per-player-state slice; P2s are opportunistic.
+**Proceed** to shops, the museum, and the map board. No open P0 or P1. A9–A11 are accepted: no code.
 
 ## Open mitigations
 
 | id | severity | summary | status |
 |----|----------|---------|--------|
-| A1 | P1 | Consolidate menu-open ownership checks into one `m_submenu.c` helper | done |
-| A2 | P2 | Extract the repeated submenu open-gate chain | done |
-| A3 | P2 | Unify the per-frame wait-actor setup | done |
-| A4 | P2 | Remove/gate the `[PAUSE]` debug printfs | done |
-| A5 | P2 | Instance-count accumulator statics (6 sites) | open |
+| A1 | P1 | One menu-open helper, `mSM_player_menu_open_by_slot` | done |
+| A2 | P2 | One submenu open-gate helper, `mSM_side_open_ok` | done |
+| A3 | P2 | One wait-actor setup, `play_menu_wait_actors_add` | done |
+| A4 | P2 | `[PAUSE]` printfs removed | done |
+| A5 | P2 | Six instance-count timers step once per `game_frame` | done |
+| A6 | P1 | Co-op surface audit | done |
+| A7 | P1 | Item popup and side talk step on the town. Light prompt and shop bell step once on the interior | done |
+| A8 | P2 | `pc_world_trace` / `transition_log.txt` removed. `crash_log.txt` stays through shop playtests | done |
+| A9 | P2 | Bind stays a value copy. Not a pointer swap | done |
+| A10 | P2 | Inventory and the pending order stay where they are | done |
+| A11 | P2 | Enter/leave is `pc_world_transition`. Shop NULL guards stay | done |
+
+## Do not re-break
+
+House enter/leave through playtest 40, plus A7. Detail is in `plan.md` §4. Short list:
+
+- Look banks, matrix stack, insect, quest, and intro-demo clip stay with the world.
+- `player_actor_exists` stays set while any world has a player.
+- Mail land stays with the opener. A live mailbox keeps its prop id.
+- The town actor loop keeps running while someone is indoors.
+- The camera runs only when that play has a player. Exit requests normal camera priority 9.
+- First town load uses the retail door. The walk-out clip runs only after a return into a town that stayed loaded.
+- A structure that already has an actor is not spawned again.
+- The indoor light prompt draws in the indoor view.
+- `crash_log.txt` stays until the shop playtests are done.
 
 ## Pass log
-
-- 2026-10-26: Join and leave no longer write the town file. `Actor_info_save_game` and both call sites are gone. The gyroid save remains the only write. The accepted-as-is note about its fg snapshot is closed with the function.
-- 2026-10-26: Initial audit of the co-op work (55 commits, 2026-10-24..26). Verdict: proceed. Findings A1-A5 opened. The mailbox shared-accumulator fix and the receiver-ignoring proc pattern are recorded in `plan.md` §4 and were verified during this audit.
-- 2026-10-26: A1 done on `feature/audit-a1`. New helper `mSM_player_menu_open_by_slot(GAME_PLAY*, slot)` in `m_submenu.c` (primary busy with this slot as opener, or this slot's side-slot menu open/transitioning; slot-based because `PLAYER_ACTOR` is not visible in `m_submenu.h`). Reworked onto it: `mDemo_owner_menu_open` (now a one-line wrapper, pad param dropped), `banti_player_menu_open` (deleted; the clock fade gate calls the helper via `mPlib_player_slot_of`), and `pc_session_menu_can_open` (helper + the two retail `mode` tails kept inline as scoped extras). MINGW32 clean. Smoke regression owed by the operator: clock fade during a menu, demo guard vs a menu holder's A, session gate block.
-- 2026-10-26: A1 smoke passed by the operator. A2+A3+A4 done on the same branch, MINGW32 clean. A2: `mSM_side_open_ok(play, target, player)` (target idle + reset clear + refuse clear + per-player able check) now backs the guest inventory, guest map and board open paths, each keeping only its specifics (FirstIntro, menu_type actor-open guard, map flag/position). A3: `play_session_wait_actors_add` + `play_side_menu_wait_actors_add` merged into `play_menu_wait_actors_add(play)` (primary opener added only when the primary menu is open, side openers, session rows); the `Actor_info_set_wait_actor`/`s_wait_actor` mechanism is deleted as dead (the consumer's `is_wait_actor` already checks both, and add+clear covers everything). A4: the two `[PAUSE]` debug printfs removed. A5 stays open (opportunistic). Operator smoke of the full menu-flow regression passed.
-- 2026-10-26: Rom-path narrowed to `rom/`-only on the same branch (operator request): `find_disc_image` in `pc_disc.c` no longer scans `.`, `orig/` or the repo-root fallback; the pc_disc.h comment, the missing-ROM dialog in `pc_main.c`, `DOCUMENTATION.md`'s fallback chain and `plan.md` §6 updated. A disc-image file picker is recorded as a future-update goal in `plan.md` §7. MINGW32 clean after the game was closed (the first link failed with Permission denied because the exe was running). Next: merge, then the per-player-state slice.
+- 2026-10-28: Museum checkpoint 1 held and committed (`fd9735a`). All four rooms toured by P2, walker identity/pads/door data correct, no crashes. The insect-room outdoor tint shelved (cosmetic; the emulated RDP palette state persists across display-list executions — diagnosis and fix direction in plan.md §7). Probes removed.
+- 2026-10-27: Post office slice held and committed (`2453780`). Black screen root-caused (field-draw actor accumulation in the persistent town play), fixed with the spawn guard, the `aMHS_guest_walking_out` position check, and the stale transition-state clears. 10+ cycles plus the join door retested by the operator. Probes removed; `crash_log.txt` stays.
+- 2026-10-27: A7+A8 playtest held (operator). Item popup, side talk, indoor light prompt.
+- 2026-10-27: A7+A8 built on `feature/audit-a7` (`6e59e1b`). MINGW32 clean.
+- 2026-10-27: Surface audit. A9–A11 accepted with no code. A7 was fix-first; it has since held.
+- 2026-10-26: Menu audit A1–A5 done and playtested. Rom search is `rom/` only.

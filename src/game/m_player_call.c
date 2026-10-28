@@ -119,14 +119,29 @@ static void guest_end(GAME* game, int restore_look) {
  * those, run it with the guest's pad and private data, then restore the
  * selected resident's. */
 static int s_player_ctx_active = FALSE;
+static int s_player_ctx_swapped = FALSE;
 static pad_t s_player_ctx_saved_pad;
 static MCON s_player_ctx_saved_mcon;
 static Private_c* s_player_ctx_saved_priv;
 static u32 s_player_ctx_saved_player_no;
 static mHm_hs_c* s_player_ctx_saved_home;
+static PLAYER_ACTOR* s_player_ctx_saved_bound;
 
 static void player_context_begin(GAME_PLAY* play, PLAYER_ACTOR* player, int pad, int slot) {
-    if (s_player_ctx_active || player == NULL || pad <= 0 || pad >= MAXCONTROLLERS || slot < 0) {
+    Private_c* priv;
+
+    if (s_player_ctx_active || player == NULL || pad < 0 || pad >= MAXCONTROLLERS || slot < 0) {
+        return;
+    }
+
+    /* Menus and talks read the selected resident. While that resident is in
+     * another world the reader is this player, for this call only. */
+    s_player_ctx_saved_bound = mPlib_bound_player_actor();
+    mPlib_bind_player_actor(player);
+    s_player_ctx_swapped = FALSE;
+    s_player_ctx_active = TRUE;
+
+    if (pad <= 0) {
         return;
     }
 
@@ -136,14 +151,20 @@ static void player_context_begin(GAME_PLAY* play, PLAYER_ACTOR* player, int pad,
     s_player_ctx_saved_player_no = Common_Get(player_no);
     s_player_ctx_saved_home = Common_Get(now_home);
 
-    Common_Set(now_private, mPlib_private_for_slot(slot));
+    priv = mPlib_private_for_slot(slot);
+    if ((priv == NULL) && (slot < PLAYER_NUM)) {
+        /* The actor cache is cleared when a resident leaves a world. The
+         * save record is still theirs. */
+        priv = Save_GetPointer(private_data[slot]);
+    }
+    Common_Set(now_private, priv);
     Common_Set(player_no, slot);
     /* Mail lives on now_home. Point it at this player's house for the menu. */
     mHm_SetNowHome();
     play->game.pads[0] = play->game.pads[pad];
     mCon_calc(&s_guest_mcon[pad], (f32)play->game.pads[pad].now.stick_x, (f32)play->game.pads[pad].now.stick_y);
     play->game.mcon = s_guest_mcon[pad];
-    s_player_ctx_active = TRUE;
+    s_player_ctx_swapped = TRUE;
 }
 
 static void player_context_end(GAME_PLAY* play) {
@@ -151,11 +172,16 @@ static void player_context_end(GAME_PLAY* play) {
         return;
     }
 
-    play->game.pads[0] = s_player_ctx_saved_pad;
-    play->game.mcon = s_player_ctx_saved_mcon;
-    Common_Set(now_private, s_player_ctx_saved_priv);
-    Common_Set(player_no, s_player_ctx_saved_player_no);
-    Common_Set(now_home, s_player_ctx_saved_home);
+    if (s_player_ctx_swapped != FALSE) {
+        play->game.pads[0] = s_player_ctx_saved_pad;
+        play->game.mcon = s_player_ctx_saved_mcon;
+        Common_Set(now_private, s_player_ctx_saved_priv);
+        Common_Set(player_no, s_player_ctx_saved_player_no);
+        Common_Set(now_home, s_player_ctx_saved_home);
+        s_player_ctx_swapped = FALSE;
+    }
+
+    mPlib_bind_player_actor(s_player_ctx_saved_bound);
     s_player_ctx_active = FALSE;
 }
 
@@ -191,8 +217,20 @@ extern void mPlib_slot_context_end(GAME_PLAY* play) {
 
 static int guest_slot_for_actor(ACTOR* actor) {
     int slot = mPlib_player_slot_of((PLAYER_ACTOR*)actor);
+    int pad;
 
-    if ((slot < 0) || (slot == (int)Common_Get(player_no))) {
+    if (slot < 0) {
+        return -1;
+    }
+
+    /* Indoors this resident is player_no for that play. Their controller is
+     * still their Controls row, so the move has to borrow pads[0] from it. */
+    pad = mPlib_pad_for_player_slot(slot);
+    if (pad > 0) {
+        return slot;
+    }
+
+    if (slot == (int)Common_Get(player_no)) {
         return -1;
     }
 

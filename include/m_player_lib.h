@@ -45,6 +45,10 @@ extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player);
 /* Pad channel per resident slot. The pad is the Controls row (0 host, 1-3 guests). */
 extern void mPlib_register_player_pad(int slot, int pad);
 extern int mPlib_pad_for_player_slot(int slot);
+#ifdef TARGET_PC
+/* Put a joined guest's Controls row back when a world swap cleared it. */
+extern void mPlib_repair_guest_pads(void);
+#endif
 extern int mPlib_pad_for_player(PLAYER_ACTOR* player);
 extern void mPlib_queue_guest_slot(int slot, int pad);
 extern int mPlib_guest_slot_ready(void);
@@ -57,10 +61,13 @@ extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
 /* The selected resident, independent of any bound guest context. */
 extern PLAYER_ACTOR* mPlib_host_player_actor(void);
 extern Private_c* mPlib_private_for_slot(int slot);
+extern PLAYER_ACTOR* mPlib_bound_player_actor(void);
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player);
 extern void mPlib_unbind_player_actor(void);
 /* Player whose split view is being drawn. NULL falls back to the selected resident. */
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player);
+extern void mPlib_set_view_player_index(int index);
+extern int mPlib_view_player_index();
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play);
 #ifdef TARGET_PC
 /* Is this resident slot / Controls pad already driven by an actor? */
@@ -206,10 +213,13 @@ extern int mPlib_cancel_player_warp_forEvent(void);
 extern int mPlib_check_player_warp_forEvent(void);
 extern int mPlib_Check_HitAxe(xyz_t* pos_p);
 extern int mPlib_Check_VibUnit_OneFrame(const xyz_t* pos_p);
+extern int mPlib_Check_StopNet_player(PLAYER_ACTOR* player, xyz_t* pos_p);
 extern int mPlib_Check_StopNet(xyz_t* pos_p);
+extern u32 mPlib_Get_item_net_catch_label_player(PLAYER_ACTOR* player);
 extern u32 mPlib_Get_item_net_catch_label(void);
 extern int mPlib_Change_item_net_catch_label(u32 label, s8 type);
 extern int mPlib_Check_HitScoop(xyz_t* pos_p);
+extern int mPlib_Check_DigScoop_player(PLAYER_ACTOR* player, xyz_t* pos_p);
 extern int mPlib_Check_DigScoop(xyz_t* pos_p);
 extern int mPlib_Get_address_able_display(void);
 extern int mPlib_Check_scoop_after(GAME* game, xyz_t* pos_p, mActor_name_t* item_p, ACTOR** reflect_actor_pp,
@@ -248,7 +258,9 @@ extern int mPlib_check_player_actor_main_index_Pitfall(GAME* game);
 extern int mPlib_check_player_actor_main_index_OutDoorMove(GAME* game);
 extern int mPlib_check_player_actor_main_index_OutDoorMove2(GAME* game);
 extern int mPlib_check_player_actor_main_index_AllWade(GAME* game);
+extern int mPlib_check_player_actor_main_index_catch_insect_player(PLAYER_ACTOR* player);
 extern int mPlib_check_player_actor_main_index_catch_insect(GAME* game);
+extern int mPlib_check_player_actor_main_index_catch_fish_player(PLAYER_ACTOR* player);
 extern int mPlib_check_player_actor_main_index_catch_fish(GAME* game);
 extern int mPlib_check_player_actor_start_switch_on_lighthouse(GAME* game);
 extern int mPlib_Check_stung_mosquito(void* label);
@@ -265,6 +277,19 @@ extern void mPlib_Set_change_color_request(void);
 #define GET_PLAYER_ACTOR_ACTOR(play) ((ACTOR*)GET_PLAYER_ACTOR(play))
 #define GET_PLAYER_ACTOR_NOW_ACTOR() ((ACTOR*)GET_PLAYER_ACTOR_NOW())
 #define GET_PLAYER_ACTOR_GAME_ACTOR(game) ((ACTOR*)GET_PLAYER_ACTOR_GAME(game))
+
+#ifdef TARGET_PC
+/* The resident-slot tables are one per world. */
+extern void mPlib_world_store(PLAYER_ACTOR** players, Private_c** privates, int* pads, int* guest_slot);
+extern void mPlib_world_load(PLAYER_ACTOR** players, Private_c** privates, int* pads, int guest_slot);
+/* Cloth and face bank ids. One set per world, 9 words. */
+#define MPLIB_LOOK_BANK_NUM 9
+extern void mPlib_look_bank_store(int* dst);
+extern void mPlib_look_bank_load(const int* src);
+/* Drop every slot but `slot` from the live table. Does not free actors. */
+extern void mPlib_world_keep_slot(int slot);
+extern void mPlib_world_clear_bind(void);
+#endif
 
 #ifdef __cplusplus
 }

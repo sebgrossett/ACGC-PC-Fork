@@ -129,6 +129,12 @@ typedef struct kankyo_s {
 extern void mEnv_regist_nature(Kankyo* kankyo, NATURE_PROC nature_proc, void* arg);
 extern int mEnv_unregist_nature(Kankyo* kankyo, NATURE_PROC nature_proc);
 extern void Global_kankyo_ct(GAME* game, Kankyo* kankyo);
+
+/* House and town each keep the electric-light globals. One struct is what
+ * tints the outdoor view after the indoor point light has ramped up. */
+#define PC_MENV_LIGHT_BYTES 512
+extern void mEnv_light_store(void* dst);
+extern void mEnv_light_load(const void* src);
 extern void mEnv_GetRoomPrimColor(u8* r, u8* g, u8* b, GAME_PLAY* play);
 extern void Global_kankyo_set_room_prim(GAME* game);
 extern int mEnv_RequestChangeLightON(GAME_PLAY* play, int light_on_type, int play_sfx);

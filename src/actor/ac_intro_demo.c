@@ -81,8 +81,50 @@ static void aID_actor_ct(ACTOR* actorx, GAME* game) {
     }
 }
 
+#ifdef TARGET_PC
+void aID_world_store(mDemo_Clip_c* dst) {
+    if (dst != NULL) {
+        *dst = aID_clip;
+    }
+}
+
+void aID_world_load(const mDemo_Clip_c* src) {
+    if (src != NULL) {
+        aID_clip = *src;
+    }
+}
+
+/* The house scene spawns its own intro demo into this same static. After that
+ * actor is freed, demo_class still holds the old address. Only a class that is
+ * still on this play may be written. */
+int aID_class_is_live(struct game_play_s* play, void* demo_class) {
+    ACTOR* cursor;
+
+    if ((play == NULL) || (demo_class == NULL) || (aID_clip.demo_class != demo_class)) {
+        return FALSE;
+    }
+
+    cursor = play->actor_info.list[ACTOR_PART_CONTROL].actor;
+
+    while (cursor != NULL) {
+        if (cursor == (ACTOR*)demo_class) {
+            return TRUE;
+        }
+
+        cursor = cursor->next_actor;
+    }
+
+    return FALSE;
+}
+#endif
+
 static void aID_actor_dt(ACTOR* actorx, GAME* game) {
     INTRO_DEMO_ACTOR* intro_demo = (INTRO_DEMO_ACTOR*)actorx;
+
+    if (aID_clip.demo_class == actorx) {
+        aID_clip.demo_class = NULL;
+        aID_clip.type = mDemo_CLIP_TYPE_NONE;
+    }
 
     if (Common_Get(clip).demo_clip != NULL) {
         Common_Get(clip).demo_clip = NULL;

@@ -10,6 +10,8 @@
 #include "ac_uki.h"
 #ifdef TARGET_PC
 #include "pc_bswap.h"
+#include "pc_settings.h"
+#include "pc_world.h"
 #endif
 
 int g_mPlib_wade_disabled = FALSE;
@@ -1306,6 +1308,75 @@ static int s_guest_slot = -1;
 static PLAYER_ACTOR* s_bound_actor = NULL;
 static PLAYER_ACTOR* s_view_player_actor = NULL;
 
+#ifdef TARGET_PC
+extern void mPlib_world_store(PLAYER_ACTOR** players, Private_c** privates, int* pads, int* guest_slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        players[i] = s_player_by_slot[i];
+        privates[i] = s_private_by_slot[i];
+        pads[i] = s_pad_by_slot[i];
+    }
+
+    *guest_slot = s_guest_slot;
+}
+
+extern void mPlib_world_load(PLAYER_ACTOR** players, Private_c** privates, int* pads, int guest_slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        s_player_by_slot[i] = players[i];
+        s_private_by_slot[i] = privates[i];
+        s_pad_by_slot[i] = pads[i];
+    }
+
+    s_guest_slot = guest_slot;
+}
+
+extern void mPlib_world_keep_slot(int slot) {
+    int i;
+
+    for (i = 0; i < PLAYER_NUM; i++) {
+        if (i == slot) {
+            continue;
+        }
+
+        s_player_by_slot[i] = NULL;
+        s_private_by_slot[i] = NULL;
+        s_pad_by_slot[i] = -1;
+    }
+}
+
+extern void mPlib_world_clear_bind(void) {
+    s_bound_actor = NULL;
+    s_view_player_actor = NULL;
+}
+
+extern void mPlib_look_bank_store(int* dst) {
+    dst[0] = Player_bank_ID_Index;
+    dst[1] = Player_face_bank_ID_Index;
+    dst[2] = Player_Tex_bank_ID[0];
+    dst[3] = Player_Tex_bank_ID[1];
+    dst[4] = Player_Pallet_bank_ID[0];
+    dst[5] = Player_Pallet_bank_ID[1];
+    dst[6] = Player_face_tex_bank_ID;
+    dst[7] = Player_face_pallet_bank_ID[0];
+    dst[8] = Player_face_pallet_bank_ID[1];
+}
+
+extern void mPlib_look_bank_load(const int* src) {
+    Player_bank_ID_Index = src[0];
+    Player_face_bank_ID_Index = src[1];
+    Player_Tex_bank_ID[0] = src[2];
+    Player_Tex_bank_ID[1] = src[3];
+    Player_Pallet_bank_ID[0] = src[4];
+    Player_Pallet_bank_ID[1] = src[5];
+    Player_face_tex_bank_ID = src[6];
+    Player_face_pallet_bank_ID[0] = src[7];
+    Player_face_pallet_bank_ID[1] = src[8];
+}
+#endif
+
 extern void mPlib_unregister_player_slot(PLAYER_ACTOR* player) {
     int i;
 
@@ -1343,21 +1414,53 @@ extern int mPlib_pad_for_player_slot(int slot) {
     return s_pad_by_slot[slot];
 }
 
-/* Controls pad of a player actor: 0 for the selected resident, the registered
- * Controls row for a guest. -1 when the actor is not an active player. */
+#ifdef TARGET_PC
+extern void mPlib_repair_guest_pads(void) {
+    int session = (int)Common_Get(player_no);
+    int row;
+
+    for (row = 1; row < PC_PLAYER_COUNT; row++) {
+        int slot = g_pc_coop_guest_slot[row];
+
+        if ((g_pc_coop_joined[row] == 0) || (slot < 0) || (slot >= PLAYER_NUM) || (slot == session)) {
+            continue;
+        }
+
+        if (s_player_by_slot[slot] == NULL) {
+            continue;
+        }
+
+        if (s_pad_by_slot[slot] != row) {
+            mPlib_register_player_pad(slot, row);
+        }
+    }
+}
+#endif
+
+/* Controls pad of a player actor. The registered row wins: an indoor resident
+ * is the selected player of that play, and still uses their own controller.
+ * -1 when the actor is not an active player. */
 extern int mPlib_pad_for_player(PLAYER_ACTOR* player) {
     int slot;
+    int pad;
 
     if (player == NULL) {
         return -1;
+    }
+
+    slot = mPlib_player_slot_of(player);
+    if (slot >= 0) {
+        pad = mPlib_pad_for_player_slot(slot);
+        if (pad >= 0) {
+            return pad;
+        }
     }
 
     if (player == get_player_actor_withoutCheck((GAME_PLAY*)gamePT)) {
         return 0;
     }
 
-    slot = mPlib_player_slot_of(player);
-    return (slot >= 0) ? mPlib_pad_for_player_slot(slot) : -1;
+    return -1;
 }
 
 extern void mPlib_register_player_slot(int slot, PLAYER_ACTOR* player) {
@@ -1394,11 +1497,24 @@ extern int mPlib_guest_slot_ready(void) {
         return -1;
     }
 
-    if ((session < 0) || (session >= PLAYER_NUM) || (s_player_by_slot[session] == NULL)) {
+    if ((session < 0) || (session >= PLAYER_NUM)) {
         return -1;
     }
 
-    return s_guest_slot;
+    if (s_player_by_slot[session] != NULL) {
+        return s_guest_slot;
+    }
+
+#ifdef TARGET_PC
+    /* The selected resident is indoors, so this play has no actor in their
+     * slot. The queued pad is still the other resident. Falling through to
+     * the session slot made the joiner come out of the wrong door. */
+    if (pc_world_any_player() != FALSE) {
+        return s_guest_slot;
+    }
+#endif
+
+    return -1;
 }
 
 extern int mPlib_take_guest_slot(void) {
@@ -1526,6 +1642,10 @@ extern Private_c* mPlib_private_for_slot(int slot) {
     return s_private_by_slot[slot];
 }
 
+extern PLAYER_ACTOR* mPlib_bound_player_actor(void) {
+    return s_bound_actor;
+}
+
 extern void mPlib_bind_player_actor(PLAYER_ACTOR* player) {
     s_bound_actor = player;
 }
@@ -1536,6 +1656,17 @@ extern void mPlib_unbind_player_actor(void) {
 
 extern void mPlib_set_view_player_actor(PLAYER_ACTOR* player) {
     s_view_player_actor = player;
+}
+
+/* Which split view slot is currently drawing (for per-view caches). */
+static int s_view_player_index;
+
+extern void mPlib_set_view_player_index(int index) {
+    s_view_player_index = index;
+}
+
+extern int mPlib_view_player_index() {
+    return s_view_player_index;
 }
 
 extern PLAYER_ACTOR* mPlib_view_player_actor(GAME_PLAY* play) {
@@ -1723,8 +1854,23 @@ extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play) {
         }
     }
 
-    /* Select screen keeps the actor on the old slot, then player_no changes. */
+    /* Select screen keeps the actor on the old slot, then player_no changes.
+     * A guest pad stays put: moving that actor onto the selected slot clears
+     * the pad, and the split disappears with it. */
     if (found == 1) {
+        int only_pad = -1;
+
+        for (i = 0; i < PLAYER_NUM; i++) {
+            if (s_player_by_slot[i] == only) {
+                only_pad = s_pad_by_slot[i];
+                break;
+            }
+        }
+
+        if (only_pad > 0) {
+            return NULL;
+        }
+
         mPlib_register_player_slot(slot, only);
         return only;
     }
@@ -2110,9 +2256,19 @@ extern void mPlib_request_main_demo_get_golden_item_from_submenu(void) {
 
 extern void mPlib_request_main_mail_land_from_submenu(void) {
     mPlayer_change_data_from_submenu_c* change_data_from_submenu_p = mPlib_Get_change_data_from_submenu_p();
+#ifdef TARGET_PC
+    int owner = mPlib_menu_opener_priv_for_slot(mSM_cur_slot());
+#endif
 
     change_data_from_submenu_p->requested_main_index = mPlayer_INDEX_MAIL_LAND;
     change_data_from_submenu_p->requested_index_pending = TRUE;
+#ifdef TARGET_PC
+    /* Get() above records player_no. That is the resident who is indoors, so
+     * their actor clears this order and the guest stays in the mailbox jump. */
+    if (owner >= 0) {
+        change_data_from_submenu_owner = owner;
+    }
+#endif
 }
 
 extern void mPlib_request_main_demo_wait_from_submenu(ACTOR* speak_actor_p) {
@@ -2139,16 +2295,21 @@ extern int mPlib_Get_unable_wade(void) {
 }
 
 extern int mPlib_Check_able_force_speak_label(GAME* game, ACTOR* label) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
+
+    if (player == NULL) {
         return FALSE;
     }
 
-    return GET_PLAYER_ACTOR_GAME(game)->Check_able_force_speak_label_proc(game, label);
+    return player->Check_able_force_speak_label_proc(game, label);
 }
 
 extern void mPlib_Set_able_force_speak_label(ACTOR* label) {
-    if (Common_Get(player_actor_exists)) {
-        GET_PLAYER_ACTOR_NOW()->able_force_speak_label = (u32)label;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    /* The selected resident can be in another play (indoors). */
+    if (player != NULL) {
+        player->able_force_speak_label = (u32)label;
     }
 }
 
@@ -2677,6 +2838,14 @@ extern int mPlib_request_main_groundhog_type1(GAME* game) {
 }
 
 extern int mPlib_request_main_door_type1(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
+#ifdef TARGET_PC
+    /* The request proc reads the selected resident no matter which actor it
+     * is called on, and the town play runs without one while that resident
+     * is indoors. With nobody home the request has no taker. */
+    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+        return FALSE;
+    }
+#endif
     if (GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
                                                                 mPlayer_REQUEST_PRIORITY_7)) {
         return TRUE;
@@ -2685,6 +2854,11 @@ extern int mPlib_request_main_door_type1(GAME* game, const xyz_t* pos_p, s16 ang
 }
 
 extern int mPlib_request_main_door_type2(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
+#ifdef TARGET_PC
+    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+        return FALSE;
+    }
+#endif
     return GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
                                                                    mPlayer_REQUEST_PRIORITY_19);
 }
@@ -3050,12 +3224,16 @@ extern int mPlib_able_submenu_type1_player(GAME* game, PLAYER_ACTOR* player) {
 }
 
 extern int mPlib_able_submenu_type1(GAME* game) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
     int res = FALSE;
 
-    if (GET_PLAYER_ACTOR_GAME(game)->check_request_main_priority_proc(game, mPlayer_REQUEST_PRIORITY_19) > 0 &&
+    /* Host gate. A guest uses mPlib_able_submenu_type1_player. While the
+     * selected resident is indoors this is FALSE instead of a NULL call. */
+    if (player != NULL &&
+        player->check_request_main_priority_proc(game, mPlayer_REQUEST_PRIORITY_19) > 0 &&
         mPlib_Check_SetOrderSubmenu() == FALSE && mPlib_check_request_change_item() == FALSE &&
         mPlib_check_player_warp_forEvent() == FALSE &&
-        GET_PLAYER_ACTOR_GAME(game)->able_submenu_request_main_index_proc(game) && mPlib_CheckScene_AbleSubmenu()) {
+        player->able_submenu_request_main_index_proc(game) && mPlib_CheckScene_AbleSubmenu()) {
         res = TRUE;
     }
 
@@ -3193,6 +3371,14 @@ extern int mPlib_able_player_warp_forEvent(void) {
         return FALSE;
     }
 
+#ifdef TARGET_PC
+    /* The selected resident can be in another world (co-op interior). Nothing
+     * here can warp them, and every check below reads that actor. */
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
+        return FALSE;
+    }
+#endif
+
     if (mPlib_check_player_warp_forEvent()) {
         return FALSE;
     }
@@ -3267,12 +3453,50 @@ extern int mPlib_Check_VibUnit_OneFrame(const xyz_t* pos_p) {
     return GET_PLAYER_ACTOR_NOW()->Check_VibUnit_OneFrame_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
 }
 
+#ifdef TARGET_PC
+/* Town insects keep moving after the selected resident goes indoors. They
+ * follow the player still outside, the same as the insect controller. */
+static PLAYER_ACTOR* mPlib_player_here(void) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+
+    return player;
+}
+#endif
+
+extern int mPlib_Check_StopNet_player(PLAYER_ACTOR* player, xyz_t* pos_p) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_StopNet_proc((ACTOR*)player, pos_p);
+}
+
 extern int mPlib_Check_StopNet(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_StopNet_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    return mPlib_Check_StopNet_player(mPlib_player_here(), pos_p);
+#else
+    return mPlib_Check_StopNet_player(GET_PLAYER_ACTOR_NOW(), pos_p);
+#endif
+}
+
+extern u32 mPlib_Get_item_net_catch_label_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return 0;
+    }
+
+    return player->Get_item_net_catch_label_proc((ACTOR*)player);
 }
 
 extern u32 mPlib_Get_item_net_catch_label(void) {
-    return GET_PLAYER_ACTOR_NOW()->Get_item_net_catch_label_proc(GET_PLAYER_ACTOR_NOW_ACTOR());
+#ifdef TARGET_PC
+    return mPlib_Get_item_net_catch_label_player(mPlib_player_here());
+#else
+    return mPlib_Get_item_net_catch_label_player(GET_PLAYER_ACTOR_NOW());
+#endif
 }
 
 extern int mPlib_Change_item_net_catch_label(u32 label, s8 type) {
@@ -3283,8 +3507,20 @@ extern int mPlib_Check_HitScoop(xyz_t* pos_p) {
     return GET_PLAYER_ACTOR_NOW()->Check_HitScoop_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
 }
 
+extern int mPlib_Check_DigScoop_player(PLAYER_ACTOR* player, xyz_t* pos_p) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_DigScoop_proc((ACTOR*)player, pos_p);
+}
+
 extern int mPlib_Check_DigScoop(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_DigScoop_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    return mPlib_Check_DigScoop_player(mPlib_player_here(), pos_p);
+#else
+    return mPlib_Check_DigScoop_player(GET_PLAYER_ACTOR_NOW(), pos_p);
+#endif
 }
 
 extern int mPlib_Get_address_able_display(void) {
@@ -3404,10 +3640,22 @@ static ACTOR* mPlib_Search_exist_ball_forScoop(GAME* game, const xyz_t* pos_p) {
 extern int mPlib_Check_scoop_after(GAME* game, xyz_t* pos_p, mActor_name_t* item_p, ACTOR** reflect_actor_pp,
                                    int gold_scoop) {
     ACTOR* player_actor = GET_PLAYER_ACTOR_GAME_ACTOR(game);
-    xyz_t* player_pos_p = &player_actor->world.position;
+    xyz_t* player_pos_p;
     int player_ux;
     int player_uz;
     int field_type = Common_Get(field_type);
+
+#ifdef TARGET_PC
+    if (player_actor == NULL) {
+        if (reflect_actor_pp != NULL) {
+            *reflect_actor_pp = NULL;
+        }
+        *item_p = EMPTY_NO;
+        return 0;
+    }
+#endif
+
+    player_pos_p = &player_actor->world.position;
 
     if (reflect_actor_pp != NULL) {
         *reflect_actor_pp = NULL;
@@ -3930,8 +4178,10 @@ extern void mPlib_SetData2_controller_data_for_title_demo(mActor_name_t item) {
 }
 
 extern int mPlib_Check_CorrectPlayerPos_forEvent(void) {
-    if (Common_Get(player_actor_exists)) {
-        int main_index = GET_PLAYER_ACTOR_NOW()->now_main_index;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+    if (player != NULL) {
+        int main_index = player->now_main_index;
 
         if (mPlayer_MAIN_INDEX_VALID(main_index) != FALSE) {
             // clang-format off
@@ -4068,9 +4318,9 @@ extern int mPlib_Check_CorrectPlayerPos_forEvent(void) {
 }
 
 extern int mPlib_Check_UKI_COMEBACK_STATUS(void) {
-    if (Common_Get(player_actor_exists)) {
-        PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
 
+    if (player != NULL) {
         if (player->fishing_rod_actor_p) {
             UKI_ACTOR* uki_actor = (UKI_ACTOR*)player->fishing_rod_actor_p;
 
@@ -4081,20 +4331,54 @@ extern int mPlib_Check_UKI_COMEBACK_STATUS(void) {
     return FALSE;
 }
 
+/* GET_PLAYER_ACTOR_NOW() is the selected resident, who can be indoors while
+ * insects near the other player still run these checks. Fall back to the
+ * first player still in this play. ~50 more unguarded sites of this pattern
+ * exist and need their own audit (see tasks.md). */
+static PLAYER_ACTOR* mPlib_now_player_or_town(void) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    return player;
+}
+
 extern int mPlib_Check_tree_shaken(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_proc(&player->actor_class, pos_p);
 }
 
 extern int mPlib_Check_tree_shaken_little(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_little_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_little_proc(&player->actor_class, pos_p);
 }
 
 extern int mPlib_Check_tree_shaken_big(const xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_tree_shaken_big_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_tree_shaken_big_proc(&player->actor_class, pos_p);
 }
 
 extern mActor_name_t mPlib_Get_itemNo_forWindow(void) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
         return EMPTY_NO;
     }
 
@@ -4115,7 +4399,7 @@ extern int mPlib_able_birth_bee(void) {
 }
 
 extern int mPlib_check_able_change_camera_normal_index(void) {
-    if (Common_Get(player_actor_exists) == FALSE) {
+    if (GET_PLAYER_ACTOR_NOW() == NULL) {
         return EMPTY_NO;
     }
 
@@ -4209,18 +4493,36 @@ extern int mPlib_check_player_actor_main_index_AllWade(GAME* game) {
     return FALSE;
 }
 
+extern int mPlib_check_player_actor_main_index_catch_insect_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    /* The selected resident is gone once they are indoors. A later caller
+     * can pass whichever resident is still outside. */
+    return (mPlib_Get_item_net_catch_label_player(player) != 0 &&
+            player->now_main_index == mPlayer_INDEX_SWING_NET) ||
+           player->now_main_index == mPlayer_INDEX_PULL_NET ||
+           player->now_main_index == mPlayer_INDEX_NOTICE_NET ||
+           player->now_main_index == mPlayer_INDEX_PUTAWAY_NET;
+}
+
 extern int mPlib_check_player_actor_main_index_catch_insect(GAME* game) {
-    return (mPlib_Get_item_net_catch_label() != 0 &&
-            mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_SWING_NET) ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PULL_NET ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_NOTICE_NET ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PUTAWAY_NET;
+    return mPlib_check_player_actor_main_index_catch_insect_player(GET_PLAYER_ACTOR_GAME(game));
+}
+
+extern int mPlib_check_player_actor_main_index_catch_fish_player(PLAYER_ACTOR* player) {
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->now_main_index == mPlayer_INDEX_FLY_ROD ||
+           player->now_main_index == mPlayer_INDEX_NOTICE_ROD ||
+           player->now_main_index == mPlayer_INDEX_PUTAWAY_ROD;
 }
 
 extern int mPlib_check_player_actor_main_index_catch_fish(GAME* game) {
-    return mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_FLY_ROD ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_NOTICE_ROD ||
-           mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_PUTAWAY_ROD;
+    return mPlib_check_player_actor_main_index_catch_fish_player(GET_PLAYER_ACTOR_GAME(game));
 }
 
 extern int mPlib_check_player_actor_start_switch_on_lighthouse(GAME* game) {

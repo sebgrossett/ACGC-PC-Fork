@@ -283,6 +283,21 @@ typedef struct aQMgr_talk_snap_s {
 extern void aQMgr_talk_snap_save(aQMgr_talk_snap_c* snap);
 extern void aQMgr_talk_snap_restore(aQMgr_talk_snap_c* snap);
 
+#ifdef TARGET_PC
+/* The house scene builds its own quest manager and overwrites these. */
+typedef struct aQMgr_world_s {
+    ACTOR* client;
+    u8 mode;
+    Anmmem_c* memory;
+    QUEST_MANAGER_ACTOR* actor;
+    int hello;
+    int hand;
+} aQMgr_world_c;
+
+extern void aQMgr_world_store(aQMgr_world_c* dst);
+extern void aQMgr_world_load(const aQMgr_world_c* src);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

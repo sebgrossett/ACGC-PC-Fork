@@ -87,6 +87,11 @@ static void aDPT_actor_ct(ACTOR* actorx, GAME* game) {
     depart = (DEPART_ACTOR*)actorx;
     play = (GAME_PLAY*)game;
     player = GET_PLAYER_ACTOR_ACTOR(play);
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = (ACTOR*)mPlib_extra_player_at(0);
+    }
+#endif
 
     depart->struct_class.season = Common_Get(time.season);
     action = aDPT_ACTION_CLOSE_WAIT;
@@ -104,7 +109,11 @@ static void aDPT_actor_ct(ACTOR* actorx, GAME* game) {
 
     x = (int)(depart->struct_class.actor_class.world.position.x - 62.00f);
     z = (int)(depart->struct_class.actor_class.world.position.z + 118.57f);
+#ifdef TARGET_PC
+    if (player != NULL && (int)player->world.position.x == x && (int)player->world.position.z == z) {
+#else
     if ((int)player->world.position.x == x && (int)player->world.position.z == z) {
+#endif
         action = aDPT_ACTION_OPEN_WAIT;
     }
 

@@ -62,6 +62,12 @@ static void aBRS_actor_ct(ACTOR* actor, GAME* game) {
     int x;
     int z;
 
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
     shop->structure_class.season = Common_Get(time.season);
 
     cKF_SkeletonInfo_R_ct(&shop->structure_class.keyframe, skl[shop->structure_class.season == mTM_SEASON_WINTER], NULL,
@@ -74,11 +80,15 @@ static void aBRS_actor_ct(ACTOR* actor, GAME* game) {
     actor->talk_distance = 80.0f;
     shop->structure_class.arg0 = 0;
 
-    Px = player->actor_class.world.position.x;
     x = actor->world.position.x;
     z = (100.0f + actor->world.position.z);
-
+#ifdef TARGET_PC
+    if (player != NULL && (Px = player->actor_class.world.position.x, Px == x) &&
+        (int)player->actor_class.world.position.z == z) {
+#else
+    Px = player->actor_class.world.position.x;
     if (Px == x && (int)player->actor_class.world.position.z == z) {
+#endif
         action = 1;
         shop->structure_class.arg0 = 1;
     } else {

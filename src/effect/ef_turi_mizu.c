@@ -4,6 +4,7 @@
 #include "libc64/qrand.h"
 #include "libu64/u64types.h"
 #include "m_common_data.h"
+#include "m_play.h"
 #include <string.h>
 
 static void eTM_init(xyz_t pos, int prio, s16 angle, GAME* game, u16 item_name, s16 arg0, s16 arg1);
@@ -119,8 +120,19 @@ static void eTM_ct(eEC_Effect_c* effect, GAME* game, void* ct_arg) {
 static void eTM_mv(eEC_Effect_c* effect, GAME* game) {
     s16 i;
     s16 n_drops = 4;
-    static float cycle_accum = 0.0f; /* shared 30Hz tick gate (was play->game_frame & 1) */
-    int tick = graph_dt_period_elapsed(game, &cycle_accum, 2.0f);
+    /* One step per game frame. Each splash used to add dt again, so N splashes
+     * ran the 30Hz gate N times too fast. */
+    static float cycle_accum = 0.0f;
+    static u32 cycle_frame = 0xFFFFFFFFu;
+    static int cycle_tick = 0;
+    u32 frame = ((GAME_PLAY*)game)->game_frame;
+
+    if (cycle_frame != frame) {
+        cycle_frame = frame;
+        cycle_tick = graph_dt_period_elapsed(game, &cycle_accum, 2.0f);
+    }
+
+    int tick = cycle_tick;
 
     switch (effect->arg0) {
         case 0:

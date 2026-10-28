@@ -8,7 +8,17 @@ static int Player_actor_request_main_mail_land_all(GAME* game, int prio) {
 }
 
 static void Player_actor_request_main_mail_land_from_submenu(ACTOR* actorx, GAME* game) {
+#ifdef TARGET_PC
+    PLAYER_ACTOR* prev = mPlib_bound_player_actor();
+
+    /* The retail request follows GET_PLAYER_ACTOR. On the town that is NULL
+     * while the selected resident is indoors, so bind the actor who owns it. */
+    mPlib_bind_player_actor((PLAYER_ACTOR*)actorx);
+#endif
     Player_actor_request_main_mail_land_all(game, mPlayer_REQUEST_PRIORITY_31);
+#ifdef TARGET_PC
+    mPlib_bind_player_actor(prev);
+#endif
 }
 
 static void Player_actor_setup_main_Mail_land(ACTOR* actorx, GAME* game) {

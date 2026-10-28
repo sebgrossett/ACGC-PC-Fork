@@ -77,5 +77,21 @@ static void aINS_actor_ct(ACTOR* actorx, GAME* game) {
 }
 
 static void aINS_actor_dt(ACTOR* actorx, GAME* game) {
+    if (aINS_ctrlActor == (aINS_CTRL_ACTOR*)actorx) {
+        aINS_ctrlActor = NULL;
+    }
+
     aINS_free_clip_area();
 }
+
+#ifdef TARGET_PC
+extern void aINS_world_store(aINS_CTRL_ACTOR** ctrl, aINS_Clip_c* clip) {
+    *ctrl = aINS_ctrlActor;
+    bcopy(&aINS_clip, clip, sizeof(aINS_clip));
+}
+
+extern void aINS_world_load(aINS_CTRL_ACTOR* ctrl, const aINS_Clip_c* clip) {
+    aINS_ctrlActor = ctrl;
+    bcopy(clip, &aINS_clip, sizeof(aINS_clip));
+}
+#endif

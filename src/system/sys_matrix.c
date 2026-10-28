@@ -32,6 +32,18 @@ void new_Matrix(GAME* game) {
     Matrix_stack = Matrix_now;
 }
 
+#ifdef TARGET_PC
+void Matrix_world_store(MtxF** now, MtxF** stack) {
+    *now = Matrix_now;
+    *stack = Matrix_stack;
+}
+
+void Matrix_world_load(MtxF* now, MtxF* stack) {
+    Matrix_now = now;
+    Matrix_stack = stack;
+}
+#endif
+
 void Matrix_push() {
     Matrix_copy_MtxF(Matrix_now + 1, Matrix_now);
     Matrix_now++;

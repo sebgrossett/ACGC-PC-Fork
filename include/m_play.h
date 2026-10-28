@@ -128,6 +128,18 @@ extern void play_cleanup(GAME*);
 extern void play_init(GAME*);
 extern void play_main(GAME*);
 
+#ifdef TARGET_PC
+/* Retail starts the new play on a fade-in. A split exit keeps the town play. */
+extern void Game_play_start_fade_in(GAME_PLAY* play, int wipe_type);
+/* Same fade, drawn on `player`'s view. NULL keeps the selected resident's view. */
+extern void Game_play_start_fade_in_player(GAME_PLAY* play, int wipe_type, struct actor_s* player);
+/* Footsteps use the scene that is bound. A house load must not leave the
+ * town on the indoor floor. */
+extern void Game_play_set_sound_room(int scene);
+/* Next guest view starts on the player instead of springing across town. */
+extern void pc_play_guest_camera_reset(int pad);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

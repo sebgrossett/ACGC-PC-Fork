@@ -18,6 +18,13 @@ static int aSetMgr_get_player_block(int* bx, int* bz, GAME_PLAY* play) {
   int res = FALSE;
   PLAYER_ACTOR* player_actor = get_player_actor_withoutCheck(play);
 
+#ifdef TARGET_PC
+  /* The selected resident can be indoors. The acre is whoever is still outside. */
+  if (player_actor == NULL) {
+    player_actor = mPlib_extra_player_at(0);
+  }
+#endif
+
   if (player_actor != NULL) {
     res = mFI_Wpos2BlockNum(bx, bz, player_actor->actor_class.world.position);
   }
@@ -37,8 +44,25 @@ static int aSetMgr_renewal_player_next_pos(int* next_bx, int* next_bz) {
   int wpos_2_blocknum_res;
   xyz_t endpos = { 0.0f, 0.0f, 0.0f };
   GAME_PLAY* play = (GAME_PLAY*)gamePT;
+#ifdef TARGET_PC
+  PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
 
-  wade_end_pos_res = get_player_actor_withoutCheck(play)->Get_WadeEndPos_proc((GAME*)play, &endpos); // maybe make this a macro like GET_PLAYER_ACTOR() ?
+  /* Wade start is a global. The guest set it while bound, then unbound.
+   * Get_WadeEndPos looks the selected resident up again, so bind the guest. */
+  if (player == NULL) {
+    player = mPlib_extra_player_at(0);
+  }
+
+  if (player == NULL) {
+    return FALSE;
+  }
+
+  mPlib_bind_player_actor(player);
+  wade_end_pos_res = player->Get_WadeEndPos_proc((GAME*)play, &endpos);
+  mPlib_unbind_player_actor();
+#else
+  wade_end_pos_res = get_player_actor_withoutCheck(play)->Get_WadeEndPos_proc((GAME*)play, &endpos);
+#endif
   wpos_2_blocknum_res = mFI_Wpos2BlockNum(next_bx, next_bz, endpos);
   return wpos_2_blocknum_res | wade_end_pos_res;
 }

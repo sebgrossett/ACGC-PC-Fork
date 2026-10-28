@@ -411,8 +411,8 @@ static int aNPC_check_clap(NPC_ACTOR* nactorx, GAME_PLAY* play) {
     int ret = FALSE;
 
     if (aNPC_IS_NRM_NPC(nactorx) && aNPC_get_feel_info(nactorx) == mNpc_FEEL_NORMAL) {
-        if (mPlib_check_player_actor_main_index_catch_insect((GAME*)play) ||
-            mPlib_check_player_actor_main_index_catch_fish((GAME*)play)) {
+        if (mPlib_check_player_actor_main_index_catch_insect_player(GET_PLAYER_ACTOR(play)) ||
+            mPlib_check_player_actor_main_index_catch_fish_player(GET_PLAYER_ACTOR(play))) {
             if (nactorx->actor_class.player_distance_xz < (3 * mFI_UNIT_BASE_SIZE_F)) {
                 s16 d_angle = nactorx->actor_class.shape_info.rotation.y - nactorx->actor_class.player_angle_y;
 

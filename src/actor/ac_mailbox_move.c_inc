@@ -1,3 +1,5 @@
+static int aMBX_item_is_this(mActor_name_t item, int arrange_idx);
+
 static void aMBX_anime_proc(ACTOR* actorx, GAME_PLAY* play) {
     static s8 part_tbl[] = { 0, 0, 0, 1, 1, 0, 0 };
     MAILBOX_ACTOR* actor = (MAILBOX_ACTOR*)actorx;
@@ -31,7 +33,29 @@ static void aMBX_check_take_mail(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
         int dAngle = (s16)(mbox_pl_angle - mbox_angle);
         int abs_dAngle = ABS(dAngle);
 
-        if (abs_dAngle < aMBX_PLAYER_OPEN_ANGLE && player->a_btn_pressed == TRUE && pl_no == Common_Get(player_no) && player->item_in_front == (DUMMY_MAILBOX0 + arrange_idx)) {
+#ifdef TARGET_PC
+        /* The selected resident can be the indoor actor, or a guest moved onto
+         * that slot. Neither is standing at this outdoor box. */
+        {
+            ACTOR* walk = play->actor_info.list[ACTOR_PART_PLAYER].actor;
+            int here = FALSE;
+
+            while (walk != NULL) {
+                if (walk == playerx) {
+                    here = TRUE;
+                    break;
+                }
+                walk = walk->next_actor;
+            }
+
+            if ((here == FALSE) || (mPlib_player_slot_of(player) != pl_no)) {
+                playerx = NULL;
+            }
+        }
+
+        if (playerx != NULL)
+#endif
+        if (abs_dAngle < aMBX_PLAYER_OPEN_ANGLE && player->a_btn_pressed == TRUE && pl_no == Common_Get(player_no) && aMBX_item_is_this(player->item_in_front, arrange_idx)) {
 // Aus version changed the reset count needed for the 'free roam' Resetti interaction
 #if VERSION >= VER_GAFU01_00
             if (Common_Get(reset_flag) == TRUE && Now_Private->reset_count < 4) {
@@ -56,21 +80,68 @@ static void aMBX_check_take_mail(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     }
 }
 
+/* The acre keeps the prop name. Init also writes the dummy over that unit, and
+ * a world restore can put the prop back. Either one is this mailbox. */
+static int aMBX_item_is_this(mActor_name_t item, int arrange_idx) {
+    return (item == (mActor_name_t)(DUMMY_MAILBOX0 + arrange_idx)) ||
+           (item == (mActor_name_t)(ACTOR_PROP_MAILBOX0 + arrange_idx));
+}
+
 #ifdef TARGET_PC
+/* The registered pad is 0 after the indoor leave/rejoin. The joined Controls
+ * row is still this slot. */
+static int aMBX_pad_for_slot(int slot) {
+    int pad = (slot >= 0) ? mPlib_pad_for_player_slot(slot) : -1;
+    int row;
+
+    if ((pad > 0) || (slot < 0)) {
+        return pad;
+    }
+
+    for (row = 1; row < PC_PLAYER_COUNT; row++) {
+        if ((g_pc_coop_joined[row] != 0) && (g_pc_coop_guest_slot[row] == slot)) {
+            mPlib_register_player_pad(slot, row);
+            return row;
+        }
+    }
+
+    /* One guest, and their actor is no longer on the slot join recorded. */
+    if (slot != (int)Common_Get(player_no)) {
+        int only = -1;
+        int n = 0;
+
+        for (row = 1; row < PC_PLAYER_COUNT; row++) {
+            if (g_pc_coop_joined[row] != 0) {
+                only = row;
+                n++;
+            }
+        }
+
+        if (n == 1) {
+            mPlib_register_player_pad(slot, only);
+            g_pc_coop_guest_slot[only] = slot;
+            return only;
+        }
+    }
+
+    return pad;
+}
+
 /* A guest opens the mailbox they own. The retail check above stays on the
  * selected resident; player_angle_y on this actor is that resident's line. */
 static void aMBX_check_guest_open(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     int arrange_idx = actor->arrange_idx;
     int pl_no = mHS_get_pl_no(arrange_idx);
-    int count = mPlib_extra_player_count();
-    int i;
+    ACTOR* walk = play->actor_info.list[ACTOR_PART_PLAYER].actor;
 
     if ((actor->req != 0) || (arrange_idx < 0) || (arrange_idx >= PLAYER_NUM)) {
         return;
     }
 
-    for (i = 0; i < count; i++) {
-        PLAYER_ACTOR* player = mPlib_extra_player_at(i);
+    /* Extra-player list hides a guest whose pad was cleared to 0. The joined
+     * row is recovered in aMBX_pad_for_slot. */
+    while (walk != NULL) {
+        PLAYER_ACTOR* player = (PLAYER_ACTOR*)walk;
         ACTOR* actorx = (ACTOR*)actor;
         Private_c* priv;
         Submenu* side;
@@ -80,17 +151,29 @@ static void aMBX_check_guest_open(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
         int mbox_pl_angle;
         int dAngle;
 
+        walk = walk->next_actor;
+
         if (player == NULL) {
             continue;
         }
 
         slot = mPlib_player_slot_of(player);
-        pad = mPlib_pad_for_player(player);
-        if ((slot != pl_no) || (pad <= 0) || (pad >= mSM_SLOT_NUM)) {
+        /* The registered Controls row. pad_for_player returns 0 when this
+         * actor is what the town lookup calls the selected resident. */
+        pad = aMBX_pad_for_slot(slot);
+        /* The mailbox moves before the player, so a_btn_pressed is still the
+         * previous frame. The A edge is already on this pad. */
+        if (chkTrigger_pad(pad, BUTTON_A) == FALSE && player->a_btn_pressed == FALSE) {
             continue;
         }
 
-        if (player->a_btn_pressed == FALSE || player->item_in_front != (DUMMY_MAILBOX0 + arrange_idx)) {
+        /* slot == pl_no misses a guest moved onto the indoor resident's slot.
+         * The unit in front is this mailbox either way. */
+        if ((pad <= 0) || (pad >= mSM_SLOT_NUM)) {
+            continue;
+        }
+
+        if (aMBX_item_is_this(player->item_in_front, arrange_idx) == FALSE) {
             continue;
         }
 
@@ -279,28 +362,69 @@ static void aMBX_pl_open(MAILBOX_ACTOR* actor, GAME_PLAY* play) {
     if (actor->kf0_state == cKF_STATE_STOPPED) {
 #ifdef TARGET_PC
         PLAYER_ACTOR* opener = aMBX_opener(actor);
-        int pad = (opener != NULL) ? mPlib_pad_for_player(opener) : 0;
+        int opener_slot = (opener != NULL) ? mPlib_player_slot_of(opener) : -1;
+        int pad;
+        int pl_no = mHS_get_pl_no(actor->arrange_idx);
 
-        if ((pad > 0) && (pad < mSM_SLOT_NUM)) {
-            Submenu* side = mSM_side_slot_p(pad);
+        /* The host check clears the guest pointer and would open the town
+         * submenu. The owner standing in this play is the one who pressed A. */
+        if (opener == NULL) {
+            ACTOR* walk = play->actor_info.list[ACTOR_PART_PLAYER].actor;
 
-            /* Actors keep running for a guest, so the close anim would play
-             * during the menu. Hold this open frame until their menu ends. */
-            if ((side != NULL) && (s_mbx_menu_open[actor->arrange_idx] == FALSE)) {
-                mPlib_set_menu_opener_for_slot(pad, opener, pad, mPlib_player_slot_of(opener));
-                mSM_open_submenu(side, mSM_OVL_INVENTORY, mSM_IV_OPEN_MAILBOX, 0);
-                side->process_status = mSM_PROCESS_PREWAIT;
-                side->mode = mSM_MODE_PRERENDER_INIT;
-                SetGameFrame(1);
-                s_mbx_menu_open[actor->arrange_idx] = TRUE;
+            while (walk != NULL) {
+                PLAYER_ACTOR* cand = (PLAYER_ACTOR*)walk;
+                int cand_slot = mPlib_player_slot_of(cand);
+
+                if ((cand_slot == pl_no) || (aMBX_item_is_this(cand->item_in_front, actor->arrange_idx) != FALSE)) {
+                    opener = cand;
+                    opener_slot = cand_slot;
+                    if ((actor->arrange_idx >= 0) && (actor->arrange_idx < PLAYER_NUM)) {
+                        s_mbx_opener[actor->arrange_idx] = opener;
+                    }
+                    break;
+                }
+                walk = walk->next_actor;
+            }
+        }
+
+        pad = aMBX_pad_for_slot(opener_slot);
+
+        if (opener != NULL) {
+            if ((pad > 0) && (pad < mSM_SLOT_NUM)) {
+                Submenu* side = mSM_side_slot_p(pad);
+
+                /* Actors keep running for a guest, so the close anim would play
+                 * during the menu. Hold this open frame until their menu ends. */
+                if ((side != NULL) && (s_mbx_menu_open[actor->arrange_idx] == FALSE)) {
+                    mPlib_set_menu_opener_for_slot(pad, opener, pad, pl_no);
+                    /* Held A stays set while this actor is menu-waited, and the
+                     * other mailbox then treats it as a fresh open. */
+                    opener->a_btn_pressed = FALSE;
+                    mSM_open_submenu(side, mSM_OVL_INVENTORY, mSM_IV_OPEN_MAILBOX, 0);
+                    side->process_status = mSM_PROCESS_PREWAIT;
+                    side->mode = mSM_MODE_PRERENDER_INIT;
+                    SetGameFrame(1);
+                    s_mbx_menu_open[actor->arrange_idx] = TRUE;
+                }
+
+                if ((side != NULL) && (side->menu_type != mSM_OVL_NONE)) {
+                    return;
+                }
             }
 
-            if ((side != NULL) && (side->menu_type != mSM_OVL_NONE)) {
+            /* Pad 0 in this play is the resident. Anyone else must not open
+             * the town submenu: that panel is the indoor resident's mail. */
+            if ((pad != 0) || (opener_slot != pl_no)) {
+                s_mbx_menu_open[actor->arrange_idx] = FALSE;
+                mPlib_request_main_mail_land_from_submenu();
+                aMBX_setupAction(actor, aMBX_ACT_PL_CLOSE);
                 return;
             }
-
-            s_mbx_menu_open[actor->arrange_idx] = FALSE;
-        } else
+        } else {
+            mPlib_request_main_mail_land_from_submenu();
+            aMBX_setupAction(actor, aMBX_ACT_PL_CLOSE);
+            return;
+        }
 #endif
         {
             Submenu* submenu = &play->submenu;

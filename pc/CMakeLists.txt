@@ -289,6 +289,7 @@ set(PC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_settings.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_profiler.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_pause_menu.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_world.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_session_menu.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_settings_menu.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_menu_util.c

@@ -7,8 +7,12 @@
 #include "m_play.h"
 #include "libultra/libultra.h"
 #include "m_player_lib.h"
+#include <string.h>
 #include "m_bg_type.h"
 #include "m_fg_type.h"
+#ifdef TARGET_PC
+#include "pc_profiler.h"
+#endif
 
 static mCoBG_Collision_u l_edge_ut = { { 0, 31, 31, 31, 31, 31, mCoBG_ATTRIBUTE_GRASS0 } };
 
@@ -25,6 +29,36 @@ static mFI_col_keep_c l_keepcld[mFI_NUM_COL_KEEP] = {
 
 extern void mFI_ClearFieldData() {
     g_fdinfo = NULL;
+}
+
+/* Per-acre fg generation for the PC per-view prop table cache: a prop table
+ * built for acre (bx,bz) stays valid until that acre's fg data is written or
+ * the field is (re)made. The epoch makes every acre of a freshly made field
+ * differ from every cached entry of the previous one. */
+static u32 l_fg_block_gen[BLOCK_TOTAL_NUM];
+static u32 l_fg_gen_epoch;
+
+extern u32 mFI_BlockFgGen(int bx, int bz) {
+    if (mFI_CheckFieldData() == FALSE || mFI_BlockCheck(bx, bz) == FALSE) {
+        return 0;
+    }
+
+    return l_fg_block_gen[mFI_GetBlockNum(bx, bz)];
+}
+
+extern void mFI_BumpBlockFgGen(int bx, int bz) {
+    if (mFI_BlockCheck(bx, bz) == TRUE) {
+        l_fg_block_gen[mFI_GetBlockNum(bx, bz)] = ++l_fg_gen_epoch;
+    }
+}
+
+extern void mFI_NewFieldFgGen() {
+    int i;
+
+    l_fg_gen_epoch++;
+    for (i = 0; i < BLOCK_TOTAL_NUM; i++) {
+        l_fg_block_gen[i] = l_fg_gen_epoch;
+    }
 }
 
 extern int mFI_CheckFieldData() {
@@ -618,7 +652,12 @@ static void mFI_DmaBg() {
                        Common_Get(remove_cut_tree_info_bitfield) | (1 << bg_info->bg_num));
             bg_info->dma_active = FALSE;
 
+#ifndef TARGET_PC
+            /* Retail paced the hardware DMA at one block per frame, and props
+             * gated on dma_loaded popped in behind their terrain. On PC the
+             * "DMA" is instant, so complete every pending block. */
             break;
+#endif
         }
 
         bg_info++;
@@ -1315,6 +1354,7 @@ extern int mFI_BlockUtNumtoFGSet(mActor_name_t item, int bx, int bz, int ut_x, i
 
         res = TRUE;
         fg_p[ut_num] = item;
+        mFI_BumpBlockFgGen(bx, bz);
     }
 
     return res;
@@ -1352,7 +1392,8 @@ extern int mFI_UtNumtoFGSet_common(mActor_name_t item, int ut_x, int ut_z, int u
 #endif
 
     g_fdinfo->block_info[block_num].fg_info.items_p[ut_num] = item;
-    
+    mFI_BumpBlockFgGen(bx, bz);
+
     if (update) {
         mFI_SetFGUpData();
     }
@@ -1376,6 +1417,7 @@ static int mFI_UtNum2FGSet_layer(mActor_name_t item, int ut_x, int ut_z, int lay
             mFI_GetUtNumInBK(&b_ut_x, &b_ut_z, ut_x, ut_z);
             num = mFI_GetUtNum(b_ut_x, b_ut_z);
             fg_layer_p[num] = item;
+            mFI_BumpBlockFgGen(bx, bz);
             mFI_SetFGUpData();
             res = TRUE;
         }
@@ -1570,69 +1612,51 @@ extern int mFI_GetItemTable(mFI_item_table_c* item_table, xyz_t wpos, char* file
     return mFI_GetItemTable_NoReset(item_table, wpos);
 }
 
-static void mFI_AddViewItemBlock(mFI_item_table_c* item_table, int block_x, int block_z) {
-    if ((item_table->count >= mFM_VISIBLE_BLOCK_NUM) || (mFI_BlockCheck(block_x, block_z) == FALSE)) {
-        return;
-    }
-
-    mFI_SetBlockTable(&item_table->block_info_tbl[item_table->count], block_x, block_z);
-    item_table->count++;
-}
-
-/* Blocks retail would show around one position: the block the position is in
- * plus the nearest blocks toward the edges the position is near. Mirrors the
- * choice in mFI_BGDisplayListRefresh, but reads block item data directly, so a
- * split view can build its own prop table without touching the DMA window or
- * the selected resident's tables. */
-extern int mFI_GetViewItemTable(mFI_item_table_c* item_table, xyz_t wpos) {
-    u8 where_bitfield = 0;
-    int block_x = 0;
-    int block_z = 0;
+/* The block window around one position: 5x5 blocks, bottom row (+z) to top
+ * row (-z), left to right — the same pattern the terrain draw table uses
+ * (aFD_SetBlockTable). Retail drew 3x3 terrain and a 4-block prop window,
+ * both sized for the 4:3 camera; the widescreen window sees past them and
+ * content popped in at the screen edge (title demo, sprint crossings).
+ * Fills up to max_num mFI_block_tbl_c entries via mFI_SetBlockTable — it
+ * reads block item data directly and does not touch
+ * remove_cut_tree_info_bitfield, mFI_DmaBg or the DMA window. Returns how
+ * many blocks were filled (0 when wpos is off the field). */
+extern int mFI_GetViewBlocksAround(mFI_block_tbl_c* block_tbl, int max_num, xyz_t wpos) {
+    static s8 draw_block_offset_table[25][2] = {
+        { -2, 2 },  { -1, 2 },  { 0, 2 },  { 1, 2 },  { 2, 2 },
+        { -2, 1 },  { -1, 1 },  { 0, 1 },  { 1, 1 },  { 2, 1 },
+        { -2, 0 },  { -1, 0 },  { 0, 0 },  { 1, 0 },  { 2, 0 },
+        { -2, -1 }, { -1, -1 }, { 0, -1 }, { 1, -1 }, { 2, -1 },
+        { -2, -2 }, { -1, -2 }, { 0, -2 }, { 1, -2 }, { 2, -2 },
+    };
+    int count = 0;
+    int block_x;
+    int block_z;
     int i;
 
-    item_table->count = 0;
-
     if (mFI_Wpos2BlockNum(&block_x, &block_z, wpos) == FALSE) {
-        return FALSE;
+        return 0;
     }
 
-    mFI_WhereisInBlock(&where_bitfield, wpos);
+    for (i = 0; i < 25 && count < max_num; i++) {
+        int bx = block_x + draw_block_offset_table[i][0];
+        int bz = block_z + draw_block_offset_table[i][1];
 
-    if (g_fdinfo->block_info[mFI_GetBlockNum(block_x, block_z)].bg_info.bg_id.combination_type != BG_TYPE_292) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z);
-    }
-
-    if ((where_bitfield & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x - 1, block_z);
-    } else if (((where_bitfield >> 2) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x + 1, block_z);
-    }
-
-    if (((where_bitfield >> 3) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z - 1);
-
-        if ((where_bitfield & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x - 1, block_z - 1);
-        } else if (((where_bitfield >> 2) & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x + 1, block_z - 1);
-        }
-    } else if (((where_bitfield >> 5) & 1) != 0) {
-        mFI_AddViewItemBlock(item_table, block_x, block_z + 1);
-
-        if ((where_bitfield & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x - 1, block_z + 1);
-        } else if (((where_bitfield >> 2) & 1) != 0) {
-            mFI_AddViewItemBlock(item_table, block_x + 1, block_z + 1);
+        if (mFI_BlockCheck(bx, bz)) {
+            mFI_SetBlockTable(&block_tbl[count], bx, bz);
+            count++;
         }
     }
 
-    for (i = item_table->count; i < mFM_VISIBLE_BLOCK_NUM; i++) {
-        item_table->block_info_tbl[i].block_x = 0xFF;
-        item_table->block_info_tbl[i].block_z = 0xFF;
-        item_table->block_info_tbl[i].items = NULL;
+    return count;
+}
+
+extern int mFI_BkNum2CombinationType(int bx, int bz) {
+    if (mFI_CheckFieldData() == FALSE || mFI_BlockCheck(bx, bz) == FALSE) {
+        return -1;
     }
 
-    return TRUE;
+    return g_fdinfo->block_info[mFI_GetBlockNum(bx, bz)].bg_info.bg_id.combination_type;
 }
 
 extern int mFI_FGisUpDate() {
@@ -1678,6 +1702,9 @@ extern void mFI_SetBearActor(GAME_PLAY* play, xyz_t wpos, int set_flag) {
     int bx;
     int bz;
 
+#ifdef TARGET_PC
+    pc_profiler_mark_event();
+#endif
     g_fdinfo->born_actor = TRUE;
     mFI_Wpos2BlockNum(&bx, &bz, wpos);
 
@@ -2099,6 +2126,20 @@ extern mFM_move_actor_c* mFI_MoveActorListDma(int bx, int bz) {
     return move_actor_list;
 }
 
+/* Same copy into a caller-owned buffer. BIRTH_CONTROL_ACTOR.move_actor_data
+ * aliases the shared static behind mFI_MoveActorListDma, so the wide window
+ * spawn (which DMAs many acres per frame) must not touch it. */
+extern mFM_move_actor_c* mFI_MoveActorListDmaTo(mFM_move_actor_c* dst, int bx, int bz) {
+    int num = mFI_GetBlockNum(bx, bz);
+
+    if (mFI_BlockCheck(bx, bz)) {
+        bcopy(g_fdinfo->block_info[num].fg_info.move_actors, dst, mFM_MOVE_ACTOR_NUM * sizeof(mFM_move_actor_c));
+        return dst;
+    }
+
+    return NULL;
+}
+
 extern void mFI_InitMoveActorBitData() {
     int bx_max = mFI_GetBlockXMax();
     int bz_max = mFI_GetBlockZMax();
@@ -2158,7 +2199,7 @@ extern int mFI_GetNextBlockNum(int* bx, int* bz) {
     int res = FALSE;
     int res2;
 
-    if (Common_Get(player_actor_exists)) {
+    if (Common_Get(player_actor_exists) && GET_PLAYER_ACTOR_NOW() != NULL) {
         res = ((*GET_PLAYER_ACTOR_NOW()->Get_WadeEndPos_proc)(gamePT, &end_pos));
     }
 
@@ -2500,6 +2541,7 @@ static void mFI_ClearHoleBlock_sub(mActor_name_t* fg_items_p) {
 
 extern void mFI_ClearHoleBlock(int bx, int bz) {
     mFI_ClearHoleBlock_sub(mFI_BkNumtoUtFGTop(bx, bz));
+    mFI_BumpBlockFgGen(bx, bz);
 }
 
 extern void mFI_ClearBeecomb(int bx, int bz) {
@@ -2514,6 +2556,7 @@ extern void mFI_ClearBeecomb(int bx, int bz) {
 
             fg_items_p++;
         }
+        mFI_BumpBlockFgGen(bx, bz);
     }
 }
 
@@ -3636,3 +3679,41 @@ extern void mFI_PullTanukiPathTrees() {
         }
     }
 }
+
+#ifdef TARGET_PC
+typedef struct {
+    mFI_register_bg_info_c bg[mFM_VISIBLE_BLOCK_NUM];
+    mFI_col_keep_c keep[mFI_NUM_COL_KEEP];
+    mFI_block_area_info_c barea;
+    u32 player_bk_kind;
+    int player_wade;
+    int now_bg_num;
+    int climate;
+} mFI_world_state_c;
+
+_Static_assert(sizeof(mFI_world_state_c) <= PC_MFI_STATE_BYTES, "field world state");
+
+extern void mFI_world_store(void* dst) {
+    mFI_world_state_c* state = (mFI_world_state_c*)dst;
+
+    memcpy(state->bg, l_register_bg_info, sizeof(state->bg));
+    memcpy(state->keep, l_keepcld, sizeof(state->keep));
+    state->barea = l_barea;
+    state->player_bk_kind = l_mfi_player_bk_kind;
+    state->player_wade = l_player_wade;
+    state->now_bg_num = mFI_now_bg_num;
+    state->climate = l_mFI_climate;
+}
+
+extern void mFI_world_load(const void* src) {
+    const mFI_world_state_c* state = (const mFI_world_state_c*)src;
+
+    memcpy(l_register_bg_info, state->bg, sizeof(state->bg));
+    memcpy(l_keepcld, state->keep, sizeof(state->keep));
+    l_barea = state->barea;
+    l_mfi_player_bk_kind = state->player_bk_kind;
+    l_player_wade = state->player_wade;
+    mFI_now_bg_num = state->now_bg_num;
+    l_mFI_climate = state->climate;
+}
+#endif

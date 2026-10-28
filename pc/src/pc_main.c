@@ -264,6 +264,40 @@ static int pc_parse_rain_intensity(const char* text) {
     return -1;
 }
 
+/* TEMP DIAG: record the faulting address of a crash. The exe keeps its symbol
+ * table, so the reported rva can be resolved with addr2line/nm. Remove once the
+ * indoors transition is confirmed. */
+#ifdef _WIN32
+static LONG WINAPI pc_crash_filter(EXCEPTION_POINTERS* info) {
+    HMODULE exe = GetModuleHandle(NULL);
+    unsigned int base = (unsigned int)(uintptr_t)exe;
+    unsigned int addr = (unsigned int)(uintptr_t)info->ExceptionRecord->ExceptionAddress;
+    unsigned int* frame = (unsigned int*)(uintptr_t)info->ContextRecord->Esp;
+    FILE* f = fopen("crash_log.txt", "w");
+    int i;
+
+    if (f != NULL) {
+        fprintf(f, "code=0x%08X addr=0x%08X base=0x%08X rva=0x%08X\n",
+                (unsigned int)info->ExceptionRecord->ExceptionCode, addr, base, addr - base);
+        fprintf(f, "eip=0x%08X esp=0x%08X ebp=0x%08X\n", (unsigned int)info->ContextRecord->Eip,
+                (unsigned int)info->ContextRecord->Esp, (unsigned int)info->ContextRecord->Ebp);
+        if (info->ExceptionRecord->NumberParameters >= 2) {
+            /* 0 = read, 1 = write; the second is the address that faulted. */
+            fprintf(f, "access=%u addr_accessed=0x%08X\n",
+                    (unsigned int)info->ExceptionRecord->ExceptionInformation[0],
+                    (unsigned int)info->ExceptionRecord->ExceptionInformation[1]);
+        }
+        for (i = 0; i < 64; i++) {
+            if (IsBadReadPtr(frame + i, sizeof(unsigned int)) == FALSE) {
+                fprintf(f, "stack[%02d]=0x%08X\n", i, frame[i]);
+            }
+        }
+        fclose(f);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
 int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -387,6 +421,9 @@ int main(int argc, char* argv[]) {
 #endif
 
     SDL_SetMainReady();
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(pc_crash_filter);
+#endif
     pc_settings_load();
     pc_keybindings_load();
     pc_platform_init();

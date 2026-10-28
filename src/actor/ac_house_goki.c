@@ -431,7 +431,12 @@ static void aHG_actor_move(ACTOR* actorx, GAME* game) {
         aHG_setupAction(goki, game, aHG_ACT_DEAD);
     }
 
-    (*goki->act_proc)(actorx, game);
+#ifdef TARGET_PC
+    if (goki->act_proc != NULL)
+#endif
+    {
+        (*goki->act_proc)(actorx, game);
+    }
 }
 
 extern Gfx act_m_house_goki1T_model[];

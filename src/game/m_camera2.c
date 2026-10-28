@@ -10,6 +10,9 @@
 #include "m_scene_table.h"
 #include "m_common_data.h"
 #include "m_field_make.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 #if VERSION >= VER_GAFU01_00
 #define CAMERA2_STAFFROLL_CENTER_X_ROT_STEP_DIVISOR 3333
@@ -198,6 +201,22 @@ static void Camera2_SetDirectionAngleXYZ(GAME_PLAY* play, const s_xyz* goal_dir,
     *dir = *goal_dir;
 }
 
+/* The selected resident can be in another play. Cull and the outdoor camera
+ * then follow the view's player, or the guest still in this one. */
+static PLAYER_ACTOR* Camera2_focus_player(GAME_PLAY* play) {
+    PLAYER_ACTOR* player;
+
+#ifdef TARGET_PC
+    player = mPlib_view_player_actor(play);
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#else
+    player = get_player_actor_withoutCheck(play);
+#endif
+    return player;
+}
+
 static void Camera2_SetView(GAME_PLAY* play) {
     Camera2* camera = &play->camera;
     xyz_t* eye;
@@ -219,16 +238,24 @@ static void Camera2_SetView(GAME_PLAY* play) {
         camera->perspective.far = 1600.0f;
     } else {
         if (camera->now_main_index != CAMERA2_PROCESS_LOCK) {
-            f32 dist_from_player = Math3DLength(eye, &get_player_actor_withoutCheck(play)->actor_class.world.position);
-            f32 dt = play->game.graph->dt_num_60fps_frames;
+            PLAYER_ACTOR* focus = Camera2_focus_player(play);
+            f32 dist_from_player;
 
-            if (dist_from_player < 540.0f) {
-                chase_f(&camera->perspective.near, 145.0f, 4.0f * dt);
+            if (focus == NULL) {
+                camera->perspective.near = 200.0f;
+                camera->perspective.far = 1600.0f;
             } else {
-                chase_f(&camera->perspective.near, 200.0f, 4.0f * dt);
-            }
+                f32 dt = play->game.graph->dt_num_60fps_frames;
 
-            camera->perspective.far = 1600.0f;
+                dist_from_player = Math3DLength(eye, &focus->actor_class.world.position);
+                if (dist_from_player < 540.0f) {
+                    chase_f(&camera->perspective.near, 145.0f, 4.0f * dt);
+                } else {
+                    chase_f(&camera->perspective.near, 200.0f, 4.0f * dt);
+                }
+
+                camera->perspective.far = 1600.0f;
+            }
         }
     }
 
@@ -563,8 +590,45 @@ static void Camera2_Get_GoalDistanceAndDirection_forPlayer(GAME_PLAY* play, PLAY
     Camera2_main_Normal_AdjustDistanceAndDirection(play, dist, dir);
 }
 
+#ifdef TARGET_PC
+/* The town picture follows the resident who stayed outside. A guest walking
+ * out is what get_player returns for that animation, and the view then races
+ * from the plaza to the door. */
+static PLAYER_ACTOR* Camera2_follow_player(GAME_PLAY* play) {
+    int session = (int)Common_Get(player_no);
+    PLAYER_ACTOR* session_actor;
+    int i;
+
+    if ((session < 0) || (session >= PLAYER_NUM)) {
+        session = 0;
+    }
+
+    session_actor = get_player_actor_by_index(play, session);
+
+    /* Pad 0 is whoever stayed on this picture. A guest walking out of any
+     * building must not become the goal, or the view pans from the plaza. */
+    for (i = 0; i < PLAYER_NUM; i++) {
+        PLAYER_ACTOR* who = get_player_actor_by_index(play, i);
+
+        if ((who != NULL) && (mPlib_pad_for_player_slot(i) == 0)) {
+            return who;
+        }
+    }
+
+    if (session_actor != NULL) {
+        return session_actor;
+    }
+
+    return get_player_actor_withoutCheck(play);
+}
+#endif
+
 static void Camera2_Get_GoalDistanceAndDirection(GAME_PLAY* play, f32* dist, s_xyz* dir) {
+#ifdef TARGET_PC
+    Camera2_Get_GoalDistanceAndDirection_forPlayer(play, Camera2_follow_player(play), dist, dir);
+#else
     Camera2_Get_GoalDistanceAndDirection_forPlayer(play, get_player_actor_withoutCheck(play), dist, dir);
+#endif
 }
 
 /* Goal distance and direction for one player, including its own top-edge swing.
@@ -783,7 +847,12 @@ extern int Camera2_CheckEnterCullingArea(f32 pos_x, f32 pos_z, f32 width) {
             actor0 = camera->main_data.talk.speaker_actor;
             actor1 = camera->main_data.talk.listener_actor;
         } else {
-            actor1 = &get_player_actor_withoutCheck(play)->actor_class;
+            PLAYER_ACTOR* focus = Camera2_focus_player(play);
+
+            if (focus == NULL) {
+                return FALSE;
+            }
+            actor1 = &focus->actor_class;
             actor0 = actor1;
         }
 
@@ -1433,9 +1502,20 @@ static void Camera2_main_Normal_SetEndCenterPos_forPlayer(GAME_PLAY* play, PLAYE
 }
 
 static void Camera2_main_Normal_SetEndCenterPos_fromPlayer(GAME_PLAY* play, xyz_t* end_center_pos) {
+#ifdef TARGET_PC
+    PLAYER_ACTOR* player = Camera2_follow_player(play);
+#else
     PLAYER_ACTOR* player = get_player_actor_withoutCheck(play);
+#endif
     int block_x;
     int block_z;
+
+    /* The resident is indoors, or the door camera ran after that actor was
+     * dropped. Keep the center already on this camera. */
+    if (player == NULL) {
+        *end_center_pos = play->camera.lookat.center;
+        return;
+    }
 
     if (mFI_Wpos2BlockNum(&block_x, &block_z, player->actor_class.world.position) == FALSE) {
         block_x = play->block_table.block_x;
@@ -2021,6 +2101,28 @@ static void Camera2_Door_SetTalking_Cull(GAME_PLAY* play) {
 }
 
 static void Camera2_main_Door(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    /* A guest's walk-out asked for the door camera. Put the town picture back
+     * on the resident who stayed outside before it can leave the plaza. */
+    {
+        int session = (int)Common_Get(player_no);
+        int i;
+
+        for (i = 0; i < PLAYER_NUM; i++) {
+            PLAYER_ACTOR* who = get_player_actor_by_index(play, i);
+
+            if ((who == NULL) || (mPlib_pad_for_player_slot(i) <= 0)) {
+                continue;
+            }
+
+            if ((pc_world_door_return_pending(i) != FALSE) || (who->now_main_index == mPlayer_INDEX_OUTDOOR)) {
+                Camera2_request_main_normal(play, 0, 99);
+                Camera2_change_main_index(play);
+                return;
+            }
+        }
+    }
+#endif
     Camera2_SetPos_Door(play);
     Camera2_sound_Set_Ground(play);
     Camera2_SetMicPos(play);

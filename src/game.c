@@ -213,6 +213,25 @@ extern void game_resize_hyral(GAME* this, int size) {
     }
 }
 
+#ifdef TARGET_PC
+extern void game_child_ct(GAME* this, void (*init)(GAME*), GRAPH* graph) {
+    GAME* saved = gamePT;
+
+    this->graph = graph;
+    this->frame_counter = 0;
+    this->exec = NULL;
+    this->cleanup = NULL;
+    this->doing = TRUE;
+    this->pad_initialized = TRUE;
+    GAME_NEXT_GAME_NULL(this);
+    gamealloc_init(&this->gamealloc);
+    game_init_hyral(this, GAME_HYRAL_SIZE);
+    gamePT = this;
+    init(this);
+    gamePT = saved;
+}
+#endif
+
 extern void game_ct(GAME* this, void (*init)(GAME*), GRAPH* graph) {
     gamePT = this;
     graph->need_viupdate = TRUE;

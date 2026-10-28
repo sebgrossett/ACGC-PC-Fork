@@ -290,7 +290,12 @@ extern void mFI_InitItemTable(mFI_item_table_c* vis_block_info);
 extern int mFI_GetOldItemTableIdx(int n);
 extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos);
 extern int mFI_GetItemTable(mFI_item_table_c* item_table, xyz_t wpos, char* file, int line);
-extern int mFI_GetViewItemTable(mFI_item_table_c* item_table, xyz_t wpos);
+extern int mFI_GetViewBlocksAround(mFI_block_tbl_c* block_tbl, int max_num, xyz_t wpos);
+extern mFM_move_actor_c* mFI_MoveActorListDmaTo(mFM_move_actor_c* dst, int bx, int bz);
+extern int mFI_BkNum2CombinationType(int bx, int bz);
+extern u32 mFI_BlockFgGen(int bx, int bz);
+extern void mFI_BumpBlockFgGen(int bx, int bz);
+extern void mFI_NewFieldFgGen();
 extern int mFI_FGisUpDate();
 extern void mFI_SetFGUpData();
 extern void mFI_BornItemON();
@@ -365,6 +370,11 @@ extern void mFI_SetClimate(int climate);
 extern int mFI_CheckBeforeScenePerpetual();
 extern void mFI_ChangeClimate_ForEventNotice();
 extern void mFI_PullTanukiPathTrees();
+#ifdef TARGET_PC
+#define PC_MFI_STATE_BYTES 1024
+extern void mFI_world_store(void* dst);
+extern void mFI_world_load(const void* src);
+#endif
 
 #ifdef __cplusplus
 }

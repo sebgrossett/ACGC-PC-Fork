@@ -22,9 +22,20 @@ static void aTR0_set_effect(ACTOR* actor, GAME* game) {
     xyz_t pos;
     xyz_t clip_pos;
 
-    /* Cooldown is in 60Hz units, gate it so spawns don't pile at high fps. */
+    /* Cooldown is in 60Hz units. One step per game frame, or each train adds
+     * dt again and the smoke piles up. */
     static float dt_accum = 0.0f;
-    int ticks = graph_dt_60hz_ticks(game, &dt_accum);
+    static u32 dt_frame = 0xFFFFFFFFu;
+    static int dt_ticks = 0;
+    u32 frame = ((GAME_PLAY*)game)->game_frame;
+    int ticks;
+
+    if (dt_frame != frame) {
+        dt_frame = frame;
+        dt_ticks = graph_dt_60hz_ticks(game, &dt_accum);
+    }
+
+    ticks = dt_ticks;
     int t;
     for (t = 0; t < ticks; t++) {
         if (train0->arg1 <= 0) {

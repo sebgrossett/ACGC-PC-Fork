@@ -1,4 +1,7 @@
 #include "m_scene.h"
+#ifdef TARGET_PC
+#include "pc_world.h"
+#endif
 
 #include "m_player_lib.h"
 #include "libultra/libultra.h"
@@ -132,6 +135,34 @@ extern void mSc_regist_initial_exchange_bank(GAME_PLAY* play) {
     play->object_exchange.exchange_id = play->object_exchange.bank_idx; /* leftover from DnM? */
 }
 
+#ifdef TARGET_PC
+/* Inventory close reloads every bank. A destination outside this play's
+ * arena is the second-leave hang: the copy walks the heap, then the return
+ * spawn never comes back. */
+static int mSc_bank_dma_in_arena(Object_Bank_c* bank, Object_Exchange_c* exchange) {
+    int part;
+
+    if ((bank->dma_start == NULL) || (bank->size == 0)) {
+        return FALSE;
+    }
+
+    for (part = 0; part < 2; part++) {
+        char* start = exchange->start_address_save[part];
+        char* end = exchange->end_address_save[part];
+
+        if ((start == NULL) || (end <= start)) {
+            continue;
+        }
+
+        if ((bank->dma_start >= start) && (bank->size <= (size_t)(end - bank->dma_start))) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+#endif
+
 static void mSc_dmacopy_all_exchange_bank_sub(Object_Bank_c* bank, Object_Exchange_c* exchange, int idx) {
     if (idx >= exchange->exchange_id) {
         char* area = (char*)ALIGN_NEXT((u32)exchange->next_bank_ram_address + bank->size, 32);
@@ -149,6 +180,11 @@ static void mSc_dmacopy_all_exchange_bank_sub(Object_Bank_c* bank, Object_Exchan
         exchange->next_bank_ram_address = area;
     }
 
+#ifdef TARGET_PC
+    if (mSc_bank_dma_in_arena(bank, exchange) == FALSE) {
+        return;
+    }
+#endif
     _JW_GetResourceAram(bank->rom_addr, (u8*)bank->dma_start, bank->size);
     DCStoreRangeNoSync(bank->dma_start, bank->size);
     mSc_set_bank_status_after(bank);
@@ -514,6 +550,15 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
     int res = 0; // failed
 
     if (player != NULL) {
+#ifdef TARGET_PC
+        /* A leftover entrance wipe is not an exit. Leaving it up makes
+         * goto return "already changing" and the door walk never finishes. */
+        if ((play->fb_wipe_mode != WIPE_MODE_NONE) &&
+            ((play->fb_fade_type == FADE_TYPE_NONE) || (play->fb_fade_type == FADE_TYPE_IN))) {
+            play->fb_wipe_mode = WIPE_MODE_NONE;
+            play->fb_fade_type = FADE_TYPE_NONE;
+        }
+#endif
         if (play->fb_wipe_mode == WIPE_MODE_NONE) {
             play->fb_fade_type = FADE_TYPE_OUT;
 
@@ -537,6 +582,43 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
 
             restore_fgdata_all(play);
             play->game.pad_initialized = FALSE;
+#ifdef TARGET_PC
+            {
+                /* The wipe finishes after this demo ends. Remember who is
+                 * walking in so the interior spawns that resident. */
+                PLAYER_ACTOR* who = mPlib_demo_talker();
+                int slot = -1;
+
+                if (who == NULL) {
+                    /* A player-request walk-in has no demo talker. Whoever is
+                     * in the DOOR state is the walker; the fall-back below
+                     * would name the selected resident, who may be someone
+                     * else entirely in co-op. */
+                    who = get_player_actor_withoutCheck(play);
+                    if ((who == NULL) || (who->now_main_index != mPlayer_INDEX_DOOR)) {
+                        int i;
+                        int count = mPlib_extra_player_count();
+
+                        who = NULL;
+                        for (i = 0; i < count; i++) {
+                            PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+                            if ((guest != NULL) && (guest->now_main_index == mPlayer_INDEX_DOOR)) {
+                                who = guest;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (who != NULL) {
+                    slot = mPlib_player_slot_of(who);
+                }
+                if (slot < 0) {
+                    slot = (int)Common_Get(player_no);
+                }
+                pc_world_note_entering(slot);
+            }
+#endif
             res = 1; // success
         } else {
             res = 2; // already changing scenes

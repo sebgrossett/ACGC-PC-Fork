@@ -29,6 +29,16 @@ static s16 direct_back_angle[mDemo_DIRECT_NUM] = { 0x0000, 0xE000, 0xC000, 0xA00
 static mDemo_Data_c demo_data;
 static mDemo_Data_c* const demo = &demo_data;
 
+#ifdef TARGET_PC
+extern void mDemo_world_store(mDemo_Data_c* dst) {
+    *dst = demo_data;
+}
+
+extern void mDemo_world_load(const mDemo_Data_c* src) {
+    demo_data = *src;
+}
+#endif
+
 static int mDemo_Check_talk_type() {
     int res = FALSE;
 
@@ -268,6 +278,19 @@ static int change_camera(int camera_type) {
     player = GET_PLAYER_ACTOR_NOW();
     play = (GAME_PLAY*)gamePT;
 
+#ifdef TARGET_PC
+    /* A door camera on this play swings the picture that is already here.
+     * The walk-out of somebody else must not pull it from the plaza to the
+     * shop. A guest talk keeps the follow that was already running. */
+    if ((camera_type == CAMERA2_PROCESS_DOOR) && (player != NULL) &&
+        (player != get_player_actor_by_index(play, (int)Common_Get(player_no)))) {
+        return FALSE;
+    }
+    if ((mPlib_demo_talker_is_guest() != FALSE) && (camera_type != CAMERA2_PROCESS_NORMAL)) {
+        camera_type = CAMERA2_PROCESS_NORMAL;
+    }
+#endif
+
     if (camera_type == play->camera.now_main_index) {
         return FALSE;
     }
@@ -429,6 +452,15 @@ static int set_talk_default() {
 
 static int wait_talk_start() {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_demo_talker();
+    }
+    if (player == NULL) {
+        return FALSE;
+    }
+#endif
 
     if (demo->data.talk.change_player) {
         if (mPlib_get_player_actor_main_index(gamePT) != 65 &&
@@ -742,9 +774,18 @@ static f32 weight_of_talk_position(ACTOR* actor) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
     f32 actor_talk_dist;
     f32 player_dist;
-    f32 dist_y = player->actor_class.world.position.y - actor->world.position.y;
-    s16 diff_y = player->actor_class.shape_info.rotation.y - actor->player_angle_y;
+    f32 dist_y;
+    s16 diff_y;
     s16 angle_y;
+
+#ifdef TARGET_PC
+    /* Town NPCs still request talk after the last outdoor resident leaves. */
+    if (player == NULL) {
+        return -99.0f;
+    }
+#endif
+    dist_y = player->actor_class.world.position.y - actor->world.position.y;
+    diff_y = player->actor_class.shape_info.rotation.y - actor->player_angle_y;
 
     if (dist_y < 0.0f) {
         dist_y = -dist_y;
@@ -907,6 +948,16 @@ static int choice_demo_sub() {
             mPlib_demo_context_begin((GAME_PLAY*)gamePT);
             check_ok = talk_check() != FALSE;
             mPlib_demo_context_end((GAME_PLAY*)gamePT);
+        } else if (((type == mDemo_TYPE_DOOR) || (type == mDemo_TYPE_DOOR2)) && (request->pc_owner_pad > 0)) {
+            /* A guest at a door. The priority check has to see that player. */
+            int saved_slot = mPlib_demo_talker_slot();
+
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+            mPlib_set_demo_talker_by_slot(request->pc_owner_slot);
+            mPlib_demo_context_begin((GAME_PLAY*)gamePT);
+            check_ok = (*check_func[type])() != FALSE;
+            mPlib_demo_context_end((GAME_PLAY*)gamePT);
+            mPlib_set_demo_talker_by_slot(saved_slot);
         } else {
             check_ok = (*check_func[type])() != FALSE;
         }
@@ -1205,8 +1256,13 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
 
                     pad = mPlib_pad_for_player(owner);
                 } else {
+                    /* Shop talk names no one. The interior's player_no is the
+                     * resident inside, and their buttons are not pad 0. */
                     slot = (int)Common_Get(player_no);
-                    pad = 0;
+                    pad = mPlib_pad_for_player_slot(slot);
+                    if (pad < 0) {
+                        pad = 0;
+                    }
                 }
 
                 /* A player with a menu open must not have a demo started on them. */
@@ -1260,7 +1316,7 @@ static void mDemo_side_reset(void) {
     memset(&s_side, 0, sizeof(s_side));
 }
 
-static void mDemo_side_begin_frame(void) {
+extern void mDemo_side_begin_frame(void) {
     if (s_side.close_next) {
         mDemo_side_reset();
         return;
@@ -1364,7 +1420,7 @@ static void mDemo_side_apply_proc(GAME_PLAY* play, mDemo_Request_c* request) {
     demo->listen_actor = saved_listen;
 }
 
-static void mDemo_side_try(GAME_PLAY* play) {
+extern void mDemo_side_try(GAME_PLAY* play) {
     f32 best_weight = -1.0f;
     int best = -1;
     int i;
@@ -1540,12 +1596,26 @@ extern int mDemo_End(ACTOR* actor) {
 
 extern void mDemo_Main(GAME_PLAY* play) {
 #ifdef TARGET_PC
-    mDemo_side_begin_frame();
+    /* The town move clears the talker whenever its own demo is idle. Name
+     * this world's owner again or the window stays on the other half. */
+    if (demo->state != mDemo_STATE_WAIT) {
+        int slot = demo->current.pc_owner_slot;
+
+        if ((slot < 0) || (slot >= PLAYER_NUM)) {
+            slot = (int)Common_Get(player_no);
+        }
+
+        mPlib_set_demo_talker_by_slot(slot);
+        if (mPlib_demo_talker() == NULL) {
+            PLAYER_ACTOR* who = GET_PLAYER_ACTOR(play);
+
+            if (who != NULL) {
+                mPlib_set_demo_talker(who);
+            }
+        }
+    }
 #endif
     main_proc();
-#ifdef TARGET_PC
-    mDemo_side_try(play);
-#endif
 }
 
 extern void mDemo_Init(GAME_PLAY* play) {

@@ -87,6 +87,11 @@ static void aCNV_actor_ct(ACTOR* actorx, GAME* game) {
     conveni = (CONVENI_ACTOR*)actorx;
     play = (GAME_PLAY*)game;
     player = GET_PLAYER_ACTOR_ACTOR(play);
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = (ACTOR*)mPlib_extra_player_at(0);
+    }
+#endif
 
     conveni->struct_class.season = Common_Get(time.season);
     action = aCNV_ACTION_CLOSE_WAIT;
@@ -103,7 +108,11 @@ static void aCNV_actor_ct(ACTOR* actorx, GAME* game) {
 
     x = (int)(conveni->struct_class.actor_class.world.position.x - 42.00f);
     z = (int)(conveni->struct_class.actor_class.world.position.z + 98.57f);
+#ifdef TARGET_PC
+    if (player != NULL && (int)player->world.position.x == x && (int)player->world.position.z == z) {
+#else
     if ((int)player->world.position.x == x && (int)player->world.position.z == z) {
+#endif
         action = aCNV_ACTION_OPEN_WAIT;
     }
 

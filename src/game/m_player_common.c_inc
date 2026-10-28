@@ -148,6 +148,18 @@ static void Player_actor_Set_start_refuse(ACTOR* actorx, GAME* game) {
     int idx = player->now_main_index;
     GAME_PLAY* play = (GAME_PLAY*)game;
 
+#ifdef TARGET_PC
+    /* This submenu belongs to the play's own resident. A guest in the door
+     * used to raise start_refuse here, and it stayed up after they went in. */
+    {
+        int slot = mPlib_player_slot_of(player);
+
+        if ((slot >= 0) && (slot != (int)Common_Get(player_no))) {
+            return;
+        }
+    }
+#endif
+
     if (mPlayer_MAIN_INDEX_VALID(idx) != FALSE) {
         if (data[idx]) {
             play->submenu.start_refuse = FALSE;
@@ -2480,7 +2492,11 @@ static int Player_actor_Set_Item_net_catch_request_table(ACTOR* actorx, GAME* ga
                                                          const xyz_t* pos_p, f32 radius) {
     PLAYER_ACTOR* player = (PLAYER_ACTOR*)actorx;
 
-    if (mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_SWING_NET) {
+    /* The table belongs to this actor. The selected resident may already be
+     * indoors, so the action check cannot go through the host lookup. */
+    (void)game;
+
+    if (player->now_main_index == mPlayer_INDEX_SWING_NET) {
         int catch_num = player->item_net_catch_request_use_count;
 
         if ((catch_num >= 0 && catch_num < mPlayer_NET_CATCH_TABLE_COUNT) &&

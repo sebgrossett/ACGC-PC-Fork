@@ -190,41 +190,51 @@ static f32 aFD_position_offset = 0.0f;
 static void aFD_SetActorPosition(ACTOR* actorx, GAME_PLAY* play) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
 
+    if (player == NULL) {
+        return;
+    }
+
     actorx->world.position = player->actor_class.world.position;
     actorx->world.position.y += aFD_position_offset;
 }
 
-static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player) {
-    /*
-      6 7 8
-      3 4 5
-      0 1 2
-    */
-    static aFD_offset_c draw_block_offset_table[] = {
-        { -1, 1 },  // bot-left
-        { 0, 1 },   // bot
-        { 1, 1 },   // bot-right
-        { -1, 0 },  // left
-        { 0, 0 },   // current
-        { 1, 0 },   // right
-        { -1, -1 }, // top-left
-        { 0, -1 },  // top
-        { 1, -1 },  // top-right
-    };
+/* The selected resident can be in another play (indoors). The field window then
+ * follows the first player still standing in this play. */
+static PLAYER_ACTOR* aFD_Player(GAME_PLAY* play) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
 
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    return player;
+}
+
+static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player) {
+    mFI_block_tbl_c block_tbl[aFD_BLOCK_DRAW_NUM];
     aFD_block_c* block = field_draw->block;
-    int bx = 0;
-    int bz = 0;
+    int count;
     int i;
 
-    mFI_Wpos2BlockNum(&bx, &bz, player->actor_class.world.position);
+    /* 5x5 around the player (mFI_GetViewBlocksAround), bottom row to top row.
+     * Retail drew 3x3, sized for the 4:3 camera — the widescreen window sees
+     * past it, so blocks appeared all at once entering the 3x3 (title demo,
+     * sprint crossings). Off-screen blocks die at the per-block DL cull
+     * (aFD_cull_set_model), so the extra entries are cheap. */
+    count = mFI_GetViewBlocksAround(block_tbl, aFD_BLOCK_DRAW_NUM, player->actor_class.world.position);
 
     for (i = 0; i < aFD_BLOCK_DRAW_NUM; i++) {
-        block->bx = bx + draw_block_offset_table[i].offset_x;
-        block->bz = bz + draw_block_offset_table[i].offset_z;
-        mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
-        block->wpos.y = mFI_BkNum2BaseHeight(block->bx, block->bz);
-        block->exist = TRUE;
+        if (i < count) {
+            block->bx = block_tbl[i].block_x;
+            block->bz = block_tbl[i].block_z;
+            mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
+            block->wpos.y = mFI_BkNum2BaseHeight(block->bx, block->bz);
+            block->exist = TRUE;
+        } else {
+            block->exist = FALSE;
+        }
         block++;
     }
 }
@@ -232,7 +242,11 @@ static void aFD_SetBlockTable(FIELD_DRAW_ACTOR* field_draw, PLAYER_ACTOR* player
 static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     FIELD_DRAW_ACTOR* field_draw = (FIELD_DRAW_ACTOR*)actorx;
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+    PLAYER_ACTOR* player = aFD_Player(play);
+
+    if (player == NULL) {
+        return;
+    }
 
     aFD_SetBlockTable(field_draw, player);
     aFD_SetActorPosition(actorx, play);
@@ -258,12 +272,16 @@ static void Bg_Draw_Actor_dt(ACTOR* actorx, GAME* game) {
 
 static void Bg_Draw_Actor_move(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+    PLAYER_ACTOR* player = aFD_Player(play);
     lbRTC_time_c* rtc_time = Common_GetPointer(time.rtc_time);
     int bx;
     int bz;
     int pond_x;
     int pond_z;
+
+    if (player == NULL) {
+        return;
+    }
 
     aFD_PrepareFieldDraw(actorx, game);
 

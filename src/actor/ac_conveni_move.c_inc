@@ -246,6 +246,11 @@ static void aCNV_open_wait(CONVENI_ACTOR* conveni, GAME_PLAY* play) {
     xyz_t pos;
 
     actorx = (ACTOR*)conveni;
+#ifdef TARGET_PC
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        return;
+    }
+#endif
     if (!mPlib_check_player_actor_main_index_OutDoorMove((GAME*)play)) {
         if (mSP_ShopOpen() != mSP_SHOP_STATUS_OPEN && mSP_ShopOpen() != mSP_SHOP_STATUS_OPENEVENT) {
             aCNV_setup_action(conveni, aCNV_ACTION_CLOSE_DOOR);

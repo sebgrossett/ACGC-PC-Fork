@@ -1,6 +1,6 @@
 static void aNPC_act_clap_main_proc(NPC_ACTOR* nactorx, GAME_PLAY* play) {
-    if (!mPlib_check_player_actor_main_index_catch_insect((GAME*)play) &&
-        !mPlib_check_player_actor_main_index_catch_fish((GAME*)play)) {
+    if (!mPlib_check_player_actor_main_index_catch_insect_player(GET_PLAYER_ACTOR(play)) &&
+        !mPlib_check_player_actor_main_index_catch_fish_player(GET_PLAYER_ACTOR(play))) {
         nactorx->action.step = aNPC_ACTION_END_STEP;
     }
 }

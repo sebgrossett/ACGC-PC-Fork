@@ -127,6 +127,16 @@ static STRUCTURE_ACTOR* aSTR_setupActor_proc(GAME* game, mActor_name_t structure
     pos.y = mCoBG_GetBgY_OnlyCenter_FromWpos2(pos, 0.0f);
     mFI_Wpos2BlockNum(&bx, &bz, pos);
 
+#ifdef TARGET_PC
+    /* The house shifts off its unit in ct, and a later scan can still see the
+     * structure name. A second actor is the second door in the doorway. */
+    str_actor = (STRUCTURE_ACTOR*)Actor_info_fgName_search(&play->actor_info, structure_name, ACTOR_PART_ITEM);
+    if (str_actor != NULL) {
+        mFI_SetFG_common(RSV_NO, pos, FALSE);
+        return str_actor;
+    }
+#endif
+
     str_actor = (STRUCTURE_ACTOR*)Actor_info_make_actor(&play->actor_info, game, profile, pos.x, pos.y, pos.z, 0, 0, 0,
                                                         bx, bz, -1, structure_name, arg, -1, -1);
     if (str_actor != NULL) {

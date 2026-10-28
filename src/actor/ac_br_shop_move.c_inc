@@ -180,6 +180,11 @@ static void aBRS_close_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
 static void aBRS_open_wait(STRUCTURE_ACTOR* actor, GAME_PLAY* play) {
     xyz_t pos;
 
+#ifdef TARGET_PC
+    if (get_player_actor_withoutCheck(play) == NULL) {
+        return;
+    }
+#endif
     if (actor == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
         aBRS_rewrite_out_data(&actor->actor_class, play);
         goto_other_scene(play, &aBRS_br_shop_door_data, 1);

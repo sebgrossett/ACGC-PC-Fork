@@ -7,6 +7,10 @@
 #include "m_player_lib.h"
 #include "m_submenu.h"
 #include "game.h"
+#include "m_controller.h"
+#ifdef TARGET_PC
+#include "pc_settings.h"
+#endif
 
 enum {
     aMBX_ACT_WAIT,

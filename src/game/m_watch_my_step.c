@@ -18,6 +18,10 @@
 #include "audio.h"
 #include "m_scene_table.h"
 #include "m_private.h"
+#ifdef TARGET_PC
+#include "pc_platform.h"
+#include "pc_world.h"
+#endif
 
 extern int Camera2_InDoorCheck(void);
 
@@ -65,6 +69,12 @@ typedef struct mybell_confirmation_s {
 
 static mWt_mybell_confirmation_c S_mybell_conf;
 
+#ifdef TARGET_PC
+/* The town move runs first. An interior move may step the prompt and the
+ * bell once after that. A second interior in the same frame does not. */
+static int s_other_world_stepped;
+#endif
+
 extern void watch_my_step_ct() {
     bzero(&S_watch_my_step, sizeof(mWt_watch_my_step_c));
     S_watch_my_step.item_no = EMPTY_NO;
@@ -78,8 +88,18 @@ extern void watch_my_step_move(GAME_PLAY* play) {
     int can_show =
         play->camera.now_main_index == CAMERA2_PROCESS_NORMAL && play->camera.main_data.normal.morph_counter > 20;
 
+#ifdef TARGET_PC
+    /* Another world steps the indoor prompt and the shop bell. Stepping them
+     * here as well applied dt twice and let the town scene clear the bell. */
+    s_other_world_stepped = FALSE;
+    if (pc_world_live() < 2) {
+        navigate_camera_move(play);
+        mWt_mybell_confirmation_move(play);
+    }
+#else
     navigate_camera_move(play);
     mWt_mybell_confirmation_move(play);
+#endif
 
     S_watch_my_step.draw_type = 0;
 
@@ -130,7 +150,7 @@ extern void watch_my_step_move(GAME_PLAY* play) {
             }
         }
 
-        if (S_watch_my_step.mode != 0) {
+        if ((S_watch_my_step.mode != 0) && (player_actor != NULL)) {
             xyz_t position = player_actor->actor_class.world.position;
             xyz_t screen_pos;
             position.y += 30.0f;
@@ -190,6 +210,18 @@ extern void watch_my_step_move(GAME_PLAY* play) {
     }
 }
 
+#ifdef TARGET_PC
+extern void watch_my_step_other_world(GAME_PLAY* play) {
+    if (s_other_world_stepped != FALSE) {
+        return;
+    }
+
+    s_other_world_stepped = TRUE;
+    navigate_camera_move(play);
+    mWt_mybell_confirmation_move(play);
+}
+#endif
+
 extern void watch_my_step_draw(GAME_PLAY* play) {
     GAME* game = (GAME*)play;
     GRAPH* g = play->game.graph;
@@ -199,7 +231,15 @@ extern void watch_my_step_draw(GAME_PLAY* play) {
 
     font_mtx = GRAPH_ALLOC_TYPE(g, Mtx, 1);
 
+#ifdef TARGET_PC
+    /* Split draws this in the indoor view, with that view's ortho. A fullscreen
+     * pass here is what put the light prompt on the outdoor half. */
+    if ((mPlib_extra_player_count() == 0) && (pc_world_live() < 2)) {
+        navigate_camera_draw(play);
+    }
+#else
     navigate_camera_draw(play);
+#endif
     mWt_mybell_confirmation_draw(play);
 
     if (S_watch_my_step.draw_type == 0) {
@@ -344,7 +384,7 @@ static void navigate_camera_move(GAME_PLAY* play) {
     }
 }
 
-static void navigate_camera_draw(GAME_PLAY* play) {
+extern void navigate_camera_draw(GAME_PLAY* play) {
     GRAPH* g = play->game.graph;
     Gfx* font_gfx;
     Mtx* font_mtx;
@@ -357,7 +397,15 @@ static void navigate_camera_draw(GAME_PLAY* play) {
         u8 a = S_navigate.opacity * 255.0f;
 
         if (font_mtx != NULL) {
+#ifdef TARGET_PC
+            if (pc_gx_hud_half) {
+                mFont_CulcHudHalfOrthoMatrix(font_mtx);
+            } else {
+                mFont_CulcOrthoMatrix(font_mtx);
+            }
+#else
             mFont_CulcOrthoMatrix(font_mtx);
+#endif
             gSPMatrix(NOW_FONT_DISP++, font_mtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
         }
 

@@ -52,6 +52,13 @@ struct actor_intro_demo_s {
 
 extern ACTOR_PROFILE Intro_Demo_Profile;
 
+#ifdef TARGET_PC
+struct game_play_s;
+extern void aID_world_store(mDemo_Clip_c* dst);
+extern void aID_world_load(const mDemo_Clip_c* src);
+extern int aID_class_is_live(struct game_play_s* play, void* demo_class);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

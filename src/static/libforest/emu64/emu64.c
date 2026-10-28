@@ -5793,6 +5793,18 @@ u32 emu64::emu64_taskstart_r(Gfx* dl_p) {
     OSInitFastCast();
     this->end_dl = false;
 
+#ifdef TARGET_PC
+    /* The primitive color persists across display-list executions in this
+     * class, and terrain DLs that do not set it (the outdoors never do; the
+     * room-prim proc is skipped there) inherit the last indoor room's tint.
+     * Retail re-establishes the RDP state within each frame's lists. Start
+     * each list neutral white-opaque; lists that need a prim set their own. */
+    if (this->primitive_color.raw != 0xFFFFFFFF) {
+        this->primitive_color.raw = 0xFFFFFFFF;
+        this->dirty_flags[EMU64_DIRTY_FLAG_PRIM_COLOR] = true;
+    }
+#endif
+
     while (!this->end_dl && !FrameCansel) {
         this->cmds_processed++;
         EMU64_INFOF("%08x:", this->gfx_p);

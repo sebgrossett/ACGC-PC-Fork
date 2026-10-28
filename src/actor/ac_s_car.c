@@ -6,6 +6,7 @@
 #include "m_rcp.h"
 #include "m_common_data.h"
 #include "m_player_lib.h"
+#include "m_play.h"
 #include "m_event.h"
 
 static void aSCR_actor_ct(ACTOR* actor, GAME* game);

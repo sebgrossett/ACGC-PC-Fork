@@ -36,9 +36,18 @@ static void aGYO_cull_check(ACTOR* actorx, GAME_PLAY* play) {
         ACTOR* playerx = GET_PLAYER_ACTOR_ACTOR(play);
 
         actorx->state_bitfield &= ~ACTOR_STATE_NO_CULL;
-        dist = search_position_distance(&actorx->world.position, &playerx->world.position);
-        if (dist > 600.0f && (actorx->block_x != play->block_table.block_x || actorx->block_z != play->block_table.block_z)) {
-            aGYO_destruct(actorx, (GAME*)play);
+#ifdef TARGET_PC
+        /* Town has no selected resident while the host is indoors. */
+        if (playerx == NULL) {
+            playerx = (ACTOR*)mPlib_extra_player_at(0);
+        }
+        if (playerx != NULL)
+#endif
+        {
+            dist = search_position_distance(&actorx->world.position, &playerx->world.position);
+            if (dist > 600.0f && (actorx->block_x != play->block_table.block_x || actorx->block_z != play->block_table.block_z)) {
+                aGYO_destruct(actorx, (GAME*)play);
+            }
         }
     } else {
         actorx->state_bitfield |= ACTOR_STATE_NO_CULL;

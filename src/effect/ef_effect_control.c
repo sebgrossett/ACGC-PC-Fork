@@ -319,6 +319,19 @@ static void eEC_actor_draw(ACTOR* actorx, GAME* game) {
     }
 }
 
+static PLAYER_ACTOR* eEC_Player(GAME_PLAY* play) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+
+#ifdef TARGET_PC
+    /* Town effects keep moving after the selected resident goes indoors. */
+    if (player == NULL) {
+        player = mPlib_extra_player_at(0);
+    }
+#endif
+
+    return player;
+}
+
 static int eEC_DistDeath(eEC_Effect_c* effect, GAME* game, s16 prog_idx) {
     GAME_PLAY* play = (GAME_PLAY*)game;
     int res = FALSE; // in range
@@ -327,7 +340,13 @@ static int eEC_DistDeath(eEC_Effect_c* effect, GAME* game, s16 prog_idx) {
         f32 max_dist = profile_tbl[effect->name]->max_dist;
 
         if (max_dist != eEC_IGNORE_DEATH_DIST) {
-            PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+            PLAYER_ACTOR* player = eEC_Player(play);
+
+#ifdef TARGET_PC
+            if (player == NULL) {
+                return FALSE;
+            }
+#endif
 
             if (ABS(player->actor_class.world.position.x - effect->position.x) > max_dist ||
                 ABS(player->actor_class.world.position.z - effect->position.z) > max_dist ||
@@ -465,11 +484,17 @@ static void eEC_AllEffectMove(GAME* game) {
 
 static void eEC_actor_move(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+    PLAYER_ACTOR* player = eEC_Player(play);
 
     eEL_CalcEffectLight_Set(game);
     eEC_AllEffectMove(game);
+#ifdef TARGET_PC
+    if (player != NULL) {
+        actorx->world.position = player->actor_class.world.position;
+    }
+#else
     actorx->world.position = player->actor_class.world.position;
+#endif
 }
 
 static int eEC_GetEffectBuff(int prio) {

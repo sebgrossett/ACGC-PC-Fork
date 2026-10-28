@@ -11,6 +11,11 @@ extern "C" {
 
 extern ACTOR_PROFILE Insect_Profile;
 
+#ifdef TARGET_PC
+extern void aINS_world_store(aINS_CTRL_ACTOR** ctrl, aINS_Clip_c* clip);
+extern void aINS_world_load(aINS_CTRL_ACTOR* ctrl, const aINS_Clip_c* clip);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

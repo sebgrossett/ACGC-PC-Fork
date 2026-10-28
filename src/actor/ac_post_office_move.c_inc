@@ -71,31 +71,142 @@ static void aPOFF_rewrite_out_data(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
     }
 }
 
-static int aPOFF_check_player(ACTOR* actor, GAME_PLAY* play) {
+static int aPOFF_player_pressing_door(PLAYER_ACTOR* player, ACTOR* actor, int pad) {
     u16 y;
     f32 xOffs;
     f32 zOffs;
-    f32 t;
-    int res;
-    PLAYER_ACTOR* player;
-
-    player = GET_PLAYER_ACTOR(play);
-    res = 0;
 
     if (player == NULL) {
-        return 0;
+        return FALSE;
     }
 
     y = player->actor_class.shape_info.rotation.y;
     xOffs = SQ(player->actor_class.world.position.x - (actor->world.position.x - 40.0f));
     zOffs = SQ(player->actor_class.world.position.z - (actor->world.position.z + 50.0f));
-    t = (xOffs) + (zOffs);
 
-    if ((y > 0x4000) && (y < 0x8000) && (t < 360.0f) && chkTrigger(BUTTON_A) != 0) {
-        res = 2;
+    if ((y > 0x4000) && (y < 0x8000) && ((xOffs + zOffs) < 360.0f) && (chkTrigger_pad(pad, BUTTON_A) != FALSE)) {
+        return TRUE;
     }
 
-    return res;
+    return FALSE;
+}
+
+static int aPOFF_check_player(ACTOR* actor, GAME_PLAY* play) {
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR(play);
+
+    if (aPOFF_player_pressing_door(player, actor, 0) != FALSE) {
+        return 2;
+    }
+
+#ifdef TARGET_PC
+    /* The selected resident is not the only one at this door. Their A is
+     * their own pad. The host already had the first look. */
+    {
+        int i;
+        int count = mPlib_extra_player_count();
+
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+            int pad = mPlib_pad_for_player(guest);
+
+            if ((pad <= 0) || (aPOFF_player_pressing_door(guest, actor, pad) == FALSE)) {
+                continue;
+            }
+
+            mPlib_set_request_owner(guest);
+            return 2;
+        }
+    }
+#endif
+
+    return 0;
+}
+
+#ifdef TARGET_PC
+/* The walk-out starts on the exit point, which is outside the A-press box. */
+static int aPOFF_player_at_exit(PLAYER_ACTOR* player, ACTOR* actor) {
+    f32 x;
+    f32 z;
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    x = player->actor_class.world.position.x - (actor->world.position.x - 64.0f);
+    z = player->actor_class.world.position.z - (actor->world.position.z + 64.0f);
+    return ((x * x) + (z * z)) < (80.0f * 80.0f);
+}
+
+static int aPOFF_walking_out_slot(GAME_PLAY* play, ACTOR* actor) {
+    int session = (int)Common_Get(player_no);
+    PLAYER_ACTOR* host = get_player_actor_by_index(play, session);
+    int i;
+    int count;
+
+    if ((host != NULL) && (host->now_main_index == mPlayer_INDEX_OUTDOOR) &&
+        (pc_world_door_return_pending(session) != FALSE) && (aPOFF_player_at_exit(host, actor) != FALSE)) {
+        return session;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int slot = mPlib_player_slot_of(guest);
+
+        if ((guest == NULL) || (slot < 0) || (guest->now_main_index != mPlayer_INDEX_OUTDOOR) ||
+            (pc_world_door_return_pending(slot) == FALSE) || (aPOFF_player_at_exit(guest, actor) == FALSE)) {
+            continue;
+        }
+
+        return slot;
+    }
+
+    return -1;
+}
+#endif
+
+#ifdef TARGET_PC
+/* get_door_label_proc reads the selected resident, and the demo context is
+ * already over by the time this building moves. The label is on the walker. */
+static int aPOFF_this_door(PLAYER_ACTOR* player, STRUCTURE_ACTOR* office) {
+    if ((player == NULL) || (player->now_main_index != mPlayer_INDEX_DOOR)) {
+        return FALSE;
+    }
+
+    return office == (STRUCTURE_ACTOR*)player->main_data.door.label;
+}
+#endif
+
+static PLAYER_ACTOR* aPOFF_player_in_door(STRUCTURE_ACTOR* office) {
+    PLAYER_ACTOR* player;
+
+#ifdef TARGET_PC
+    player = mPlib_demo_talker();
+    if (aPOFF_this_door(player, office) != FALSE) {
+        return player;
+    }
+#endif
+
+    player = GET_PLAYER_ACTOR_NOW();
+    if ((player != NULL) && (office == (STRUCTURE_ACTOR*)player->get_door_label_proc(gamePT))) {
+        return player;
+    }
+
+#ifdef TARGET_PC
+    {
+        int i;
+        int count = mPlib_extra_player_count();
+
+        for (i = 0; i < count; i++) {
+            player = mPlib_extra_player_at(i);
+            if (aPOFF_this_door(player, office) != FALSE) {
+                return player;
+            }
+        }
+    }
+#endif
+
+    return NULL;
 }
 
 static int aPOFF_check_open(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
@@ -207,6 +318,35 @@ static void aPOFF_wait(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
     actor = (ACTOR*)office;
     request_type = office->request_type;
 
+#ifdef TARGET_PC
+    /* Structure control names this door once, when the town is created. A
+     * later leave keeps the town, so the out clip has to start here. */
+    {
+        static int s_exit_slot = -1;
+        PLAYER_ACTOR* leaving;
+
+        if (s_exit_slot >= 0) {
+            leaving = get_player_actor_by_index(play, s_exit_slot);
+            if ((leaving != NULL) && (leaving->now_main_index == mPlayer_INDEX_OUTDOOR)) {
+                return;
+            }
+
+            pc_world_clear_door_return(s_exit_slot);
+            s_exit_slot = -1;
+        } else {
+            s_exit_slot = aPOFF_walking_out_slot(play, actor);
+            if (s_exit_slot >= 0) {
+                office->request_type = 4;
+                aPOFF_setup_animation(office, 0.5f);
+                aPOFF_setup_action(office, aPOFF_ACTION_OPEN_DOOR);
+                return;
+            }
+
+            s_exit_slot = -1;
+        }
+    }
+#endif
+
     if (mDemo_Check(mDemo_TYPE_DOOR, actor) != FALSE) {
         if (request_type == 4) {
             aPOFF_setup_animation(office, 0.5f);
@@ -228,7 +368,7 @@ static void aPOFF_wait(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
 }
 
 static void aPOFF_open_door_wait(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
-    if (office == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    if (aPOFF_player_in_door(office) != NULL) {
         office->request_type = 3;
         aPOFF_setup_animation(office, 0.5f);
         aPOFF_setup_action(office, aPOFF_ACTION_OPEN_DOOR);
@@ -239,9 +379,19 @@ static void aPOFF_open_door_wait(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
 static void aPOFF_open_door(STRUCTURE_ACTOR* office, GAME_PLAY* play) {
     if (cKF_SkeletonInfo_R_play(&office->keyframe) == TRUE) {
         if (office->request_type == 3) {
+            int next_act = aPOFF_ACTION_OPEN_UNKNOWN;
+
             aPOFF_rewrite_out_data(office, play);
             goto_other_scene(play, &aPOFF_post_office_door_data, FALSE);
-            aPOFF_setup_action(office, aPOFF_ACTION_OPEN_UNKNOWN);
+#ifdef TARGET_PC
+            /* Retail throws this play away, so the dead action is fine. With
+             * someone still outside the town door stays, and it never takes
+             * another A or plays the walk-out. */
+            if (pc_world_town_stays() != FALSE) {
+                next_act = aPOFF_ACTION_WAIT;
+            }
+#endif
+            aPOFF_setup_action(office, next_act);
             mDemo_End((ACTOR*)office);
         } else {
             aPOFF_setup_action(office, aPOFF_ACTION_WAIT);
