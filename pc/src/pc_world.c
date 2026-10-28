@@ -79,6 +79,14 @@ static s8 s_slot_world[PLAYER_NUM];
 static s8 s_door_return[PLAYER_NUM];
 /* Pad 0's resident. Cleared from the town table once they are indoors. */
 static int s_pad0_slot = 0;
+/* A child-to-child hop (museum entrance to a room) opens the next child from
+ * the town's restored state, but the departing child committed the
+ * destination door data and holds the walker's pad. Stash both before the
+ * town bind and consume them in open_scene, or the room spawns at the town's
+ * stale door position with the town's pad. */
+static Door_data_c s_hop_door;
+static int s_hop_pad = -1;
+static int s_hop_valid = FALSE;
 /* Resident a door is sending inside. -1 until a scene change notes one. */
 static int s_enter_slot = -1;
 /* Pad of a resident whose town actor was removed. The slot table forgets
@@ -217,6 +225,7 @@ void pc_world_attach_primary(GAME* game) {
     }
 
     memset(s_world, 0, sizeof(s_world));
+    s_hop_valid = FALSE;
     for (i = 0; i < PLAYER_NUM; i++) {
         s_slot_world[i] = 0;
         s_door_return[i] = FALSE;
@@ -349,6 +358,18 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
     pc_world_capture(0);
     Common_Set(last_scene_no, Save_Get(scene_no));
     Save_Set(scene_no, scene);
+#ifdef TARGET_PC
+    if (s_hop_valid) {
+        /* The departing child committed this door's data; the town's restored
+         * copy is its own last door and would spawn the room's player at the
+         * town's stale position. Their pad comes with it: the town's table
+         * dropped the indoor resident's entry, so reading it here would hand
+         * the room's player the default pad 0 (another player's input). */
+        Common_Set(door_data, s_hop_door);
+        saved_pad = s_hop_pad;
+        s_hop_valid = FALSE;
+    }
+#endif
     /* The child play spawns whoever player_no names. The town snapshot already
      * holds the selected resident, and restore puts that back. */
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
@@ -363,14 +384,26 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
             Common_Set(now_private, priv);
         }
 
-        /* Read before the child play rewrites the shared pad table. */
-        saved_pad = mPlib_pad_for_player_slot(resident_slot);
+        /* Read before the child play rewrites the shared pad table. The hop
+         * already carried the walker's pad; the direct enter reads the
+         * town's table here. */
+        if (saved_pad < 0) {
+            saved_pad = mPlib_pad_for_player_slot(resident_slot);
+        }
     }
 
     memset(child, 0, sizeof(GAME_PLAY));
     s_child_init = TRUE;
     game_child_ct(child, play_init, primary->game.graph);
     s_child_init = FALSE;
+
+#ifdef TARGET_PC
+    /* The town's out-wipe dies with the transition, and the child's in-wipe
+     * would not start drawing until its second move: one draw between them
+     * shows the old scene uncovered. The leave path inline-starts the town's
+     * fade the same way. */
+    Game_play_start_fade_in((GAME_PLAY*)child, ((GAME_PLAY*)child)->fb_wipe_type);
+#endif
 
     /* The child play registered its own player into the shared slot table.
      * Keep that player only, then snapshot the interior. */
@@ -445,6 +478,7 @@ static void pc_world_destroy_child(int index) {
 void pc_world_drop_children(void) {
     int i;
 
+    s_hop_valid = FALSE;
     for (i = 1; i < PC_WORLD_MAX; i++) {
         s_world[i].destroy = FALSE;
         pc_world_destroy_child(i);
@@ -485,11 +519,13 @@ static void pc_world_fade_in_town(GAME_PLAY* leaving, ACTOR* who) {
     /* Entering already aims this camera at whoever stayed outside. Doing it
      * again on the way out follows the body that just appeared in the door
      * and the view races from the plaza to the shop. Only pull it back when
-     * a door camera is still sitting on the town. */
+     * a door camera is still sitting on the town — and snap when it does:
+     * flag 0 morphs, which reads as a long pan down from the door zoom's
+     * high eye. */
     mPlib_unbind_player_actor();
     if ((who == NULL) || ((ACTOR*)get_player_actor_by_index(town, (int)Common_Get(player_no)) == who) ||
         (Camera2_Check_main_index(town, CAMERA2_PROCESS_NORMAL) == FALSE)) {
-        Camera2_request_main_normal(town, 0, 9);
+        Camera2_request_main_normal(town, 1, 9);
         if (get_player_actor_withoutCheck(town) != NULL) {
             Camera2_process(town);
         }
@@ -648,9 +684,10 @@ int pc_world_transition(GAME_PLAY* play) {
             return FALSE;
         }
 
-        /* Someone else still has a view. A guest indoors is already off the
-         * town actor list, so the extra count is the wrong test. */
-        if (pc_world_session_count() <= 1) {
+        /* Pure single player has no session to preserve: retail tears the
+         * play down and re-makes it. A co-op session keeps the town even
+         * when nobody is outside yet, so a later join finds it intact. */
+        if ((g_pc_coop_session == 0) && (pc_world_session_count() <= 1)) {
             s_in_transition = FALSE;
             return FALSE;
         }
@@ -689,10 +726,21 @@ int pc_world_transition(GAME_PLAY* play) {
         slot = (int)Common_Get(player_no);
     }
     door = Common_Get(door_data);
+#ifdef TARGET_PC
+    /* The hop re-opens from the town's restored state; carry the departing
+     * child's committed door data and the walker's pad through. */
+    s_hop_door = door;
+    s_hop_pad = mPlib_pad_for_player_slot(slot);
+    s_hop_valid = TRUE;
+#endif
     pc_world_bind(0);
 
     if ((scene == s_world[0].scene_no) || (pc_scene_splits(scene) == FALSE)) {
         ACTOR* who;
+
+        /* Back to the town: the stash has no consumer, and leaving it set
+         * would hand it to the next unrelated open. */
+        s_hop_valid = FALSE;
 
         who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
 
@@ -706,6 +754,8 @@ int pc_world_transition(GAME_PLAY* play) {
         mBGM_init();
     } else if (pc_world_open_scene((GAME_PLAY*)s_world[0].game, scene, slot) == FALSE) {
         ACTOR* who;
+
+        s_hop_valid = FALSE;
 
         who = pc_world_spawn_return((GAME_PLAY*)s_world[0].game, &door, slot);
 

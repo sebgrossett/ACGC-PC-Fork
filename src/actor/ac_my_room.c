@@ -138,11 +138,22 @@ typedef struct my_room_work_s {
     FTR_ACTOR* ftr_actor_list;
     u8* used_list;
     int list_size;
+#ifdef TARGET_PC
+    ACTOR* owner; /* which play's ctor allocated the lists */
+#endif
 } aMR_work_c;
 
 static aMR_work_c l_aMR_work;
 static u8 l_bank_index_table[FTR_NUM];
 static u8* l_bank_address_table[aMR_FTR_BANK_NUM];
+#ifdef TARGET_PC
+/* Which actor built the current bank table. A room's ctor wipes and
+ * re-indexes the table while an older room's play is still tearing down, and
+ * that play's dt would free table slots now pointing inside the new room's
+ * single bank0 allocation (missing textures, and frees into the middle of an
+ * allocation). */
+static ACTOR* l_bank_owner;
+#endif
 
 // clang-format off
 const aMR_contact_info_c l_cntInf_default = {
@@ -1421,6 +1432,9 @@ static void aMR_SecureFurnitureBank(MY_ROOM_ACTOR* my_room, GAME* game) {
     aMR_GetBankSitu(&my_room->bank_count0, &my_room->bank_count1, &l_aMR_work.list_size);
     size = my_room->bank_count0 * aMR_FTR_BANK_SIZE;
 
+#ifdef TARGET_PC
+    l_bank_owner = &my_room->actor_class;
+#endif
     for (i = 0; i < aMR_FTR_BANK_NUM; i++) {
         l_bank_address_table[i] = NULL;
     }
@@ -1811,6 +1825,13 @@ static void My_Room_Actor_ct(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
     bzero(&l_aMR_work, sizeof(l_aMR_work));
+#ifdef TARGET_PC
+    /* The work is one file-static shared by every my-room-type scene. With
+     * the world system a new room's ctor runs while the older room's play is
+     * still being torn down, and that play's dt would free the new lists out
+     * from under it (list_size set, lists NULL). Tag the owner. */
+    l_aMR_work.owner = actorx;
+#endif
     my_room->scene = Save_Get(scene_no);
     aMR_SetClip(actorx);
     aMR_InitFurnitureWork();
@@ -1856,6 +1877,16 @@ static void aMR_FreeMallocBank(ACTOR* actorx) {
     MY_ROOM_ACTOR* my_room = (MY_ROOM_ACTOR*)actorx;
     int i;
 
+#ifdef TARGET_PC
+    /* Only the ctor that built the current table may free through it. The
+     * non-owner's own bank0_p is per-actor and frees in aMR_FreeHeapArea;
+     * its count1 banks are orphaned (small, per hop). */
+    if (l_bank_owner != NULL && l_bank_owner != actorx) {
+        return;
+    }
+    l_bank_owner = NULL;
+#endif
+
     if (my_room->bank_count1 != 0) {
         if (my_room->bank_count1 > aMR_FTR_BANK_NUM) {
             my_room->bank_count1 = aMR_FTR_BANK_NUM;
@@ -1873,6 +1904,26 @@ static void aMR_FreeMallocBank(ACTOR* actorx) {
 
 static void aMR_FreeHeapArea(ACTOR* actorx) {
     MY_ROOM_ACTOR* my_room = (MY_ROOM_ACTOR*)actorx;
+
+#ifdef TARGET_PC
+    /* Only the ctor that allocated the current lists may free them. An older
+     * room's dt must leave a newer room's work alone (it was already bzero'd
+     * by the new room's ct). */
+    if (l_aMR_work.owner != NULL && l_aMR_work.owner != actorx) {
+        aMR_FreeMallocBank(actorx);
+
+        if (my_room->emu_info.famicom_names_p != NULL) {
+            zelda_free(my_room->emu_info.famicom_names_p);
+        }
+
+        if (my_room->bank0_p != NULL) {
+            zelda_free(my_room->bank0_p);
+            my_room->bank0_p = NULL;
+        }
+        return;
+    }
+    l_aMR_work.owner = NULL;
+#endif
 
     if (l_aMR_work.ftr_actor_list != NULL) {
         zelda_free(l_aMR_work.ftr_actor_list);

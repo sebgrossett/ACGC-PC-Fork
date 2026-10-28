@@ -2827,6 +2827,14 @@ extern int mPlib_request_main_groundhog_type1(GAME* game) {
 }
 
 extern int mPlib_request_main_door_type1(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
+#ifdef TARGET_PC
+    /* The request proc reads the selected resident no matter which actor it
+     * is called on, and the town play runs without one while that resident
+     * is indoors. With nobody home the request has no taker. */
+    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+        return FALSE;
+    }
+#endif
     if (GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
                                                                 mPlayer_REQUEST_PRIORITY_7)) {
         return TRUE;
@@ -2835,6 +2843,11 @@ extern int mPlib_request_main_door_type1(GAME* game, const xyz_t* pos_p, s16 ang
 }
 
 extern int mPlib_request_main_door_type2(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
+#ifdef TARGET_PC
+    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+        return FALSE;
+    }
+#endif
     return GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
                                                                    mPlayer_REQUEST_PRIORITY_19);
 }

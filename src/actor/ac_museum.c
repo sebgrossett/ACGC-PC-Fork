@@ -182,16 +182,11 @@ static int aMsm_ctrl_light() {
     return !(now_sec < (64800) && now_sec >= (21600));
 }
 
-static int aMsm_check_player(ACTOR* actor, GAME_PLAY* play) {
-    PLAYER_ACTOR* player;
-    int res;
+static int aMsm_player_at_door(ACTOR* actor, PLAYER_ACTOR* player) {
     u16 y;
     f32 t;
     f32 xOffs;
     f32 zOffs;
-
-    player = GET_PLAYER_ACTOR(play);
-    res = 1;
 
     if (player == NULL) {
         return 0;
@@ -208,17 +203,151 @@ static int aMsm_check_player(ACTOR* actor, GAME_PLAY* play) {
     t = (xOffs) + (zOffs);
 
     if ((y > DEG2SHORT_ANGLE2(135.0f)) && (y < DEG2SHORT_ANGLE2(225.0f)) && (t < 1100.0f)) { // 0x6000 && 0xA000
-        res = 2;
+        return 2;
     }
 
-    return res;
+    return 1;
 }
+
+static int aMsm_check_player(ACTOR* actor, GAME_PLAY* play) {
+    return aMsm_player_at_door(actor, GET_PLAYER_ACTOR(play));
+}
+
+static int aMsm_request_enter_door(ACTOR* actor, GAME_PLAY* play) {
+    PLAYER_ACTOR* player;
+    int i;
+    int count;
+    xyz_t pos;
+
+    player = GET_PLAYER_ACTOR(play);
+    if (aMsm_player_at_door(actor, player) == 2) {
+        pos.x = actor->world.position.x;
+        pos.y = player->actor_class.world.position.y;
+        pos.z = actor->world.position.z + 100.0f;
+        mPlib_request_main_door_type1((GAME*)play, &pos, -DEG2SHORT_ANGLE(180.0f), TRUE, actor); // 0x8000
+        return TRUE;
+    }
+
+#ifdef TARGET_PC
+    /* The request proc reads the selected resident's context no matter which
+     * actor it is called on, so a guest's request must run bound to the
+     * guest, or the selected resident takes the walk-in instead. */
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        int pad;
+        int slot;
+
+        player = mPlib_extra_player_at(i);
+        if (aMsm_player_at_door(actor, player) != 2) {
+            continue;
+        }
+
+        slot = mPlib_player_slot_of(player);
+        pad = mPlib_pad_for_player(player);
+        if (pad > 0) {
+            mPlib_slot_context_begin(play, slot, pad);
+        }
+        pos.x = actor->world.position.x;
+        pos.y = player->actor_class.world.position.y;
+        pos.z = actor->world.position.z + 100.0f;
+        mPlib_request_main_door_type1((GAME*)play, &pos, -DEG2SHORT_ANGLE(180.0f), TRUE, actor); // 0x8000
+        if (pad > 0) {
+            mPlib_slot_context_end(play);
+        }
+        return TRUE;
+    }
+#endif
+
+    return FALSE;
+}
+
+#ifdef TARGET_PC
+/* The walk-out starts on the exit point (home + 120 z, aMsm_rewrite_out_data),
+ * which is outside the door-walk box. */
+static int aMsm_player_at_exit(PLAYER_ACTOR* player, ACTOR* actor) {
+    f32 x;
+    f32 z;
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    x = player->actor_class.world.position.x - actor->home.position.x;
+    z = player->actor_class.world.position.z - (actor->home.position.z + 120.0f);
+    return ((x * x) + (z * z)) < (80.0f * 80.0f);
+}
+
+static int aMsm_walking_out_slot(GAME_PLAY* play, ACTOR* actor) {
+    int session = (int)Common_Get(player_no);
+    PLAYER_ACTOR* host = get_player_actor_by_index(play, session);
+    int i;
+    int count;
+
+    if ((host != NULL) && (host->now_main_index == mPlayer_INDEX_OUTDOOR) &&
+        (pc_world_door_return_pending(session) != FALSE) && (aMsm_player_at_exit(host, actor) != FALSE)) {
+        return session;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int slot = mPlib_player_slot_of(guest);
+
+        if ((guest == NULL) || (slot < 0) || (guest->now_main_index != mPlayer_INDEX_OUTDOOR) ||
+            (pc_world_door_return_pending(slot) == FALSE) || (aMsm_player_at_exit(guest, actor) == FALSE)) {
+            continue;
+        }
+
+        return slot;
+    }
+
+    return -1;
+}
+
+/* get_door_label_proc reads the selected resident, and the demo context is
+ * already over by the time this building moves. The label is on the walker. */
+static int aMsm_this_door(PLAYER_ACTOR* player, STRUCTURE_ACTOR* museum) {
+    if ((player == NULL) || (player->now_main_index != mPlayer_INDEX_DOOR)) {
+        return FALSE;
+    }
+
+    return museum == (STRUCTURE_ACTOR*)player->main_data.door.label;
+}
+
+static PLAYER_ACTOR* aMsm_player_in_door(STRUCTURE_ACTOR* museum) {
+    PLAYER_ACTOR* player;
+    int i;
+    int count;
+
+    player = mPlib_demo_talker();
+    if (aMsm_this_door(player, museum) != FALSE) {
+        return player;
+    }
+
+    player = GET_PLAYER_ACTOR_NOW();
+    if ((player != NULL) && (museum == (STRUCTURE_ACTOR*)player->get_door_label_proc(gamePT))) {
+        return player;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        player = mPlib_extra_player_at(i);
+        if (aMsm_this_door(player, museum) != FALSE) {
+            return player;
+        }
+    }
+
+    return NULL;
+}
+#endif
 
 static void aMsm_actor_move(ACTOR* actor, GAME* game) {
     STRUCTURE_ACTOR* museum;
     GAME_PLAY* play;
     f32 target;
-    xyz_t pos;
+#ifdef TARGET_PC
+    PLAYER_ACTOR* in_door;
+#endif
 
     play = (GAME_PLAY*)game;
     museum = (STRUCTURE_ACTOR*)actor;
@@ -226,6 +355,40 @@ static void aMsm_actor_move(ACTOR* actor, GAME* game) {
     target = aMsm_ctrl_light() ? 1.0f : 0.0f;
     chase_f(&museum->arg0_f, target, 0.019532442f * (f32)game->graph->dt_num_60fps_frames);
 
+#ifdef TARGET_PC
+    /* GET_PLAYER_ACTOR_NOW() is a raw deref and the town play keeps running
+     * without a selected resident, so check every player and the demo
+     * talker instead of just the selected one. */
+    in_door = aMsm_player_in_door(museum);
+    if (in_door != NULL) {
+        /* Name the walker before the scene change, or the interior spawns
+         * the selected resident (aSHOP_pl_into_wait does the same). */
+        mPlib_set_demo_talker(in_door);
+        aMsm_rewrite_out_data(&museum->actor_class, play);
+        goto_other_scene(play, &aMsm_museum_enter_data, 0);
+        return;
+    }
+
+    /* The town stays, so nothing re-names this door after a return; clear
+     * the walk-out mark once the returner's clip is done. The museum door
+     * has no keyframe, so there is nothing to animate here. */
+    {
+        static int s_exit_slot = -1;
+
+        if (s_exit_slot < 0) {
+            s_exit_slot = aMsm_walking_out_slot(play, actor);
+        } else {
+            PLAYER_ACTOR* leaving = get_player_actor_by_index(play, s_exit_slot);
+
+            if ((leaving == NULL) || (leaving->now_main_index != mPlayer_INDEX_OUTDOOR)) {
+                pc_world_clear_door_return(s_exit_slot);
+                s_exit_slot = -1;
+            }
+        }
+    }
+
+    aMsm_request_enter_door(actor, play);
+#else
     if (museum == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
         aMsm_rewrite_out_data(&museum->actor_class, play);
         goto_other_scene(play, &aMsm_museum_enter_data, 0);
@@ -240,6 +403,7 @@ static void aMsm_actor_move(ACTOR* actor, GAME* game) {
     pos.y = GET_PLAYER_ACTOR(play)->actor_class.world.position.y;
     pos.z = actor->world.position.z + 100.0f;
     mPlib_request_main_door_type1(game, &pos, -DEG2SHORT_ANGLE(180.0f), TRUE, actor); // 0x8000
+#endif
 }
 
 static void aMsm_actor_init(ACTOR* actor, GAME* game) {

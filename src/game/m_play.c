@@ -316,11 +316,25 @@ static void Game_play_fbdemo_wipe_move(GAME_PLAY* play) {
         if ((play->fb_fade_type != FADE_TYPE_IN) && (play->fb_fade_type != FADE_TYPE_EVENT)) {
             Game_play_dec_dt_timer(&S_se_endcheck_timeout, play);
 
+#ifdef TARGET_PC
+            /* The present runs one iteration behind the draw: the frame the
+             * switch fires on never reaches the screen, so the last thing
+             * shown is the fade at ~96 percent with the old scene faintly
+             * visible. Hold full black a few frames so it presents before
+             * the switch. */
+            if (((sAdo_SeFadeoutCheck() == 0) && (S_se_endcheck_timeout > 0.0f)) ||
+                (S_se_endcheck_timeout > 115.0f)) {
+                isDone = FALSE;
+            } else {
+                sAdo_Set_ongenpos_refuse_fg(1);
+            }
+#else
             if ((sAdo_SeFadeoutCheck() == 0) && (S_se_endcheck_timeout > 0.0f)) {
                 isDone = FALSE;
             } else {
                 sAdo_Set_ongenpos_refuse_fg(1);
             }
+#endif
         }
         if (play->fb_fade_type == FADE_TYPE_EVENT) {
             sAdo_Set_ongenpos_refuse_fg(2);
@@ -642,6 +656,14 @@ extern void play_init(GAME* game) {
     }
 
     play->fb_wipe_type = type;
+
+#ifdef TARGET_PC
+    /* The frame order is draw then move, so the new play's first draw runs
+     * before its first wipe move and the old scene shows through for a frame.
+     * Start the entrance card here, the same way pc_world_fade_in_town and
+     * pc_world_open_scene start theirs. */
+    Game_play_start_fade_in(play, type);
+#endif
 
     Pause_ct(&play->pause);
     new_Matrix(game);
@@ -1656,8 +1678,11 @@ static void play_guest_camera(GAME_PLAY* play, PLAYER_ACTOR* guest, int pad, xyz
 #ifdef TARGET_PC
     /* Every building walks out through this index. The first frame starts on
      * the door. The latch re-arms when the walk ends, and when the return
-     * body is created, because this camera does not run indoors. */
-    if (guest->now_main_index == mPlayer_INDEX_OUTDOOR) {
+     * body is created, because this camera does not run indoors. The generic
+     * structure exit (m_player_other_func) walks out through INVADE, which
+     * never passes through OUTDOOR. */
+    if ((guest->now_main_index == mPlayer_INDEX_OUTDOOR) ||
+        (guest->now_main_index == mPlayer_INDEX_INVADE)) {
         if (s_outdoor_snap[pad] == FALSE) {
             s_follow_ready[pad] = FALSE;
             s_ofs_ready[pad] = FALSE;
@@ -1948,6 +1973,14 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
 
     fbdemo_fade_draw(&play->color_fade, &polydisp);
     fade_rgba8888_draw(&polydisp, play->fade_color_value.rgba8888);
+#ifdef TARGET_PC
+    /* Some wipe textures do not read fully dark at their end position. The
+     * post-finish hold exists so the last presented frame is covered; make
+     * that certain. */
+    if (S_se_endcheck_timeout > 115.0f) {
+        fade_rgba8888_draw(&polydisp, 0xFF000000);
+    }
+#endif
 
     if (full == FALSE) {
         gDPNoOpTag(polydisp++, PC_NOOP_WIDESCREEN_STRETCH_OFF);
@@ -2074,6 +2107,13 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 
         fbdemo_fade_draw(&play->color_fade, &polydisp);
         fade_rgba8888_draw(&polydisp, play->fade_color_value.rgba8888);
+#ifdef TARGET_PC
+        /* Same guarantee as the split path: the hold's frames must present
+         * fully dark, whatever the wipe texture looks like at its end. */
+        if (S_se_endcheck_timeout > 115.0f) {
+            fade_rgba8888_draw(&polydisp, 0xFF000000);
+        }
+#endif
 
         gSPEndDisplayList(polydisp++);
 
@@ -2277,6 +2317,7 @@ static void Game_play_draw(GAME_PLAY* play) {
     u8 fill_r = 0;
     u8 fill_g = 0;
     u8 fill_b = 0;
+
 
     // @BUG - when removing display list segment function present in N64, the devs went slightly too far
     // and removed setting the background fill color while in the main field area.

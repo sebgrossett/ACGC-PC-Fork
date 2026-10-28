@@ -2222,6 +2222,7 @@ extern void Global_kankyo_set(GAME_PLAY* play, Kankyo* kankyo, Global_light* glo
     if (l_mEnv_electric_light._98 < 10) {
         l_mEnv_electric_light._98++;
     }
+
 }
 
 static int mEnv_CheckNpcRoomPointLightNiceStatus() {

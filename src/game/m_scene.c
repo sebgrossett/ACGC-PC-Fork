@@ -589,6 +589,27 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
                 PLAYER_ACTOR* who = mPlib_demo_talker();
                 int slot = -1;
 
+                if (who == NULL) {
+                    /* A player-request walk-in has no demo talker. Whoever is
+                     * in the DOOR state is the walker; the fall-back below
+                     * would name the selected resident, who may be someone
+                     * else entirely in co-op. */
+                    who = get_player_actor_withoutCheck(play);
+                    if ((who == NULL) || (who->now_main_index != mPlayer_INDEX_DOOR)) {
+                        int i;
+                        int count = mPlib_extra_player_count();
+
+                        who = NULL;
+                        for (i = 0; i < count; i++) {
+                            PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+                            if ((guest != NULL) && (guest->now_main_index == mPlayer_INDEX_DOOR)) {
+                                who = guest;
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (who != NULL) {
                     slot = mPlib_player_slot_of(who);
                 }
