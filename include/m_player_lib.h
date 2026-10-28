@@ -58,6 +58,10 @@ extern int mPlib_any_player_actor(void);
 /* Extra players in pad order (Controls rows 1-3), excluding the selected resident. */
 extern int mPlib_extra_player_count(void);
 extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
+/* The player walking into this building's door, whoever that is: the demo
+ * talker first (a door walk records the label on its owner), then the selected
+ * resident, then every extra player. NULL when nobody is in the door. */
+extern PLAYER_ACTOR* mPlib_player_at_door(GAME_PLAY* play, ACTOR* door);
 /* The selected resident, independent of any bound guest context. */
 extern PLAYER_ACTOR* mPlib_host_player_actor(void);
 extern Private_c* mPlib_private_for_slot(int slot);

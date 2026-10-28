@@ -1827,6 +1827,8 @@ extern PLAYER_ACTOR* get_player_actor_by_index(GAME_PLAY* play, int player_index
     return NULL;
 }
 
+static int mPlib_actor_in_play(GAME_PLAY* play, ACTOR* actor);
+
 extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play) {
     int slot = (int)Common_Get(player_no);
     PLAYER_ACTOR* player;
@@ -1868,6 +1870,13 @@ extern PLAYER_ACTOR* get_player_actor_withoutCheck(GAME_PLAY* play) {
         }
 
         if (only_pad > 0) {
+            /* A live world still draws that actor: the selected resident can be
+             * indoors, which takes their town actor off the slot table. Every
+             * town actor loop must follow the player who is actually here. */
+            if ((pc_world_live() != FALSE) && (mPlib_actor_in_play(play, (ACTOR*)only) != FALSE)) {
+                return only;
+            }
+
             return NULL;
         }
 
@@ -1888,13 +1897,15 @@ static int mPlib_check_DynamicLinkFile_m_player(void) {
 }
 
 extern int mPlib_get_player_actor_main_index(GAME* game) {
-    return GET_PLAYER_ACTOR_GAME(game)->now_main_index;
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
+
+    return (player != NULL) ? player->now_main_index : -1;
 }
 
 extern int mPlib_get_player_actor_request_main_index(GAME* game) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
 
-    if (player->requested_main_index_changed) {
+    if ((player != NULL) && player->requested_main_index_changed) {
         return player->requested_main_index;
     }
 
@@ -2797,6 +2808,24 @@ extern int mPlib_request_main_recieve_wait_type1(GAME* game, mActor_name_t item,
         counter_flag, mPlayer_REQUEST_PRIORITY_19);
 }
 
+#ifdef TARGET_PC
+/* Requests run on the player who asked. These wrappers used to fire the proc on
+ * the selected resident, so a guest's request was issued for whoever happened
+ * to be selected and refused outright while that resident was indoors.
+ * mDemo_Request takes the owner and clears it. */
+static PLAYER_ACTOR* mPlib_request_player(GAME* game) {
+    PLAYER_ACTOR* owner = mPlib_request_owner();
+
+    if (owner != NULL) {
+        return owner;
+    }
+
+    return GET_PLAYER_ACTOR_GAME(game);
+}
+#else
+#define mPlib_request_player(game) GET_PLAYER_ACTOR_GAME(game)
+#endif
+
 extern int mPlib_request_main_give_type1(GAME* game, mActor_name_t item, int mode, int present, int on_surface) {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
     int return_main_index = player->now_main_index;
@@ -2838,29 +2867,31 @@ extern int mPlib_request_main_groundhog_type1(GAME* game) {
 }
 
 extern int mPlib_request_main_door_type1(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
-#ifdef TARGET_PC
-    /* The request proc reads the selected resident no matter which actor it
-     * is called on, and the town play runs without one while that resident
-     * is indoors. With nobody home the request has no taker. */
-    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+    PLAYER_ACTOR* player = mPlib_request_player(game);
+
+    /* The town play runs without a selected resident while that resident is
+     * indoors. A guest's request names them as the owner; with nobody at all
+     * the request has no taker. */
+    if (player == NULL) {
         return FALSE;
     }
-#endif
-    if (GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
-                                                                mPlayer_REQUEST_PRIORITY_7)) {
+
+    if (player->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
+                                           mPlayer_REQUEST_PRIORITY_7)) {
         return TRUE;
     }
     return FALSE;
 }
 
 extern int mPlib_request_main_door_type2(GAME* game, const xyz_t* pos_p, s16 angle_y, int door_type, void* door_label) {
-#ifdef TARGET_PC
-    if (GET_PLAYER_ACTOR_GAME(game) == NULL) {
+    PLAYER_ACTOR* player = mPlib_request_player(game);
+
+    if (player == NULL) {
         return FALSE;
     }
-#endif
-    return GET_PLAYER_ACTOR_GAME(game)->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
-                                                                   mPlayer_REQUEST_PRIORITY_19);
+
+    return player->request_main_door_all_proc(game, pos_p, angle_y, door_type, door_label,
+                                              mPlayer_REQUEST_PRIORITY_19);
 }
 
 extern int mPlib_request_main_outdoor_type1(GAME* game, int is_start_demo, int door_type) {
@@ -3440,8 +3471,22 @@ extern int mPlib_check_player_warp_forEvent(void) {
     return Common_Get(player_warp_request);
 }
 
+#ifdef TARGET_PC
+static PLAYER_ACTOR* mPlib_player_here(void);
+#endif
+
 extern int mPlib_Check_HitAxe(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_HitAxe_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    PLAYER_ACTOR* player = mPlib_player_here();
+#else
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+#endif
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_HitAxe_proc((ACTOR*)player, pos_p);
 }
 
 /**
@@ -3504,7 +3549,17 @@ extern int mPlib_Change_item_net_catch_label(u32 label, s8 type) {
 }
 
 extern int mPlib_Check_HitScoop(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->Check_HitScoop_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+#ifdef TARGET_PC
+    PLAYER_ACTOR* player = mPlib_player_here();
+#else
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+#endif
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_HitScoop_proc((ACTOR*)player, pos_p);
 }
 
 extern int mPlib_Check_DigScoop_player(PLAYER_ACTOR* player, xyz_t* pos_p) {
@@ -4345,6 +4400,65 @@ static PLAYER_ACTOR* mPlib_now_player_or_town(void) {
 #endif
 
     return player;
+}
+
+/* A door walk records its label on the player it belongs to, and the demo
+ * context is already over by the time the building moves. get_door_label_proc
+ * itself reads the selected resident, so the label has to be looked for on
+ * every player, not just that one. */
+static int mPlib_player_door_is(PLAYER_ACTOR* player, ACTOR* door) {
+    if ((player == NULL) || (player->now_main_index != mPlayer_INDEX_DOOR)) {
+        return FALSE;
+    }
+
+    return door == (ACTOR*)player->main_data.door.label;
+}
+
+/* True when this actor is in that play's player list. The slot table keeps a
+ * player registered after their body left the world (indoors), so the pointer
+ * alone does not say the play still has them. */
+static int mPlib_actor_in_play(GAME_PLAY* play, ACTOR* actor) {
+    ACTOR* it;
+
+    if ((play == NULL) || (actor == NULL)) {
+        return FALSE;
+    }
+
+    for (it = play->actor_info.list[ACTOR_PART_PLAYER].actor; it != NULL; it = it->next_actor) {
+        if (it == actor) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+extern PLAYER_ACTOR* mPlib_player_at_door(GAME_PLAY* play, ACTOR* door) {
+    PLAYER_ACTOR* player;
+    int i;
+    int count;
+
+#ifdef TARGET_PC
+    player = mPlib_demo_talker();
+    if (mPlib_player_door_is(player, door) != FALSE) {
+        return player;
+    }
+#endif
+
+    player = GET_PLAYER_ACTOR(play);
+    if ((player != NULL) && (door == (ACTOR*)player->get_door_label_proc(play))) {
+        return player;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        player = mPlib_extra_player_at(i);
+        if (mPlib_player_door_is(player, door) != FALSE) {
+            return player;
+        }
+    }
+
+    return NULL;
 }
 
 extern int mPlib_Check_tree_shaken(const xyz_t* pos_p) {

@@ -1148,6 +1148,11 @@ extern void mDemo_stock_clear() {
 extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
     f32 weight = 1.0f;
     int request_num = demo->request_num;
+    /* The owner is stamped onto this request only. Keeping it when the
+     * request is refused handed the next door to the wrong player. */
+    PLAYER_ACTOR* owner = mPlib_request_owner();
+
+    mPlib_clear_request_owner();
 
     if (request_num < mDemo_REQUEST_NUM) {
         if (type >= demo->priority_type) {
@@ -1160,7 +1165,7 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                  * is already running. A stamped owner (signs) keeps the single
                  * request below. The selected resident still uses the retail
                  * weight. */
-                if ((mPlib_request_owner() == NULL) && (mPlib_extra_player_count() > 0)) {
+                if ((owner == NULL) && (mPlib_extra_player_count() > 0)) {
                     GAME_PLAY* play = (GAME_PLAY*)gamePT;
                     int count = 1 + mPlib_extra_player_count();
                     int queued = 0;
@@ -1209,7 +1214,7 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                     return queued != 0;
                 }
 #endif
-                if (((mPlib_request_owner() != NULL) && (mPlib_pad_for_player(mPlib_request_owner()) > 0)) ||
+                if (((owner != NULL) && (mPlib_pad_for_player(owner) > 0)) ||
                     mPlib_demo_talker_is_guest()) {
                     /* A guest's request was already checked against that player
                      * by the actor; the host-based weight cannot see them. */
@@ -1218,16 +1223,14 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                     weight = weight_of_talk_position(actor);
 
                     if (weight < 0.0f) {
-                        mPlib_clear_request_owner();
                         return FALSE;
                     }
                 }
             } else if (type == mDemo_TYPE_SPEAK &&
-                       ((mPlib_request_owner() == NULL) || (mPlib_pad_for_player(mPlib_request_owner()) <= 0)) &&
+                       ((owner == NULL) || (mPlib_pad_for_player(owner) <= 0)) &&
                        mPlib_Check_able_force_speak_label(gamePT, actor) == FALSE) {
                 /* The label lock lives on the selected resident. A guest sign
                  * while that resident is already talking must still queue. */
-                mPlib_clear_request_owner();
                 return FALSE;
             }
 
@@ -1239,7 +1242,6 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
             req->talk_weight = weight;
 #ifdef TARGET_PC
             {
-                PLAYER_ACTOR* owner = mPlib_request_owner();
                 int slot;
                 int pad;
 
@@ -1267,7 +1269,6 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
 
                 /* A player with a menu open must not have a demo started on them. */
                 if (mDemo_owner_menu_open(slot)) {
-                    mPlib_clear_request_owner();
                     return FALSE;
                 }
 
@@ -1275,8 +1276,6 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                 s_request_no_a_gate = FALSE;
                 req->pc_owner_slot = slot;
                 req->pc_owner_pad = pad;
-
-                mPlib_clear_request_owner();
             }
 #endif
 

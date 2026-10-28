@@ -71,19 +71,14 @@ static void aNW_rewrite_out_data(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     }
 }
 
-static int aNW_check_player(ACTOR* actor, GAME_PLAY* play) {
+static int aNW_player_at_door(PLAYER_ACTOR* player, ACTOR* actor) {
     u16 y;
     f32 xOffs;
     f32 zOffs;
     f32 t;
-    int res;
-    PLAYER_ACTOR* player;
-
-    player = GET_PLAYER_ACTOR(play);
-    res = 0;
 
     if (player == NULL) {
-        return 0;
+        return FALSE;
     }
 
     y = player->actor_class.shape_info.rotation.y;
@@ -91,11 +86,38 @@ static int aNW_check_player(ACTOR* actor, GAME_PLAY* play) {
     zOffs = SQ(player->actor_class.world.position.z - (actor->world.position.z + 50.0f));
     t = (xOffs) + (zOffs);
 
-    if ((y > 0x4000) && (y < 0x8000) && (t < 360.0f) && chkTrigger(BUTTON_A) != 0) {
-        res = 2;
+    return (y > 0x4000) && (y < 0x8000) && (t < 360.0f) &&
+           (chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) != FALSE);
+}
+
+static int aNW_check_player(ACTOR* actor, GAME_PLAY* play) {
+    PLAYER_ACTOR* player;
+
+    player = GET_PLAYER_ACTOR(play);
+    if (aNW_player_at_door(player, actor) != FALSE) {
+        return 2;
     }
 
-    return res;
+#ifdef TARGET_PC
+    /* The resident may be indoors while the guest stands at the door. The A
+     * press has to be that player's own pad, and the request has to run for
+     * them, so the owner is recorded here. */
+    {
+        int i;
+        int count = mPlib_extra_player_count();
+
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+
+            if (aNW_player_at_door(guest, actor) != FALSE) {
+                mPlib_set_request_owner(guest);
+                return 2;
+            }
+        }
+    }
+#endif
+
+    return 0;
 }
 
 static int aNW_check_open(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
@@ -110,6 +132,55 @@ static int aNW_check_open(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
             return cond[shop->request_type - 1];
     }
 }
+
+#ifdef TARGET_PC
+/* The walk-out starts on the exit point, which is outside the A-press box. */
+static int aNW_player_at_exit(PLAYER_ACTOR* player, ACTOR* actor) {
+    f32 x;
+    f32 z;
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    x = player->actor_class.world.position.x - (actor->world.position.x - 64.0f);
+    z = player->actor_class.world.position.z - (actor->world.position.z + 64.0f);
+    return ((x * x) + (z * z)) < (80.0f * 80.0f);
+}
+
+static int aNW_walking_out_slot(GAME_PLAY* play, ACTOR* actor) {
+    int session = (int)Common_Get(player_no);
+    PLAYER_ACTOR* host = get_player_actor_by_index(play, session);
+    int i;
+    int count;
+
+    if ((host != NULL) && (host->now_main_index == mPlayer_INDEX_OUTDOOR) &&
+        (pc_world_door_return_pending(session) != FALSE) && (aNW_player_at_exit(host, actor) != FALSE)) {
+        return session;
+    }
+
+    count = mPlib_extra_player_count();
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+        int slot;
+
+        if (guest == NULL) {
+            continue;
+        }
+
+        slot = mPlib_player_slot_of(guest);
+
+        if ((slot < 0) || (guest->now_main_index != mPlayer_INDEX_OUTDOOR) ||
+            (pc_world_door_return_pending(slot) == FALSE) || (aNW_player_at_exit(guest, actor) == FALSE)) {
+            continue;
+        }
+
+        return slot;
+    }
+
+    return -1;
+}
+#endif
 
 static void aNW_set_bgOffset(STRUCTURE_ACTOR* shop, int idx) {
     // clang-format off
@@ -223,6 +294,33 @@ static void aNW_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     actor = (ACTOR*)shop;
     request_type = shop->request_type;
 
+#ifdef TARGET_PC
+    /* Structure control names this door once, when the town is created. A
+     * later leave keeps the town, so the out clip has to start here. */
+    {
+        static int s_exit_slot = -1;
+        PLAYER_ACTOR* leaving;
+
+        if (s_exit_slot >= 0) {
+            leaving = get_player_actor_by_index(play, s_exit_slot);
+            if ((leaving != NULL) && (leaving->now_main_index == mPlayer_INDEX_OUTDOOR)) {
+                return;
+            }
+
+            pc_world_clear_door_return(s_exit_slot);
+            s_exit_slot = -1;
+        } else {
+            s_exit_slot = aNW_walking_out_slot(play, actor);
+            if (s_exit_slot >= 0) {
+                shop->request_type = 4;
+                aNW_setup_animation(shop, 0.5f);
+                aNW_setup_action(shop, aNW_ACTION_OPEN_DOOR);
+                return;
+            }
+        }
+    }
+#endif
+
     if (mDemo_Check(mDemo_TYPE_DOOR, actor) != FALSE) {
         if (request_type == 4) {
             aNW_setup_animation(shop, 0.5f);
@@ -251,7 +349,7 @@ static void aNW_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
 }
 
 static void aNW_open_door_wait(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
-    if (shop == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    if (mPlib_player_at_door(play, (ACTOR*)shop) != NULL) {
         shop->request_type = 3;
         aNW_setup_animation(shop, 0.5f);
         aNW_setup_action(shop, aNW_ACTION_OPEN_DOOR);
