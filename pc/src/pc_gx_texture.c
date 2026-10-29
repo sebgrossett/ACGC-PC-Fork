@@ -27,10 +27,30 @@ static struct {
     int b;
 } s_pal_last[8];
 static int s_pal_last_num = 0;
-static int s_pal_settled = -1;
+#define PAL_PROBE_ADDR_MAX 64
+static unsigned s_pal_seen_slot[PAL_PROBE_ADDR_MAX];
+static unsigned s_pal_seen_addr[PAL_PROBE_ADDR_MAX];
+static int s_pal_seen_num = 0;
 
-void pc_pal_probe_settled(int first) {
-    s_pal_settled = first & 0xFFFF;
+/* Log each distinct (slot, address) palette load once, with whether it points
+ * into the shared field palette area. */
+void pc_pal_probe_addr(int slot, unsigned addr) {
+    FILE* f;
+    int i;
+
+    for (i = 0; i < s_pal_seen_num; i++) {
+        if (s_pal_seen_slot[i] == (unsigned)slot && s_pal_seen_addr[i] == addr) return;
+    }
+    if (s_pal_seen_num >= PAL_PROBE_ADDR_MAX) return;
+    s_pal_seen_slot[s_pal_seen_num] = (unsigned)slot;
+    s_pal_seen_addr[s_pal_seen_num] = addr;
+    s_pal_seen_num++;
+
+    f = fopen("pal_probe.txt", "a");
+    if (f == NULL) return;
+    fprintf(f, "LOADADDR slot=%d addr=%08x in_area=%d\n", slot, addr,
+            mFM_field_palette_contains((const void*)(uintptr_t)addr));
+    fclose(f);
 }
 
 void pc_pal_probe(const char* tag, int a, int b) {
@@ -906,14 +926,9 @@ void GXLoadTlut(void* obj, u32 idx) {
     g_gx.tlut[idx].format = (int)o[TLUTOBJ_FORMAT];
     g_gx.tlut[idx].n_entries = (int)o[TLUTOBJ_N_ENTRIES];
     g_gx.tlut[idx].is_be = 1; /* default to BE (ROM/JSystem data) */
-    /* TEMP insect-room tint probe: a load that does not match what the current
-     * view settled means the DL read a different palette. */
-    if (idx == 15) {
-        int first = g_gx.tlut[idx].data != NULL ? *(const u16*)g_gx.tlut[idx].data : 0;
-
-        if (first != s_pal_settled) {
-            pc_pal_probe("LOAD-mismatch", (int)idx, first);
-        }
+    /* TEMP insect-room tint probe: which slots read the field palette area? */
+    if (g_gx.tlut[idx].data != NULL) {
+        pc_pal_probe_addr((int)idx, (unsigned)(uintptr_t)g_gx.tlut[idx].data);
     }
 }
 

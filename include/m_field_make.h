@@ -353,6 +353,7 @@ extern void mFM_SetIslandNpcRoomData(GAME* game, int malloc_flag);
 extern void mFM_field_palette_store(void* out);
 extern void mFM_field_palette_load(const void* in);
 extern int mFM_field_palette_first(void);
+extern int mFM_field_palette_contains(const void* p);
 
 #ifdef TARGET_PC
 extern void mFM_InitActableEndian(void);

@@ -243,7 +243,6 @@ void pc_world_settle_palette(int index) {
     pc_pal_probe("SETTLE-before", index, mFM_field_palette_first());
     mFM_field_palette_load(s_world[index].field_pal);
     pc_pal_probe("SETTLE-after", index, mFM_field_palette_first());
-    pc_pal_probe_settled(mFM_field_palette_first());
 }
 
 void pc_world_attach_primary(GAME* game) {
