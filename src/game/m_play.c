@@ -217,18 +217,9 @@ static void Game_play_fbdemo_wipe_init(GAME_PLAY* play) {
     S_se_endcheck_timeout = 120.0f;
 }
 
-#ifdef TARGET_PC
-/* The player whose view plays the current fade-in. NULL means the selected
- * resident, which is the retail house exit. */
-static ACTOR* s_fade_player = NULL;
-/* Set around Game_play_start_fade_in. Any other IN after the first frame is
- * the entrance wipe starting again. */
-static int s_allow_fade_in = FALSE;
-#endif
-
 static void Game_play_fbdemo_fade_in_move_end(GAME_PLAY* play) {
 #ifdef TARGET_PC
-    s_fade_player = NULL;
+    pc_transition_set_fade_actor(NULL);
     /* goto_other_scene clears pads because retail destroys the play. The
      * return fade is this play still on screen. */
     play->game.pad_initialized = TRUE;
@@ -438,7 +429,7 @@ static void Game_play_fbdemo_wipe_proc(GAME_PLAY* play) {
      * was starting that same wipe again after the menu had already left idle.
      * Drop that IN wipe only. An exit wipe has to keep running, or the second
      * leave stays on the door walk. */
-    if ((play->submenu.process_status != mSM_PROCESS_WAIT) && (s_allow_fade_in == FALSE) &&
+    if ((play->submenu.process_status != mSM_PROCESS_WAIT) && (pc_transition_fade_in_allowed() == FALSE) &&
         ((play->fb_fade_type == FADE_TYPE_IN) || (play->fb_fade_type == FADE_TYPE_NONE))) {
         if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
             Game_play_fbdemo_wipe_destroy(play);
@@ -453,7 +444,7 @@ static void Game_play_fbdemo_wipe_proc(GAME_PLAY* play) {
         /* play_init sets IN while game_frame is still 0, so the real entrance
          * still plays. A later IN that did not come from start_fade_in is the
          * same wipe running again. */
-        if ((play->fb_fade_type == FADE_TYPE_IN) && (play->game_frame != 0) && (s_allow_fade_in == FALSE)) {
+        if ((play->fb_fade_type == FADE_TYPE_IN) && (play->game_frame != 0) && (pc_transition_fade_in_allowed() == FALSE)) {
             play->fb_fade_type = FADE_TYPE_NONE;
         } else
 #endif
@@ -471,18 +462,18 @@ extern void Game_play_start_fade_in(GAME_PLAY* play, int wipe_type) {
         return;
     }
 
-    s_fade_player = NULL;
+    pc_transition_set_fade_actor(NULL);
     play->fb_wipe_type = (u8)wipe_type;
     play->fb_fade_type = FADE_TYPE_IN;
     play->fb_wipe_mode = WIPE_MODE_NONE;
-    s_allow_fade_in = TRUE;
+    pc_transition_set_fade_in_allowed(TRUE);
     Game_play_fbdemo_wipe_proc(play);
-    s_allow_fade_in = FALSE;
+    pc_transition_set_fade_in_allowed(FALSE);
 }
 
 extern void Game_play_start_fade_in_player(GAME_PLAY* play, int wipe_type, ACTOR* player) {
     Game_play_start_fade_in(play, wipe_type);
-    s_fade_player = player;
+    pc_transition_set_fade_actor((struct actor_s*)player);
 }
 #endif
 
@@ -1881,110 +1872,6 @@ static int play_view_world(int index) {
     return world;
 }
 
-static int play_split_live(GAME_PLAY* play) {
-    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
-
-    /* Someone is still in another scene. Keep their view when the last
-     * outdoor player leaves. */
-    if (pc_world_live() >= 2) {
-        return TRUE;
-    }
-
-    if ((mPlib_extra_player_count() == 0) || (host == NULL)) {
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-static GAME_PLAY* play_fading_play(GAME_PLAY* town) {
-    int i;
-
-    for (i = 0; i < PC_WORLD_MAX; i++) {
-        GAME_PLAY* world = pc_world_at(i);
-
-        if (world == NULL) {
-            continue;
-        }
-
-        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE) ||
-            (world->color_fade.color.a != 0)) {
-            return world;
-        }
-    }
-
-    return town;
-}
-
-static int play_fade_is_split(GAME_PLAY* play) {
-    GAME_PLAY* fading = play_fading_play(play);
-    int split = (mPlib_extra_player_count() > 0) || (pc_world_live() >= 2);
-
-    /* Leaving the house runs the wipe on the house play. The town play stays
-     * idle, so a check of this play never sees it. */
-    return (split != FALSE) &&
-           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE) ||
-            (fading->color_fade.color.a != 0));
-}
-
-static int play_fade_every_view(GAME_PLAY* fading) {
-    return fading->fb_fade_type == FADE_TYPE_OUT_RETURN_TITLE;
-}
-
-static int play_fade_view(GAME_PLAY* play) {
-    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
-    GAME_PLAY* fading = play_fading_play(play);
-    int slot = -1;
-    int view;
-
-    /* Join and the walk back outside name the actor. That wins over the
-     * door slot, which is only set for a scene change. */
-    if (s_fade_player != NULL) {
-        view = play_actor_view_index(play, (PLAYER_ACTOR*)s_fade_player);
-        if (view > 0) {
-            return view;
-        }
-    }
-
-    /* A door demo names its walker. The town is the primary play, so
-     * pc_world_play_slot() has no slot for it and the fallback below would put
-     * the fade on the selected resident's half - the other player's. */
-    {
-        PLAYER_ACTOR* talker = mPlib_demo_talker();
-
-        if (talker != NULL) {
-            return play_actor_view_index(play, talker);
-        }
-    }
-
-    /* The out-wipe runs on the town before that resident is removed. The
-     * in-wipe runs on the interior after. Either one belongs to their half. */
-    if (fading != NULL) {
-        slot = pc_world_play_slot(fading);
-    }
-    if (slot < 0) {
-        slot = pc_world_entering_slot();
-    }
-
-    if (slot >= 0) {
-        view = pc_world_slot_view(slot);
-        if (view >= 0) {
-            return view;
-        }
-    }
-
-    if (s_fade_player != NULL) {
-        return 0;
-    }
-
-    if (host == NULL) {
-        return 0;
-    }
-
-    view = play_actor_view_index(play, host);
-    return (view < 0) ? 0 : view;
-}
-
 static int play_menu_blocks_fade(GAME_PLAY* fading, int view) {
     GAME_PLAY* view_play;
 
@@ -2079,7 +1966,7 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
 }
 #endif
 
-static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
+static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2, const PcTransition* transition) {
     Gfx* newdisp;
     Gfx* polydisp;
     Gfx* rect_disp;
@@ -2089,9 +1976,9 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     Gfx* poly;
 #ifdef TARGET_PC
     int fade_drawn = FALSE;
-    GAME_PLAY* fade_play = play_fading_play(play);
-    int clip_fade = play_fade_is_split(play);
-    int fade_view = play_fade_view(play);
+    GAME_PLAY* fade_play = transition->play;
+    int clip_fade = (transition->split != FALSE) && (transition->kind != PC_TRANSITION_KIND_NONE);
+    int fade_view = transition->view;
 #endif
 
     PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
@@ -2107,7 +1994,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
      * all players, so an actor seen by any of them must move. */
     Actor_info_cull_begin(play);
     s_draw_culled = play;
-    if (play_split_live(play)) {
+    if (transition->split != FALSE) {
         int count = play_player_count();
         xyz_t host_eye = play->view.eye;
         xyz_t host_center = play->view.center;
@@ -2129,9 +2016,9 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
             }
             if ((clip_fade != FALSE) &&
-                ((play_fade_every_view(fade_play) != FALSE) || (i == fade_view))) {
+                ((transition->every_view != FALSE) || (i == fade_view))) {
                 play_draw_fade_overlay(fade_play, graph1, i, count);
-                if (play_fade_every_view(fade_play) == FALSE) {
+                if (transition->every_view == FALSE) {
                     fade_drawn = TRUE;
                 }
             }
@@ -2148,7 +2035,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 
 #ifdef TARGET_PC
     if (clip_fade != FALSE) {
-        if ((play_fade_every_view(fade_play) != FALSE) && (play_split_live(play) != FALSE)) {
+        if ((transition->every_view != FALSE) && (transition->split != FALSE)) {
             int count = play_player_count();
 
             if (count > 1) {
@@ -2159,7 +2046,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
         } else if (fade_drawn == FALSE) {
             int count = play_player_count();
 
-            if (play_fade_every_view(fade_play) != FALSE) {
+            if (transition->every_view != FALSE) {
                 count = 1;
             }
             play_draw_fade_overlay(fade_play, graph1, fade_view, count);
@@ -2319,7 +2206,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
         PC_DIAG(3, "makeBumpTexture: before Actor_info_draw_actor\n");
 #ifdef TARGET_PC
         {
-            if (play_split_live(play)) {
+            if (transition->split != FALSE) {
                 int count = play_player_count();
                 int last = count - 1;
                 xyz_t eye = play->view.eye;
@@ -2357,7 +2244,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
 #ifdef TARGET_PC
         /* The message is one full-screen font ortho. In a split that draws it
          * across both views. Put it in the talker's bottom band instead. */
-        if (play_split_live(play)) {
+        if (transition->split != FALSE) {
             play_draw_talk_msg(play, mMsg_Get_base_window_p(), mPlib_demo_talker());
             play_draw_talk_msg(play, mMsg_side_window_p(), (PLAYER_ACTOR*)mDemo_side_player());
         } else
@@ -2405,6 +2292,9 @@ static void draw_version(GRAPH* graph) {
 
 static void Game_play_draw(GAME_PLAY* play) {
     GRAPH* graph = play->game.graph;
+#ifdef TARGET_PC
+    const PcTransition* transition = pc_transition_resolve(play);
+#endif
     u8 fill_r = 0;
     u8 fill_g = 0;
     u8 fill_b = 0;
@@ -2429,7 +2319,7 @@ static void Game_play_draw(GAME_PLAY* play) {
 #ifdef TARGET_PC
         /* The last split frame leaves the scissor on the right half. One
          * player again draws the inventory figure in that half. */
-        if (play_split_live(play) == FALSE) {
+        if (transition->split == FALSE) {
             play_set_view_player(play, 0, 1);
         }
 #endif
@@ -2438,11 +2328,11 @@ static void Game_play_draw(GAME_PLAY* play) {
         setupViewMatrix(play, graph, graph);
         PC_DIAG(3, "Game_play_draw: viewMtx done\n");
 
-        if ((makeBumpTexture(play, graph, graph) == 1) && ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 89) != 0))) {
+        if ((makeBumpTexture(play, graph, graph, transition) == 1) && ((GETREG(HREG, 80) != 10) || (GETREG(HREG, 89) != 0))) {
             PC_DIAG(3, "Game_play_draw: bump done, drawing\n");
             watch_my_step_draw(play);
 #ifdef TARGET_PC
-            if (play_split_live(play)) {
+            if (transition->split != FALSE) {
                 rect saved = play->view.screen;
                 int count = play_player_count();
                 int i;

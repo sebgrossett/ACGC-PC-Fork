@@ -1022,10 +1022,182 @@ int pc_world_session_count(void) {
     return (n > 0) ? n : 1;
 }
 
+/* One transition owner. The play that is changing scene, the view that shows
+ * it, and the kind of fade/wipe are resolved once per frame and read by every
+ * consumer, instead of each call site re-deriving them. */
+static PcTransition s_transition;
+/* The player whose view plays the current fade-in. NULL means the selected
+ * resident, which is the retail house exit. */
+static struct actor_s* s_fade_actor = NULL;
+/* Set around Game_play_start_fade_in. Any other IN after the first frame is
+ * the entrance wipe starting again. */
+static int s_fade_in_allowed = FALSE;
+
+static int pc_transition_kind_of(GAME_PLAY* play) {
+    if (play->fb_wipe_mode != WIPE_MODE_NONE) {
+        return PC_TRANSITION_KIND_WIPE;
+    }
+
+    if ((play->fb_fade_type != FADE_TYPE_NONE) || (play->color_fade.color.a != 0)) {
+        return PC_TRANSITION_KIND_FADE;
+    }
+
+    return PC_TRANSITION_KIND_NONE;
+}
+
+/* Verbatim split test from the draw: a second live world keeps a view up even
+ * when the last outdoor player leaves. */
+static int pc_transition_is_split(GAME_PLAY* play) {
+    PLAYER_ACTOR* host = get_player_actor_withoutCheck(play);
+
+    if (pc_world_live() >= 2) {
+        return TRUE;
+    }
+
+    if ((mPlib_extra_player_count() == 0) || (host == NULL)) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static int pc_transition_slot_view(int slot) {
+    int view;
+
+    if (slot < 0) {
+        return -1;
+    }
+
+    view = pc_world_slot_view(slot);
+    return (view >= 0) ? view : -1;
+}
+
+static int pc_transition_resolve_view(PcTransition* t, GAME_PLAY* town) {
+    PLAYER_ACTOR* host = get_player_actor_withoutCheck(town);
+    PLAYER_ACTOR* talker;
+    int slot;
+    int view;
+
+    /* Join and the walk back outside name the actor. That wins over the door
+     * slot, which is only set for a scene change. */
+    if (s_fade_actor != NULL) {
+        slot = mPlib_player_slot_of((PLAYER_ACTOR*)s_fade_actor);
+        view = pc_transition_slot_view(slot);
+
+        if (view >= 0) {
+            t->slot = slot;
+            return view;
+        }
+    }
+
+    /* A door demo names its walker. The town is the primary play, so
+     * pc_world_play_slot() has no slot for it and the fallback below would put
+     * the fade on the selected resident's half - the other player's. */
+    talker = mPlib_demo_talker();
+    if ((talker != NULL) && (mPlib_player_in_play(town, talker) != FALSE)) {
+        slot = mPlib_player_slot_of(talker);
+        view = pc_transition_slot_view(slot);
+
+        if (view >= 0) {
+            t->slot = slot;
+            return view;
+        }
+    }
+
+    /* The out-wipe runs on the town before that resident is removed. The
+     * in-wipe runs on the interior after. Either one belongs to their half. */
+    slot = pc_world_play_slot(t->play);
+    view = pc_transition_slot_view(slot);
+
+    if (view >= 0) {
+        t->slot = slot;
+        return view;
+    }
+
+    slot = pc_world_entering_slot();
+    view = pc_transition_slot_view(slot);
+
+    if (view >= 0) {
+        t->slot = slot;
+        return view;
+    }
+
+    if (host != NULL) {
+        slot = mPlib_player_slot_of(host);
+        view = pc_transition_slot_view(slot);
+
+        if (view > 0) {
+            t->slot = slot;
+            return view;
+        }
+    }
+
+    return 0;
+}
+
+const PcTransition* pc_transition_resolve(GAME_PLAY* town) {
+    PcTransition* t = &s_transition;
+    int i;
+
+    t->play = town;
+    t->slot = -1;
+    t->view = 0;
+    t->kind = PC_TRANSITION_KIND_NONE;
+    t->phase = PC_TRANSITION_PHASE_IDLE;
+    t->every_view = FALSE;
+    t->count = pc_world_session_count();
+    t->split = pc_transition_is_split(town);
+
+    /* First world in index order with a non-idle transition. Two simultaneous
+     * fades are not supported; the order must not change. */
+    for (i = 0; i < PC_WORLD_MAX; i++) {
+        GAME_PLAY* world = pc_world_at(i);
+        int kind;
+
+        if (world == NULL) {
+            continue;
+        }
+
+        kind = pc_transition_kind_of(world);
+        if (kind != PC_TRANSITION_KIND_NONE) {
+            t->play = world;
+            t->kind = kind;
+            break;
+        }
+    }
+
+    if (t->kind != PC_TRANSITION_KIND_NONE) {
+        /* IN is the entrance fade. Every other non-idle type is on its way
+         * out of the current scene. */
+        t->phase = (t->play->fb_fade_type == FADE_TYPE_IN) ? PC_TRANSITION_PHASE_IN : PC_TRANSITION_PHASE_OUT;
+        t->every_view = (t->play->fb_fade_type == FADE_TYPE_OUT_RETURN_TITLE) != FALSE;
+    }
+
+    t->view = pc_transition_resolve_view(t, town);
+    return t;
+}
+
+void pc_transition_set_fade_actor(struct actor_s* who) {
+    s_fade_actor = who;
+}
+
+int pc_transition_fade_in_allowed(void) {
+    return s_fade_in_allowed;
+}
+
+void pc_transition_set_fade_in_allowed(int allow) {
+    s_fade_in_allowed = (allow != FALSE) ? TRUE : FALSE;
+}
+
 int pc_world_town_stays(void) {
     /* Retail destroys the town on the way in, so a door's last action can be
      * a dead proc. This town stays while anyone else still has a view, and
-     * that door has to go back to waiting. */
+     * that door has to go back to waiting. A co-op session keeps the town even
+     * with one resident, which is the only other case retail would not cover. */
+    if (g_pc_coop_session != 0) {
+        return TRUE;
+    }
+
     return pc_world_session_count() > 1;
 }
 
