@@ -2199,8 +2199,8 @@ extern int mFI_GetNextBlockNum(int* bx, int* bz) {
     int res = FALSE;
     int res2;
 
-    if (Common_Get(player_actor_exists) && GET_PLAYER_ACTOR_NOW() != NULL) {
-        res = ((*GET_PLAYER_ACTOR_NOW()->Get_WadeEndPos_proc)(gamePT, &end_pos));
+    if (Common_Get(player_actor_exists) && (mPlib_now_player_or_town() != NULL)) {
+        res = ((*mPlib_now_player_or_town()->Get_WadeEndPos_proc)(gamePT, &end_pos));
     }
 
     res2 = mFI_Wpos2BlockNum(bx, bz, end_pos);
@@ -3446,10 +3446,17 @@ extern void mFI_PrintFgAttr(gfxprint_t* gfxprint) {
         int ut_z;
         u32 attribute;
 
-        PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+        PLAYER_ACTOR* player = mPlib_now_player_or_town();
         mActor_name_t item = EMPTY_NO;
-        mActor_name_t* fg_item_p = mFI_GetUnitFG(player->actor_class.world.position);
-        int plant = mCoBG_CheckPlant(player->actor_class.world.position);
+        mActor_name_t* fg_item_p;
+        int plant;
+
+        if (player == NULL) {
+            return;
+        }
+
+        fg_item_p = mFI_GetUnitFG(player->actor_class.world.position);
+        plant = mCoBG_CheckPlant(player->actor_class.world.position);
 
         if (fg_item_p != NULL) {
             item = fg_item_p[0];

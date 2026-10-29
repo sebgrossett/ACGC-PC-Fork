@@ -559,12 +559,20 @@ static int set_door_default() {
 }
 
 static int wait_door_start() {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
-    ACTOR* door_actor = (ACTOR*)(*GET_PLAYER_ACTOR_NOW()->get_door_label_proc)(gamePT);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+    ACTOR* door_actor;
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_demo_talker();
+    }
+#endif
+
+    door_actor = (player != NULL) ? (ACTOR*)(*player->get_door_label_proc)(gamePT) : NULL;
 
     if (demo->current.actor == door_actor) {
         return TRUE;
-    } else {
+    } else if (player != NULL) {
         f32 size_adj = demo->data.door.house_info.size / 2.0f + 20.0f;
         xyz_t pos;
         s16 back_angle;
@@ -595,12 +603,20 @@ extern int mDemo_Set_house_info(f32 size, int direct) {
 }
 
 static int wait_door2_start() {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
-    ACTOR* door_actor = (ACTOR*)(*GET_PLAYER_ACTOR_NOW()->get_door_label_proc)(gamePT);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+    ACTOR* door_actor;
+
+#ifdef TARGET_PC
+    if (player == NULL) {
+        player = mPlib_demo_talker();
+    }
+#endif
+
+    door_actor = (player != NULL) ? (ACTOR*)(*player->get_door_label_proc)(gamePT) : NULL;
 
     if (demo->current.actor == door_actor) {
         return TRUE;
-    } else {
+    } else if (player != NULL) {
         f32 size_adj = demo->data.door.house_info.size / 2.0f + 20.0f;
         xyz_t pos;
         s16 back_angle;
@@ -1096,7 +1112,11 @@ static void main_proc() {
     PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
 
     if (demo->state == mDemo_STATE_STOP) {
-        player->actor_class.state_bitfield &= ~ACTOR_STATE_IN_DEMO;
+        if (player != NULL) {
+            player->actor_class.state_bitfield &= ~ACTOR_STATE_IN_DEMO;
+        } else if (demo->speaker_actor != NULL) {
+            demo->speaker_actor->state_bitfield &= ~ACTOR_STATE_IN_DEMO;
+        }
 
         if (demo->current.actor != NULL) {
             demo->current.actor->state_bitfield &= ~ACTOR_STATE_IN_DEMO;

@@ -7,7 +7,7 @@ static void aBT_passenger_ctrl(BOAT_ACTOR* boat_actor) {
         xyz_t_add(&boat_actor->actor_class.world.position, &boat_demo->passenger_ofs, &passenger_pos);
         passenger_angle.y = boat_actor->actor_class.shape_info.rotation.y - DEG2SHORT_ANGLE(-180.0f);
 
-        (*GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc)(
+        mPlib_Set_force_position_angle(
             gamePT, &passenger_pos, &passenger_angle,
             mPlayer_FORCE_POSITION_ANGLE_POSX | mPlayer_FORCE_POSITION_ANGLE_POSY | mPlayer_FORCE_POSITION_ANGLE_POSZ |
                 mPlayer_FORCE_POSITION_ANGLE_ROTY);

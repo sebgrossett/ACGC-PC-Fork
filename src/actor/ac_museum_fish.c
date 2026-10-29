@@ -740,7 +740,7 @@ void Museum_Fish_Talk_process(MUSEUM_FISH_ACTOR* actor, GAME* game) {
     if (mDemo_Check(mDemo_TYPE_SPEAK, (ACTOR*)actor) != 0) {
         s_xyz rotation = GET_PLAYER_ACTOR_GAME_ACTOR(game)->shape_info.rotation;
         add_calc_short_angle2(&rotation.y, DEG2SHORT_ANGLE(-180), 0.3f, DEG2SHORT_ANGLE(22.5f), 0);
-        GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &rotation, 32);
+        mPlib_Set_force_position_angle(gamePT, NULL, &rotation, 32);
         if (mMsg_Check_MainNormalContinue(mMsg_Get_base_window_p()) != 0) {
             int choseNum = mChoice_Get_ChoseNum(mChoice_Get_base_window_p());
             if (choseNum != -1) {

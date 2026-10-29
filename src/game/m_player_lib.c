@@ -1932,6 +1932,28 @@ extern int mPlib_players_here(GAME_PLAY* play) {
     return count;
 }
 
+/* The player a player-relative query should act on: the selected resident when
+ * their body is in this play, else the first player here, else NULL. Every
+ * caller still has to handle NULL: the resident can be in another world, and a
+ * co-op interior can have no player at all in the queried play. */
+extern PLAYER_ACTOR* mPlib_now_player_or_town(void) {
+#ifdef TARGET_PC
+    GAME_PLAY* play = (GAME_PLAY*)gamePT;
+
+    if (play != NULL) {
+        PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
+
+        if (mPlib_player_in_play(play, player) != FALSE) {
+            return player;
+        }
+
+        return mPlib_player_here_at(play, 0);
+    }
+#endif
+
+    return GET_PLAYER_ACTOR_NOW();
+}
+
 extern PLAYER_ACTOR* mPlib_player_here_at(GAME_PLAY* play, int index) {
     PLAYER_ACTOR* host = GET_PLAYER_ACTOR(play);
     int seen = 0;
@@ -3083,29 +3105,48 @@ extern int mPlib_request_main_stung_bee_type1(GAME* game) {
 }
 
 extern int mPlib_request_main_stung_mosquito_type1(void* label) {
-    return GET_PLAYER_ACTOR_NOW()->request_main_stung_mosquito_all_proc(gamePT, label, mPlayer_REQUEST_PRIORITY_25);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->request_main_stung_mosquito_all_proc(gamePT, label, mPlayer_REQUEST_PRIORITY_25);
 }
 
 extern int mPlib_request_main_switch_on_lighthouse_type1(GAME* game, const xyz_t* pos_p, s16 angle_y) {
-    return GET_PLAYER_ACTOR_NOW()->request_main_switch_on_lighthouse_all_proc(game, pos_p, angle_y,
-                                                                              mPlayer_REQUEST_PRIORITY_9);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->request_main_switch_on_lighthouse_all_proc(game, pos_p, angle_y, mPlayer_REQUEST_PRIORITY_9);
 }
 
 extern int mPlib_request_main_demo_geton_boat_type1(f32 goal_x, f32 goal_z, s16 angleY) {
-    ACTOR* actorx = GET_PLAYER_ACTOR_NOW_ACTOR();
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
     xyz_t goal_pos;
+
+    if (player == NULL) {
+        return FALSE;
+    }
 
     goal_pos.x = goal_x;
     goal_pos.z = goal_z;
-    goal_pos.y = actorx->world.position.y;
+    goal_pos.y = player->actor_class.world.position.y;
 
-    return GET_PLAYER_ACTOR_NOW()->request_main_demo_geton_boat_all_proc(gamePT, &goal_pos, angleY,
-                                                                         mPlayer_REQUEST_PRIORITY_19);
+    return player->request_main_demo_geton_boat_all_proc(gamePT, &goal_pos, angleY, mPlayer_REQUEST_PRIORITY_19);
 }
 
 extern int mPlib_request_main_demo_getoff_boat_standup_type1(const xyz_t* pos_p, s16 angleY) {
-    return GET_PLAYER_ACTOR_NOW()->request_main_demo_getoff_boat_standup_all_proc(gamePT, pos_p, angleY,
-                                                                                  mPlayer_REQUEST_PRIORITY_19);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->request_main_demo_getoff_boat_standup_all_proc(gamePT, pos_p, angleY, mPlayer_REQUEST_PRIORITY_19);
 }
 
 extern int mPlib_request_main_shock_type1(GAME* game, f32 time, s16 angle_y, int axe_swing) {
@@ -3585,7 +3626,13 @@ extern int mPlib_able_player_warp_forEvent(void) {
     }
 
     if (mPlib_check_priority_event_type1(gamePT)) {
-        return GET_PLAYER_ACTOR_NOW()->check_cancel_event_without_priority_proc(gamePT) == FALSE;
+        PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+        if (player == NULL) {
+            return FALSE;
+        }
+
+        return player->check_cancel_event_without_priority_proc(gamePT) == FALSE;
     }
 
     if (mPlib_get_player_actor_main_index(gamePT) == mPlayer_INDEX_RELAX_ROD ||
@@ -3595,7 +3642,9 @@ extern int mPlib_able_player_warp_forEvent(void) {
         mPlib_get_player_actor_main_index(gamePT) == mPlayer_INDEX_SITDOWN_WAIT ||
         mPlib_get_player_actor_main_index(gamePT) == mPlayer_INDEX_WAIT_BED ||
         mPlib_get_player_actor_main_index(gamePT) == mPlayer_INDEX_STRUGGLE_PITFALL) {
-        if (GET_PLAYER_ACTOR_NOW()->requested_main_index_changed == FALSE) {
+        PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+        if ((player != NULL) && (player->requested_main_index_changed == FALSE)) {
             return TRUE;
         }
     }
@@ -3703,7 +3752,13 @@ extern u32 mPlib_Get_item_net_catch_label(void) {
 }
 
 extern int mPlib_Change_item_net_catch_label(u32 label, s8 type) {
-    return GET_PLAYER_ACTOR_NOW()->Change_item_net_catch_label_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), label, type);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Change_item_net_catch_label_proc((ACTOR*)player, label, type);
 }
 
 extern int mPlib_Check_HitScoop(xyz_t* pos_p) {
@@ -3737,7 +3792,13 @@ extern int mPlib_Check_DigScoop(xyz_t* pos_p) {
 }
 
 extern int mPlib_Get_address_able_display(void) {
-    return GET_PLAYER_ACTOR_NOW()->address_able_display;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->address_able_display;
 }
 
 static ACTOR* mPlib_Search_exist_npc_inCircle_forScoop(GAME* game, const xyz_t* pos_p, f32 radius_sq) {
@@ -4281,7 +4342,13 @@ extern int mPlib_Check_scene_able_change_camera_pos(void) {
 }
 
 extern int mPlib_Check_RotateOctagon(void) {
-    return GET_PLAYER_ACTOR_NOW()->Check_RotateOctagon_proc(gamePT);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_RotateOctagon_proc(gamePT);
 }
 
 extern int mPlib_Set_EndWashCar(void) {
@@ -4309,52 +4376,115 @@ extern int mPlib_Set_AnimeSpeedWashCar(f32 anime_speed) {
 }
 
 extern int mPlib_Check_now_handin_item_kind(void) {
-    return GET_PLAYER_ACTOR_NOW()->item_kind;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return -1;
+    }
+
+    return player->item_kind;
 }
 
 extern int mPlib_Check_now_handin_item(void) {
-    return GET_PLAYER_ACTOR_NOW()->item_kind >= 0;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    return (player != NULL) && (player->item_kind >= 0);
 }
 
 extern void mPlib_Set_able_hand_all_item_in_demo(s8 v) {
-    GET_PLAYER_ACTOR_NOW()->able_hand_all_item_in_demo = v;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player != NULL) {
+        player->able_hand_all_item_in_demo = v;
+    }
 }
 
 extern int mPlib_Get_status_for_bee(void) {
-    return GET_PLAYER_ACTOR_NOW()->Get_status_for_bee_proc(GET_PLAYER_ACTOR_NOW_ACTOR());
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Get_status_for_bee_proc((ACTOR*)player);
 }
 
 extern int mPlib_Check_end_stung_bee(void) {
-    return GET_PLAYER_ACTOR_NOW()->Check_end_stung_bee_proc(GET_PLAYER_ACTOR_NOW_ACTOR());
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return TRUE;
+    }
+
+    return player->Check_end_stung_bee_proc((ACTOR*)player);
 }
 
 extern int mPlib_Check_Label_main_push_snowball(void* label) {
-    return GET_PLAYER_ACTOR_NOW()->Check_Label_main_push_snowball_proc(gamePT, label);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_Label_main_push_snowball_proc(gamePT, label);
 }
 
 extern int mPlib_Check_Label_main_wade_snowball(void* label) {
-    return GET_PLAYER_ACTOR_NOW()->Check_Label_main_wade_snowball_proc(gamePT, label);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_Label_main_wade_snowball_proc(gamePT, label);
 }
 
 extern int mPlib_Set_ScrollDemo_forWade_snowball(int dir, const xyz_t* snowball_dist_p) {
-    return GET_PLAYER_ACTOR_NOW()->Set_ScrollDemo_forWade_snowball_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), dir,
-                                                                        snowball_dist_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Set_ScrollDemo_forWade_snowball_proc((ACTOR*)player, dir, snowball_dist_p);
 }
 
 extern int mPlib_GetSnowballPos_forWadeSnowball(xyz_t* pos_p) {
-    return GET_PLAYER_ACTOR_NOW()->GetSnowballPos_forWadeSnowball_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), pos_p);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->GetSnowballPos_forWadeSnowball_proc((ACTOR*)player, pos_p);
 }
 
 extern int mPlib_CheckCondition_forWadeSnowball(const xyz_t* pos_p, s16 angle_y) {
-    return GET_PLAYER_ACTOR_NOW()->CheckCondition_forWadeSnowball_proc(gamePT, pos_p, angle_y);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->CheckCondition_forWadeSnowball_proc(gamePT, pos_p, angle_y);
 }
 
 extern int mPlib_SetParam_for_push_snowball(const xyz_t* pos_p, s16 angle_y, f32 anim_speed) {
-    return GET_PLAYER_ACTOR_NOW()->SetParam_for_push_snowball_proc(gamePT, pos_p, angle_y, anim_speed);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->SetParam_for_push_snowball_proc(gamePT, pos_p, angle_y, anim_speed);
 }
 
 extern void mPlib_Set_crash_snowball_for_wade(int v) {
-    GET_PLAYER_ACTOR_NOW()->crash_snowball_for_wade = v;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player != NULL) {
+        player->crash_snowball_for_wade = v;
+    }
 }
 
 static mPlayer_Controller_Data_c controller_data_for_title_demo;
@@ -4542,22 +4672,6 @@ extern int mPlib_Check_UKI_COMEBACK_STATUS(void) {
     }
 
     return FALSE;
-}
-
-/* GET_PLAYER_ACTOR_NOW() is the selected resident, who can be indoors while
- * insects near the other player still run these checks. Fall back to the
- * first player still in this play. ~50 more unguarded sites of this pattern
- * exist and need their own audit (see tasks.md). */
-static PLAYER_ACTOR* mPlib_now_player_or_town(void) {
-    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
-
-#ifdef TARGET_PC
-    if (player == NULL) {
-        player = mPlib_extra_player_at(0);
-    }
-#endif
-
-    return player;
 }
 
 /* A door walk records its label on the player it belongs to, and the demo
@@ -4825,11 +4939,53 @@ extern int mPlib_check_player_actor_start_switch_on_lighthouse(GAME* game) {
 }
 
 extern int mPlib_Check_stung_mosquito(void* label) {
-    return GET_PLAYER_ACTOR_NOW()->Check_stung_mosquito_proc(gamePT, label);
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    return player->Check_stung_mosquito_proc(gamePT, label);
 }
 
 extern void mPlib_Set_boat_angleZ(s16 angle_z) {
-    GET_PLAYER_ACTOR_NOW()->boat_angleZ = angle_z;
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player != NULL) {
+        player->boat_angleZ = angle_z;
+    }
+}
+
+/* Force-position the player a talk acts on. Retail reads the selected resident
+ * directly; a co-op talk can run while that resident is in another world. */
+extern int mPlib_Set_force_position_angle(GAME* game, const xyz_t* pos_p, const s16* angle_p, int type) {
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if (player == NULL) {
+        return FALSE;
+    }
+
+    player->Set_force_position_angle_proc(game, pos_p, angle_p, type);
+    return TRUE;
+}
+
+/* TRUE when this actor is the door label of the player a scene move should
+ * serve: the selected resident when present, else the player still here. */
+extern int mPlib_player_door_label_is(ACTOR* door) {
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    if ((player == NULL) || (door == NULL)) {
+        return FALSE;
+    }
+
+    return (ACTOR*)player->get_door_label_proc(gamePT) == door;
+}
+
+/* TRUE when the player a walk should serve is trying to cancel a wade. */
+extern int mPlib_check_excute_cancel_wade(void) {
+    PLAYER_ACTOR* player = mPlib_now_player_or_town();
+
+    return (player != NULL) && (player->excute_cancel_wade != FALSE);
 }
 
 extern int mPlib_CheckButtonOnly_forDush(void) {

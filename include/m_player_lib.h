@@ -66,6 +66,9 @@ extern PLAYER_ACTOR* mPlib_player_at_door(GAME_PLAY* play, ACTOR* door);
  * keeps a player after their body has left the world, so never trust a slot
  * pointer without this. */
 extern int mPlib_player_in_play(GAME_PLAY* play, PLAYER_ACTOR* player);
+/* Selected resident if their body is in this play, else the first player here,
+ * else NULL. Player-relative queries must still test for NULL. */
+extern PLAYER_ACTOR* mPlib_now_player_or_town(void);
 /* Every player the play really has, selected resident first. A resident who
  * walked into a building is not in the play until they come back, so this is
  * the right list for door geometry and walking checks. */
@@ -281,6 +284,12 @@ extern int mPlib_check_player_actor_main_index_catch_fish(GAME* game);
 extern int mPlib_check_player_actor_start_switch_on_lighthouse(GAME* game);
 extern int mPlib_Check_stung_mosquito(void* label);
 extern void mPlib_Set_boat_angleZ(s16 angle_z);
+/* Force-position the player a talk acts on (NULL-safe). */
+extern int mPlib_Set_force_position_angle(GAME* game, const xyz_t* pos_p, const s16* angle_p, int type);
+/* TRUE when this actor is the door label of the player a scene move serves. */
+extern int mPlib_player_door_label_is(ACTOR* door);
+/* TRUE when the player a walk should serve is cancelling a wade. */
+extern int mPlib_check_excute_cancel_wade(void);
 extern int mPlib_CheckButtonOnly_forDush(void);
 extern int mPlib_Check_golden_item_get_demo_end(int gold_item_type);
 extern void mPlib_Set_change_color_request(void);

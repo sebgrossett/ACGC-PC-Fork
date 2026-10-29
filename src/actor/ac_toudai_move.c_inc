@@ -181,7 +181,7 @@ static void aTOU_actor_move(ACTOR* actor, GAME* game){
     light->keyframe_state = cKF_SkeletonInfo_R_play(&light->keyframe);
     light->current_frame = light->keyframe.frame_control.current_frame;
 
-    if(get_player_actor_withoutCheck((GAME_PLAY*)gamePT)->get_door_label_proc(gamePT) == light){
+    if(mPlib_player_door_label_is((ACTOR*)light) != FALSE){
         aTOU_rewrite_door(&light->actor_class, play);
         goto_other_scene(play, &aTOU_door_data, 0);
     }

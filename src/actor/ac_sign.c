@@ -549,7 +549,7 @@ static void aSIGN_talk(SIGN_ACTOR* sign, GAME* game) {
         } else
 #endif
         {
-            GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &player_angle,
+            mPlib_Set_force_position_angle(gamePT, NULL, &player_angle,
                                                                   mPlayer_FORCE_POSITION_ANGLE_ROTY);
         }
 

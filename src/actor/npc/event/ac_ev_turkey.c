@@ -543,7 +543,7 @@ static int aETKY_TalkEndCheck(ACTOR* actorx, GAME* game) {
 
         if (actor_look_angle != pl_angle.y) {
             add_calc_short_angle2(&pl_angle.y, actor_look_angle, 0.2f, DEG2SHORT_ANGLE(22.5f), 0);
-            GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &pl_angle, mPlayer_FORCE_POSITION_ANGLE_ROTY);
+            mPlib_Set_force_position_angle(gamePT, NULL, &pl_angle, mPlayer_FORCE_POSITION_ANGLE_ROTY);
         }
     }
 

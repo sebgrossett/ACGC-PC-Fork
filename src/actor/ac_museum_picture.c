@@ -166,7 +166,7 @@ static void Museum_Picture_Actor_move(ACTOR* actorx, GAME* game) {
         s_xyz angle = player->actor_class.shape_info.rotation;
 
         add_calc_short_angle2(&angle.y, DEG2SHORT_ANGLE(-180.0f), 1.0f - sqrtf(0.7), 0x800, 0);
-        GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, NULL, &angle, mPlayer_FORCE_POSITION_ANGLE_ROTY);
+        mPlib_Set_force_position_angle(gamePT, NULL, &angle, mPlayer_FORCE_POSITION_ANGLE_ROTY);
     } else if (chkTrigger(BUTTON_A) && mDemo_Get_talk_actor() == NULL) {
         int i;
 
