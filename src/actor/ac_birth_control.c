@@ -110,25 +110,32 @@ static void aBC_deleteActor_part(BIRTH_CONTROL_ACTOR* birth_control, GAME_PLAY* 
 #ifdef TARGET_PC
 /* The player rescan walks an acre that already spawned this prop. A second
  * actor at the same spot is the doubled gyroid. Clear the name and move on.
- * Only the ITEM part is searched: every caller spawns an ITEM-part prop, and
- * the wide window rescan runs this for every candidate item every frame, so
- * the full ten-part walk showed up in frame time. */
+ * ITEM and BG are the two parts props live in: the gyroid (haniwa) profile is
+ * ACTOR_PART_BG, so an ITEM-only search never saw the first one and a rescan
+ * that regained the FG name spawned a second. The wide window rescan runs this
+ * for every candidate item every frame, so this stays at those two parts
+ * instead of the full ten-part walk. */
 static int aBC_actor_already_at(GAME_PLAY* play, s16 profile, mActor_name_t actor_id, f32 pos_x, f32 pos_z) {
-  ACTOR* actor = play->actor_info.list[ACTOR_PART_ITEM].actor;
+  static const int part_table[2] = { ACTOR_PART_ITEM, ACTOR_PART_BG };
+  int i;
 
-  while (actor != NULL) {
-    f32 dx;
-    f32 dz;
+  for (i = 0; i < 2; i++) {
+    ACTOR* actor = play->actor_info.list[part_table[i]].actor;
 
-    if ((actor->id == profile) && (actor->npc_id == actor_id)) {
-      dx = actor->world.position.x - pos_x;
-      dz = actor->world.position.z - pos_z;
-      if ((dx * dx + dz * dz) < (36.0f * 36.0f)) {
-        return TRUE;
+    while (actor != NULL) {
+      f32 dx;
+      f32 dz;
+
+      if ((actor->id == profile) && (actor->npc_id == actor_id)) {
+        dx = actor->world.position.x - pos_x;
+        dz = actor->world.position.z - pos_z;
+        if ((dx * dx + dz * dz) < (36.0f * 36.0f)) {
+          return TRUE;
+        }
       }
-    }
 
-    actor = actor->next_actor;
+      actor = actor->next_actor;
+    }
   }
 
   return FALSE;

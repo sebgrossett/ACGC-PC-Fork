@@ -5,6 +5,7 @@
 
 struct game_s;
 struct game_play_s;
+struct actor_s;
 
 /* One simulated place. Players in the same scene share a world, so four
  * players in town are one play, and a player in a house, shop, museum, or
@@ -67,4 +68,38 @@ int pc_world_any_player(void);
 void pc_world_mark_door_return(int slot);
 int pc_world_door_return_pending(int slot);
 void pc_world_clear_door_return(int slot);
+
+/* One transition owner: which world is changing scene, which view shows it,
+ * and what kind of fade/wipe is running. Resolved once per frame before the
+ * draw; every consumer reads this instead of re-deriving it. */
+typedef enum {
+    PC_TRANSITION_KIND_NONE = 0,
+    PC_TRANSITION_KIND_WIPE,   /* fb_wipe_mode != WIPE_MODE_NONE */
+    PC_TRANSITION_KIND_FADE,   /* fb_fade_type != FADE_TYPE_NONE or colour alpha != 0 */
+} PcTransitionKind;
+
+typedef enum {
+    PC_TRANSITION_PHASE_IDLE = 0,
+    PC_TRANSITION_PHASE_OUT,   /* leaving the current scene */
+    PC_TRANSITION_PHASE_IN,    /* entering the new scene */
+} PcTransitionPhase;
+
+typedef struct {
+    struct game_play_s* play;  /* world that owns the transition */
+    int slot;                  /* resident slot, -1 when unresolved */
+    int view;                  /* view index, 0..count-1 */
+    int kind;
+    int phase;
+    int split;                 /* more than one live view */
+    int every_view;            /* return-title fade covers every view */
+    int count;                 /* live views */
+} PcTransition;
+
+/* The returned object is a static, valid until the next resolve. */
+const PcTransition* pc_transition_resolve(struct game_play_s* town);
+/* Fade-in actor (join / walk-out). NULL means the selected resident. */
+void pc_transition_set_fade_actor(struct actor_s* who);
+/* TRUE only while Game_play_start_fade_in runs. */
+int pc_transition_fade_in_allowed(void);
+void pc_transition_set_fade_in_allowed(int allow);
 #endif
