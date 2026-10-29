@@ -89,17 +89,6 @@ extern void mFM_field_palette_load(const void* in) {
     bcopy(in, mFM_pal_area, sizeof(mFM_pal_area));
 }
 
-/* TEMP insect-room tint probe: the probe reads the live first entry. */
-extern int mFM_field_palette_first(void) {
-    return mFM_pal_area[0][0];
-}
-
-extern int mFM_field_palette_contains(const void* p) {
-    const u8* b = (const u8*)p;
-
-    return (b >= (const u8*)mFM_pal_area) && (b < (const u8*)mFM_pal_area + sizeof(mFM_pal_area));
-}
-
 static void mFM_SortBGData(mFM_bg_data_c** sorted_data_p, mFM_bg_data_c* data, int count) {
     int i;
     mFM_bg_data_c** sorted_data_p_copy = sorted_data_p;

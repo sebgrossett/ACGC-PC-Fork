@@ -134,14 +134,6 @@ extern int pc_emu64_frame_cull_visible;
 extern int pc_emu64_frame_cull_rejected;
 extern int pc_gx_draw_call_count;
 
-/* TEMP insect-room tint probe: palette store/settle/load trace. Remove with
- * the probe in pc_gx_texture.c. */
-void pc_pal_probe(const char* tag, int a, int b);
-void pc_pal_probe_addr(int slot, unsigned addr);
-/* TEMP: defined in m_field_make.c; declared here so the PC texture layer can
- * ask without pulling the game headers in. */
-int mFM_field_palette_contains(const void* p);
-
 /* --- Audio --- */
 extern int pc_save_loaded;
 /* Write the current save to the GCI file (co-op join/leave, reset codes). */

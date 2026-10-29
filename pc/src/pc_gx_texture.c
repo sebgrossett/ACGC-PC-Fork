@@ -18,68 +18,6 @@ static u32 tlut_content_hash(const void* data, int tlut_fmt, int n_entries, int 
  * each TLUT slot to detect content changes and force reloads. */
 u16 s_tlut_first_word[16];
 
-/* TEMP insect-room tint probe: palette store/settle/load trace. Only value
- * changes are logged, so the file survives a long walk to the room. */
-static int s_pal_probe_lines = 0;
-static struct {
-    const char* tag;
-    int a;
-    int b;
-} s_pal_last[8];
-static int s_pal_last_num = 0;
-#define PAL_PROBE_ADDR_MAX 64
-static unsigned s_pal_seen_slot[PAL_PROBE_ADDR_MAX];
-static unsigned s_pal_seen_addr[PAL_PROBE_ADDR_MAX];
-static int s_pal_seen_num = 0;
-
-/* Log each distinct (slot, address) palette load once, with whether it points
- * into the shared field palette area. */
-void pc_pal_probe_addr(int slot, unsigned addr) {
-    FILE* f;
-    int i;
-
-    for (i = 0; i < s_pal_seen_num; i++) {
-        if (s_pal_seen_slot[i] == (unsigned)slot && s_pal_seen_addr[i] == addr) return;
-    }
-    if (s_pal_seen_num >= PAL_PROBE_ADDR_MAX) return;
-    s_pal_seen_slot[s_pal_seen_num] = (unsigned)slot;
-    s_pal_seen_addr[s_pal_seen_num] = addr;
-    s_pal_seen_num++;
-
-    f = fopen("pal_probe.txt", "a");
-    if (f == NULL) return;
-    fprintf(f, "LOADADDR slot=%d addr=%08x in_area=%d\n", slot, addr,
-            mFM_field_palette_contains((const void*)(uintptr_t)addr));
-    fclose(f);
-}
-
-void pc_pal_probe(const char* tag, int a, int b) {
-    FILE* f;
-    int i;
-
-    b &= 0xFFFF;
-    for (i = 0; i < s_pal_last_num; i++) {
-        if (s_pal_last[i].tag == tag && s_pal_last[i].a == a) {
-            if (s_pal_last[i].b == b) return;
-            s_pal_last[i].b = b;
-            break;
-        }
-    }
-    if (i == s_pal_last_num && s_pal_last_num < 8) {
-        s_pal_last[s_pal_last_num].tag = tag;
-        s_pal_last[s_pal_last_num].a = a;
-        s_pal_last[s_pal_last_num].b = b;
-        s_pal_last_num++;
-    }
-
-    if (s_pal_probe_lines >= 4000) return;
-    f = fopen("pal_probe.txt", "a");
-    if (f == NULL) return;
-    fprintf(f, "%s a=%d b=%04x\n", tag, a, (unsigned)b);
-    fclose(f);
-    s_pal_probe_lines++;
-}
-
 /* --- texture cache --- */
 #define TEX_CACHE_SIZE 2048
 
@@ -926,10 +864,6 @@ void GXLoadTlut(void* obj, u32 idx) {
     g_gx.tlut[idx].format = (int)o[TLUTOBJ_FORMAT];
     g_gx.tlut[idx].n_entries = (int)o[TLUTOBJ_N_ENTRIES];
     g_gx.tlut[idx].is_be = 1; /* default to BE (ROM/JSystem data) */
-    /* TEMP insect-room tint probe: which slots read the field palette area? */
-    if (g_gx.tlut[idx].data != NULL) {
-        pc_pal_probe_addr((int)idx, (unsigned)(uintptr_t)g_gx.tlut[idx].data);
-    }
 }
 
 /* PC_GX_TLUT_MODE env var: "be" forces BE decode for diagnostics */

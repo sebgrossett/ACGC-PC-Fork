@@ -2095,7 +2095,6 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
         int i;
 
         pc_world_fill_views(s_draw_view_world, count);
-        pc_pal_probe("VIEWS", count, (s_draw_view_world[0] << 8) | (s_draw_view_world[1] & 0xFF));
         for (i = 0; i < count - 1; i++) {
             xyz_t eye = host_eye;
             xyz_t center = host_center;
