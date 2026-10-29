@@ -57,6 +57,54 @@ A rewrite must still be sliceable: say which slice lands first and what proves i
 | E11 | player lookup helpers | `mPlib_player_near`, `mPlib_players_here`, `mPlib_player_here_at`, `mPlib_now_player_or_town`, `mPlib_player_at_door`, and the demo/request owner fallbacks overlap | HELPER | P1 | open | One documented resolution order (demo talker -> request owner -> nearest here -> resident -> NULL) used everywhere; retire ad-hoc variants |
 | E12 | transition/fade routing | `play_fading_play`, `play_fade_is_split`, `play_fade_view`, `pc_world_entering_slot`, `s_fade_player` are separate partial answers to "who owns this transition" | REWRITE | P1 | open | Single "transition owner" API (play + view + kind) that every fade/wipe/overlay consumer asks |
 | E13 | world system | `PcWorld` + `pc_world_*` carry per-world state as ad-hoc functions, and every new shared static needs another capture/restore pair | REWRITE | P1 | open | Evaluate a formal per-world state struct/registry before adding more captures |
+| E14 | doors / scene entry | Every building re-implements the door pipeline: trigger geometry, request owner, walk-in clip, `goto_other_scene`, interior open, exit walk-out. Host and guest take different paths through it | REWRITE | P1 | open | One `pc_door_*` pipeline with a per-building descriptor (geometry, label, request, walk-in/out, scene). Each current conversion is a row in the matrix below |
+| E15 | doors / player identity | Host vs guest entry are not symmetric: `pc_world_play_slot()` is -1 for the primary play, `s_enter_slot` is only noted at the scene change, `GET_PLAYER_ACTOR_GAME/NOW()` read the selected resident during the actor loop, and interior `player_no`/`now_private` are re-stamped per world | WORLD | P1 | open | Enumerate every host/guest difference in one place and route it through E11/E12; the per-building fixes should disappear into the pipeline |
+| E16 | transitions / loading | Field make, world capture/restore, palettes, kankyo and light pools are all touched inside the fade while both worlds draw, and ownership changes mid-fade | WORLD | P1 | open | Document transition phases (demo -> wipe out -> scene open -> wipe in) with the state each phase owns; anything shared gets captured per world (E1 pattern) |
+
+## Door transitions and loading
+
+This is the highest-yield area: the same failures kept reappearing as each building was
+enabled. Treat it as one pipeline, not per building.
+
+What the audit must answer, per building:
+
+1. **Who is entering?** The demo talker, the request owner, or the selected resident.
+   They are not the same player when a guest enters (A14/E11).
+2. **Which world owns the transition?** The fade/wipe starts on the town, the scene
+   opens on the child, and the interior fades in on the child. `play_fading_play()` and
+   `pc_world_play_slot()` disagree about the primary (E12/E15).
+3. **What is loaded, and when?** Field make (palettes E1, BG textures E8, kankyo/light
+   E7/E16) runs inside the fade while the town still draws for the other player.
+4. **What survives the handoff?** `s_enter_slot`, `s_hop_*`, pads, `player_no`,
+   `now_private`, door data, the palette/texture copies.
+5. **Exit:** the returning walker, the walk-out clip, and the fade-in on the town.
+
+Known failure classes seen so far (all fixed unless noted): wrong walker identity
+(police box, museum), exit animation missing (Able Sisters), duplicate/ghost door
+(structures), interior item give and talk handshake (police, shops), guest session menu
+indoors, palette/texture bleed into the town half (insect room fixed, K1 parked).
+
+### Test matrix
+
+Rows are the buildings that currently split into a child world; columns are the owner
+of the transition. Run each cell with the other player both outside and inside.
+
+| building / scene | P1 enters | P2 enters | P1 exits | P2 exits | notes |
+|---|---|---|---|---|---|
+| own house (`SCENE_MY_ROOM_*`) | held | held | held | held | host-enter wash = K1 |
+| Nook's Cranny (`SCENE_SHOP0`) | held | held | held | held | |
+| Nook's conveni / super / depart | held | held | held | held | |
+| police box | held | held | held | held | A14 decided here |
+| Able Sisters (`SCENE_NEEDLEWORK`) | partial | partial | partial | partial | exit clip fix; duplicate door unexplained |
+| post office | held | held | held | held | |
+| museum entrance + 4 rooms | held | partial | held | partial | insect-room palette fixed |
+| villager house (`SCENE_NPC_HOUSE`) | untested | untested | untested | untested | |
+| island cottage | blocked | blocked | blocked | blocked | A12, not in this save |
+| Redd's tent / fortune cart / kamakura | blocked | blocked | blocked | blocked | A12, not in this save |
+
+A cell is `held` only when: correct walker, correct half fades/wipes, interior opens
+with the right resident, exit clip plays, no leftover state (palette/texture/light),
+and the other player's half is untouched throughout.
 
 ## Rewrite candidates
 
@@ -65,6 +113,7 @@ A rewrite must still be sliceable: say which slice lands first and what proves i
 | E12 | transition/fade ownership | Repeated bugs this session (wrong half, unclipped fade, missed colour fade); state split across five helpers | Introduce `pc_transition_owner()` returning play/view/kind; port the fade overlay and view resolution to it |
 | E13 | per-world state | Every shared static is a future regression; the snapshot list is hand-maintained | Inventory state, then one `pc_world_state_capture/restore` table with tests by comparison |
 | E11 | player resolution | Same question answered in four places with subtly different fallbacks | One resolver + one documented order; migrate call sites in one pass |
+| E14 | door / scene-entry pipeline | Every building repeats trigger, owner, walk-in, open, exit; host and guest diverge inside it and the same bugs recur per building | One `pc_door_*` pipeline + per-building descriptor; port one building, then run the matrix
 
 ## Pass log
 
@@ -72,3 +121,7 @@ A rewrite must still be sliceable: say which slice lands first and what proves i
   insect-room tint sessions (palettes, TLUT reload, fade routing/scissor, K1, world
   snapshot gaps, light pool, BG texture bank, per-view cost, helper overlap, rewrite
   candidates). No code changes in this pass.
+- 2026-10-29: added the door/transition area (E14-E16), the host-vs-guest questions the
+  audit must answer, and the per-building test matrix. Same failures recurred across
+  buildings, so it is treated as one pipeline plus a descriptor table, not per-building
+  patches. No code changes in this pass.
