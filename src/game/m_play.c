@@ -2017,6 +2017,17 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
     Gfx* polydisp;
     rect rect;
     int full;
+#ifdef TARGET_PC
+    /* TEMP build-level A/B: the env-var switch could not be confirmed to reach
+     * the process. Set to 0 to restore the overlays. */
+    {
+        static const int split_fade_off = 1;
+
+        if (split_fade_off != 0) {
+            return;
+        }
+    }
+#endif
 
     if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
         return;
