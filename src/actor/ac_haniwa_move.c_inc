@@ -819,7 +819,7 @@ static void aHNW_door_open_wait(HANIWA_ACTOR* haniwa, GAME* game) {
 #ifdef TARGET_PC
         aHNW_bind_talker(haniwa);
 #endif
-        if (house_actor != GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+        if (mPlib_player_at_door((GAME_PLAY*)game, (ACTOR*)house_actor) == NULL) {
 #ifdef TARGET_PC
             aHNW_unbind_talker(haniwa);
 #endif
@@ -846,7 +846,7 @@ static void aHNW_door_open_timer(HANIWA_ACTOR* haniwa, GAME* game) {
 #ifdef TARGET_PC
         aHNW_bind_talker(haniwa);
 #endif
-        if (house_actor == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+        if (mPlib_player_at_door((GAME_PLAY*)game, (ACTOR*)house_actor) != NULL) {
 #ifdef TARGET_PC
             aHNW_unbind_talker(haniwa);
 #endif

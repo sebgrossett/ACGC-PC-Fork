@@ -800,6 +800,27 @@ static int play_world_has_player(GAME_PLAY* play) {
 }
 #endif
 
+#ifdef TARGET_PC
+/* The demo, message and choice machines are one global set. Every live world
+ * used to step the message, so an interior talk typed, scrolled and consumed
+ * its continue page twice per frame: the NPC polling the window in the actor
+ * pass saw CURSOL and the next page was already up, so a continue code never
+ * rested on mMsg_INDEX_NORMAL (police lost-and-found never gave the item) and
+ * either player's pad could dismiss the other's window. Step it only in the
+ * world the active demo's owner is in, and in this town while no demo runs. */
+static int play_steps_message(GAME_PLAY* play) {
+    int slot = mDemo_OwnerSlot();
+    int world;
+
+    if (slot < 0) {
+        return (s_world_move_primary != FALSE);
+    }
+
+    world = pc_world_slot_world(slot);
+    return (pc_world_at(world) == play);
+}
+#endif
+
 static void Game_play_move_fbdemo_not_move(GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
@@ -818,7 +839,9 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
     if (play->submenu.process_status == mSM_PROCESS_WAIT ||
         (mPlib_extra_player_count() > 0 && play_menu_any_open(play))) {
         /* The talker is one global. The house move's demo is a different
-         * world; binding or clearing here drops the outdoor sign talk. */
+         * world; binding or clearing here drops the outdoor sign talk. The
+         * demo machine has to run in every world: a request from a child is
+         * picked up and started with that world bound. */
         if (s_world_move_primary) {
             mPlib_demo_context_begin(play);
             mDemo_side_begin_frame();
@@ -910,14 +933,16 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
         mCoBG_CalcTimerDecalCircle();
         game->doing_point = 2;
 #ifdef TARGET_PC
-        mPlib_demo_context_begin(play);
-#endif
-        mMsg_Main(game);
-#ifdef TARGET_PC
-        mPlib_demo_context_end(play);
+        if (play_steps_message(play)) {
+            mPlib_demo_context_begin(play);
+            mMsg_Main(game);
+            mPlib_demo_context_end(play);
+        }
         if (s_world_move_primary) {
             mDemo_side_msg(play);
         }
+#else
+        mMsg_Main(game);
 #endif
     } else {
         mVibctl_set_force_stop(2);
@@ -939,11 +964,11 @@ static void Game_play_move_fbdemo_not_move(GAME* game) {
             Actor_info_clear_wait_actors();
             mCoBG_CalcTimerDecalCircle();
 #ifdef TARGET_PC
-            mPlib_demo_context_begin(play);
-#endif
-            mMsg_Main(game);
-#ifdef TARGET_PC
-            mPlib_demo_context_end(play);
+            if (play_steps_message(play)) {
+                mPlib_demo_context_begin(play);
+                mMsg_Main(game);
+                mPlib_demo_context_end(play);
+            }
             if (s_world_move_primary) {
                 mDemo_side_msg(play);
             }
@@ -1092,6 +1117,25 @@ static void play_coop_session_proc(GAME_PLAY* play) {
         g_pc_coop_joined[guest_pad] = 0;
         g_pc_coop_guest_slot[guest_pad] = -1;
         return;
+    }
+
+    /* A guest who asked to leave from inside a building is not in this world's
+     * actor list, so the loop above never sees their request. Their interior is
+     * theirs alone: drop it and their body with it. */
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        int slot;
+
+        if ((g_pc_coop_joined[pad] == 0) || (pc_session_menu_take_leave_request(pad) == FALSE)) {
+            continue;
+        }
+
+        slot = g_pc_coop_guest_slot[pad];
+        pc_world_leave_slot(slot);
+        g_pc_coop_joined[pad] = 0;
+        g_pc_coop_guest_slot[pad] = -1;
+        s_coop_leave_wait[pad] = 0.0f;
+        pc_session_menu_close(pad);
+        play_guest_camera_reset(pad);
     }
 
     if ((safe != FALSE) && (s_coop_join_n > 0)) {
@@ -1421,15 +1465,14 @@ static void play_set_view_talk(GAME_PLAY* play, int count, int index) {
 static void play_draw_coop_overlays(GAME_PLAY* play) {
     rect saved = play->view.screen;
     rect full;
-    int count = 1 + mPlib_extra_player_count();
+    int count = play_player_count();
     int has_overlay = FALSE;
-    int i;
+    int pad;
 
-    for (i = 1; i < count; i++) {
-        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
-        int pad = mPlib_pad_for_player(guest);
-
-        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
+    /* By pad, not by this world's actor list: a guest inside a building has no
+     * town body, and their menu still has to draw in their own view. */
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        if (pc_session_menu_is_open(pad) != FALSE) {
             has_overlay = TRUE;
         }
     }
@@ -1449,21 +1492,25 @@ static void play_draw_coop_overlays(GAME_PLAY* play) {
     gDPNoOpTag(NOW_POLY_OPA_DISP++, PC_NOOP_MENU_DEPTH_OFF);
     CLOSE_DISP(play->game.graph);
 
-    for (i = 1; i < count; i++) {
-        PLAYER_ACTOR* guest = mPlib_extra_player_at(i - 1);
-        int pad = mPlib_pad_for_player(guest);
+    for (pad = 1; pad < PLAYER_NUM; pad++) {
+        int view_index;
 
-        if ((pad > 0) && (pc_session_menu_is_open(pad) != FALSE)) {
-            int view_index = play_actor_view_index(play, guest);
-
-            play_set_view_menu(play, count, view_index);
-            showSplitHudView(&play->view);
-            pc_menu_band_l = play->view.screen.l;
-            pc_menu_band_t = play->view.screen.top;
-            pc_menu_band_r = play->view.screen.r;
-            pc_menu_band_b = play->view.screen.bottom;
-            pc_session_menu_draw(&play->game, pad);
+        if (pc_session_menu_is_open(pad) == FALSE) {
+            continue;
         }
+
+        view_index = pc_world_slot_view(g_pc_coop_guest_slot[pad]);
+        if ((view_index <= 0) || (view_index >= count)) {
+            continue;
+        }
+
+        play_set_view_menu(play, count, view_index);
+        showSplitHudView(&play->view);
+        pc_menu_band_l = play->view.screen.l;
+        pc_menu_band_t = play->view.screen.top;
+        pc_menu_band_r = play->view.screen.r;
+        pc_menu_band_b = play->view.screen.bottom;
+        pc_session_menu_draw(&play->game, pad);
     }
 
     if (g_pc_paused) {
@@ -1819,20 +1866,19 @@ static void play_restart_disp(GAME_PLAY* play, GRAPH* graph) {
     DisplayList_initialize(graph, fill_r, fill_g, fill_b, (GAME*)play);
 }
 
-/* Drawing a second play into the wipe list is what froze the zoom. The other
- * player's view of this same play stays up, and the wipe is clipped to the
- * view that is changing scenes. Return to Title fades every view in place, so
- * each world keeps its own picture under that fade. */
-static int play_draw_keeps_one_world(GAME_PLAY* play) {
-    /* Return to Title and a join fade-in both run while the other player is
-     * still indoors. Collapsing to this play hides that room and, when the
-     * joiner was not a guest yet, never splits. */
-    if ((pc_world_live() >= 2) &&
-        ((play->fb_fade_type == FADE_TYPE_OUT_RETURN_TITLE) || (play->fb_fade_type == FADE_TYPE_IN))) {
-        return FALSE;
+/* Drawing a second play into the wipe list is what froze the zoom. Each view
+ * now draws the world its player is in, flushed per view, so a wipe in one
+ * world no longer replaces the other player's half with this play. Return to
+ * Title fades every view in place, so each world keeps its own picture under
+ * that fade. */
+static int play_view_world(int index) {
+    int world = s_draw_view_world[index];
+
+    if ((world <= 0) || (world >= PC_WORLD_MAX) || (pc_world_at(world) == NULL)) {
+        return 0;
     }
 
-    return (play->fb_wipe_mode != WIPE_MODE_NONE) || (play->fb_mode != FBDEMO_MODE_NONE) || (pc_world_live() <= 1);
+    return world;
 }
 
 static int play_split_live(GAME_PLAY* play) {
@@ -2054,10 +2100,13 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
             xyz_t center = host_center;
 
             play_view_camera(play, i, &eye, &center);
-            if (play_draw_keeps_one_world(play)) {
-                play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
-            } else {
+            /* A wipe only changes one world. Keep every view on the world its
+             * player is in: collapsing the split onto this play showed the
+             * town, and the other player's door walk, on an indoor half. */
+            if (play_view_world(i) != 0) {
                 play_draw_bound_view(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
+            } else {
+                play_draw_split_side(play, graph1, i, count, (i > 0) ? &eye : NULL, (i > 0) ? &center : NULL);
             }
             if ((clip_fade != FALSE) &&
                 ((play_fade_every_view(fade_play) != FALSE) || (i == fade_view))) {
@@ -2265,10 +2314,10 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 full.r = SCREEN_WIDTH;
                 play_view_camera(play, last, &guest_eye, &guest_center);
 
-                if (play_draw_keeps_one_world(play)) {
-                    play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
-                } else {
+                if (play_view_world(last) != 0) {
                     play_draw_bound_view(play, graph1, last, count, &guest_eye, &guest_center);
+                } else {
+                    play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
                 }
                 setLookAtView(&play->view, &eye, &center, &up);
                 setScissorView(&play->view, &full);

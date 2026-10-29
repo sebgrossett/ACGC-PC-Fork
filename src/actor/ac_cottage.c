@@ -155,8 +155,8 @@ static Door_data_c Door_data_cottage_npc = {
 // My cottage
 static void Cottage_my_rewrite_door(ACTOR* actor, GAME_PLAY* play);
 static void Cottage_my_set_bgOffset(STRUCTURE_ACTOR* cottage, int offs);
-static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play);
-static int Cottage_my_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play);
+static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player);
+static int Cottage_my_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player);
 static void Cottage_my_demo_door_open(ACTOR* actor);
 static f32 Cottage_my_light_aim(STRUCTURE_ACTOR* cottage);
 static void Cottage_my_ctrl_light(STRUCTURE_ACTOR* cottage);
@@ -169,8 +169,8 @@ extern Gfx obj_s_myhome_i_window_model[];
 // NPC cottage
 static void Cottage_npc_rewrite_door(ACTOR* actor, GAME_PLAY* play);
 static void Cottage_npc_set_bgOffset(STRUCTURE_ACTOR* cottage, int offs);
-static int Cottage_npc_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play);
-static int Cottage_npc_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play);
+static int Cottage_npc_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player);
+static int Cottage_npc_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player);
 static void Cottage_npc_demo_door_open(ACTOR* actor);
 static f32 Cottage_npc_light_aim(STRUCTURE_ACTOR* cottage);
 static void Cottage_npc_ctrl_light(STRUCTURE_ACTOR* cottage);
@@ -328,13 +328,10 @@ static void Cottage_set_doorSE(STRUCTURE_ACTOR* cottage) {
     }
 }
 
-static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
+static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player) {
     f32 xOffs;
     f32 zOffs;
     int y;
-    PLAYER_ACTOR* player;
-
-    player = GET_PLAYER_ACTOR(play);
 
     if (player != NULL) {
         xOffs = (player->actor_class.world.position.x - (cottage->actor_class.world.position.x + 20.0f));
@@ -345,7 +342,8 @@ static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play
 #ifdef TARGET_PC
             // -DEG2SHORT_ANGLE(180.0f) becomes +32768 on GCC (s16 cast wraps, unary minus
             // promotes to int) making the lower bound unreachable.
-            if (y > -32768 && y < -DEG2SHORT_ANGLE(90.0f) && chkTrigger(BUTTON_A) != FALSE) {
+            if (y > -32768 && y < -DEG2SHORT_ANGLE(90.0f) &&
+                chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) != FALSE) {
 #else
             if (y > -DEG2SHORT_ANGLE(180.0f) && y < -DEG2SHORT_ANGLE(90.0f) && chkTrigger(BUTTON_A) != FALSE) {
 #endif
@@ -357,21 +355,20 @@ static int Cottage_my_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play
     return FALSE;
 }
 
-static int Cottage_npc_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
-    PLAYER_ACTOR* player;
+static int Cottage_npc_check_door_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player) {
     const COTTAGE_DATA* cottage_data;
 
-    player = GET_PLAYER_ACTOR(play);
     cottage_data = Cottage_data_get(cottage);
 
-    return (player != NULL && player->item_in_front == cottage_data->actor_name && chkTrigger(BUTTON_A) != FALSE);
+    return (player != NULL && player->item_in_front == cottage_data->actor_name &&
+            chkTrigger_pad(mPlib_pad_for_player(player), BUTTON_A) != FALSE);
 }
 
-static int Cottage_my_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
+static int Cottage_my_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player) {
     return FALSE;
 }
 
-static int Cottage_npc_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
+static int Cottage_npc_check_go_out(STRUCTURE_ACTOR* cottage, GAME_PLAY* play, PLAYER_ACTOR* player) {
     Animal_c* island_villager;
     mNPS_schedule_c* schedule;
     int res;
@@ -391,27 +388,42 @@ static int Cottage_check_door_action(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) 
     const COTTAGE_DATA* cottage_data;
     int res;
     int request_type;
+    int count;
+    int i;
 
-    GET_PLAYER_ACTOR(play);
     res = Cottage_ACTION_NONE;
     cottage_data = Cottage_data_get(cottage);
 
     request_type = cottage->request_type;
-    if ((*cottage_data->check_door_in_proc)(cottage, play) != FALSE) {
-        if ((*cottage_data->check_door_out_proc)(cottage, play) != FALSE) {
-            res = Cottage_ACTION_SPEAK_GO_OUT;
-        } else {
-            res = Cottage_ACTION_DOOR_OPEN;
-            cottage->request_type = Cottage_ACTION_OPEN_IN_INIT;
+
+    /* Any player can use this door. The checks read that player's position,
+     * item in front and A press, so ask each player in this play. */
+    count = mPlib_players_here(play);
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = mPlib_player_here_at(play, i);
+
+        if ((*cottage_data->check_door_in_proc)(cottage, play, player) != FALSE) {
+            if ((*cottage_data->check_door_out_proc)(cottage, play, player) != FALSE) {
+                res = Cottage_ACTION_SPEAK_GO_OUT;
+            } else {
+                res = Cottage_ACTION_DOOR_OPEN;
+                cottage->request_type = Cottage_ACTION_OPEN_IN_INIT;
+            }
+
+#ifdef TARGET_PC
+            /* The door demo must run for the player who pressed A. */
+            mPlib_set_request_owner(player);
+#endif
+            return res;
         }
-    } else {
-        if (request_type == Cottage_ACTION_DOOR_OPEN) {
-            res = Cottage_ACTION_OPEN_IN_INIT;
-        } else if (request_type == Cottage_ACTION_OPEN_PL_OUT_INIT) {
-            res = Cottage_ACTION_NPC_OUT_INIT;
-        } else if (request_type == Cottage_ACTION_NPC_OUT_INIT && mPlib_check_player_outdoor_start(&play->game) != FALSE) {
-            res = Cottage_ACTION_OPEN_PL_OUT_INIT;
-        }
+    }
+
+    if (request_type == Cottage_ACTION_DOOR_OPEN) {
+        res = Cottage_ACTION_OPEN_IN_INIT;
+    } else if (request_type == Cottage_ACTION_OPEN_PL_OUT_INIT) {
+        res = Cottage_ACTION_NPC_OUT_INIT;
+    } else if (request_type == Cottage_ACTION_NPC_OUT_INIT && mPlib_check_player_outdoor_start(&play->game) != FALSE) {
+        res = Cottage_ACTION_OPEN_PL_OUT_INIT;
     }
 
     return res;
@@ -757,9 +769,14 @@ static void Cottage_move_wait_pl_in_init(STRUCTURE_ACTOR* cottage) {
 }
 
 static void Cottage_move_wait_pl_in(STRUCTURE_ACTOR* cottage, GAME_PLAY* play) {
-    if ((*GET_PLAYER_ACTOR_NOW()->get_door_label_proc)(gamePT) != cottage) {
+    PLAYER_ACTOR* who = mPlib_player_at_door(play, (ACTOR*)cottage);
+
+    if (who == NULL) {
         return;
     }
+
+    /* The interior spawns the player named here, not the selected resident. */
+    mPlib_set_demo_talker(who);
 
     mBGMPsComp_make_ps_wipe(0x249);
     Cottage_move_open_in_init(cottage);

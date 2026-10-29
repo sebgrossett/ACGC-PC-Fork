@@ -432,6 +432,21 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
     if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM) && (saved_pad >= 0)) {
         mPlib_register_player_pad(resident_slot, saved_pad);
     }
+    /* Child init re-reads the save, so the snapshot can name another player.
+     * The interior's talks, menus and item gives all read player_no and
+     * now_private; stamp the world's owner right before the capture. */
+    if ((resident_slot >= 0) && (resident_slot < PLAYER_NUM)) {
+        Private_c* priv = mPlib_private_for_slot(resident_slot);
+
+        if (priv == NULL) {
+            priv = Save_GetPointer(private_data[resident_slot]);
+        }
+
+        Common_Set(player_no, resident_slot);
+        if (priv != NULL) {
+            Common_Set(now_private, priv);
+        }
+    }
     s_world[index].game = child;
     pc_world_capture(index);
     pc_world_restore(0);
@@ -492,6 +507,53 @@ static void pc_world_destroy_child(int index) {
      * pass reads them. The actors are already freed. */
     mco_work.count = 0;
     memset(mco_work.colliders, 0, sizeof(mco_work.colliders));
+}
+
+/* A guest who leaves from an interior: drop the world they were in. The world
+ * is theirs alone, so freeing it removes their body. The destroy flag is
+ * honoured after this frame's moves, never mid-move. */
+void pc_world_leave_slot(int slot) {
+    int world;
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return;
+    }
+
+    world = (int)s_slot_world[slot];
+    s_slot_world[slot] = 0;
+    s_slot_pad[slot] = -1;
+
+    if ((world > 0) && (world < PC_WORLD_MAX) && (s_world[world].game != NULL)) {
+        s_world[world].destroy = TRUE;
+    }
+}
+
+/* The player actor for a resident, whichever world they are in. The bound
+ * table only lists this world's players, so read the target world directly. */
+PLAYER_ACTOR* pc_world_slot_player(int slot) {
+    int saved;
+    int world;
+    PLAYER_ACTOR* player;
+
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return NULL;
+    }
+
+    world = pc_world_slot_world(slot);
+    if ((world <= 0) || (pc_world_at(world) == NULL)) {
+        return get_player_actor_by_index(pc_world_at(0), slot);
+    }
+
+    saved = s_bound;
+    pc_world_bind(world);
+    player = get_player_actor_by_index(pc_world_at(world), slot);
+    if (saved >= 0) {
+        pc_world_bind(saved);
+    } else {
+        pc_world_bind(0);
+    }
+
+    return player;
 }
 
 void pc_world_drop_children(void) {
@@ -949,6 +1011,25 @@ int pc_world_slot_view(int slot) {
     }
 
     return -1;
+}
+
+/* World index a resident is playing in (0 = this town, 0 also when they are
+ * not live). The demo and message machines are one global, so they have to run
+ * in the world the active talker is in. */
+int pc_world_slot_world(int slot) {
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return 0;
+    }
+
+    if (s_slot_world[slot] > 0) {
+        GAME_PLAY* play = pc_world_at(s_slot_world[slot]);
+
+        if (play != NULL) {
+            return s_slot_world[slot];
+        }
+    }
+
+    return 0;
 }
 
 int pc_world_play_slot(GAME_PLAY* play) {

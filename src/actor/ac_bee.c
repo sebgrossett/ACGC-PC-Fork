@@ -198,13 +198,19 @@ static void aBEE_fly(ACTOR* actorx, GAME* game) {
                     bee->catch_delay_frames = 0.0f;
                 }
             } else {
-                f32 swing_timer;
+                PLAYER_ACTOR* catcher = mPlib_player_near((GAME_PLAY*)gamePT, &actorx->world.position);
 
-                swing_timer = GET_PLAYER_ACTOR_NOW()->Get_Item_net_catch_swing_timer_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT);
-                if ((swing_timer > 0.0f || mPlib_Check_StopNet(&pos)) && actorx->player_distance_xz < 40.0f) {
-                    GET_PLAYER_ACTOR_NOW()->Set_Item_net_catch_request_force_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT, (u32)actorx, TRUE);
-                } else {
-                    GET_PLAYER_ACTOR_NOW()->Set_Item_net_catch_request_table_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT, (u32)actorx, TRUE, &actorx->world.position, 24.0f);
+                /* The net belongs to whoever is nearest the bee, not to the
+                 * selected resident. */
+                if (catcher != NULL) {
+                    f32 swing_timer = catcher->Get_Item_net_catch_swing_timer_proc((ACTOR*)catcher, gamePT);
+
+                    if ((swing_timer > 0.0f || mPlib_Check_StopNet(&pos)) && actorx->player_distance_xz < 40.0f) {
+                        catcher->Set_Item_net_catch_request_force_proc((ACTOR*)catcher, gamePT, (u32)actorx, TRUE);
+                    } else {
+                        catcher->Set_Item_net_catch_request_table_proc((ACTOR*)catcher, gamePT, (u32)actorx, TRUE,
+                                                                      &actorx->world.position, 24.0f);
+                    }
                 }
             }
 

@@ -447,8 +447,15 @@ static void aPOL2_turn(NPC_POLICE2_ACTOR* actor, GAME_PLAY* play) {
 
 static void aPOL2_check_answer(NPC_POLICE2_ACTOR* actor, GAME_PLAY* play) {
     mMsg_Window_c* msg_p = mMsg_Get_base_window_p();
+    int cont = mMsg_Check_MainNormalContinue(msg_p);
+    /* The co-op message window can run a page straight past its continue
+     * control when the talk belongs to the player in an interior world, so the
+     * NPC never sees the pause and the item was never given (and the actor
+     * stayed in this action, refusing every later talk). The select window's
+     * answer is final once it starts closing, so take it there too. */
+    int answered = (mChoice_check_main_index(&msg_p->choice_window) == mChoice_MAIN_DISAPPEAR);
 
-    if (mMsg_Check_MainNormalContinue(msg_p) == TRUE) {
+    if ((cont != FALSE) || (answered != FALSE)) {
         switch (mChoice_GET_CHOSENUM()) {
             case mChoice_CHOICE0: {
                 mActor_name_t* item_p = &Save_Get(police_box).keep_items[actor->item_idx];

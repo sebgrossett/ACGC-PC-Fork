@@ -91,44 +91,50 @@ static PLAYER_ACTOR* aPBOX_request_player(GAME_PLAY* play) {
 #ifdef TARGET_PC
     PLAYER_ACTOR* owner = mPlib_request_owner();
 
-    if (owner != NULL) {
+    if (mPlib_player_in_play(play, owner) != FALSE) {
         return owner;
     }
-#endif
 
+    /* The slot table still names the resident after they walk indoors. */
+    return mPlib_player_here_at(play, 0);
+#else
     return GET_PLAYER_ACTOR(play);
+#endif
 }
 
 static int aPBOX_check_player(ACTOR* actor, GAME_PLAY* play) {
     PLAYER_ACTOR* player;
     int res;
-#ifdef TARGET_PC
-    int i;
-    int count;
-#endif
 
     player = GET_PLAYER_ACTOR(play);
     res = (player != NULL) ? 1 : 0;
 
+#ifdef TARGET_PC
+    {
+        /* The resident may be indoors while the guest is out here. Ask every
+         * player this world really has, and record which one asked so the
+         * request runs for them. */
+        int count = mPlib_players_here(play);
+        int i;
+
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* here = mPlib_player_here_at(play, i);
+
+            if (aPBOX_player_in_box(here, actor) != FALSE) {
+                mPlib_set_request_owner(here);
+                return 2;
+            }
+        }
+    }
+
+    return res;
+#else
     if (aPBOX_player_in_box(player, actor) != FALSE) {
         return 2;
     }
 
-#ifdef TARGET_PC
-    /* The resident may be indoors while the guest is out here. Ask every other
-     * player too, and record which one asked so the request runs for them. */
-    count = mPlib_extra_player_count();
-    for (i = 0; i < count; i++) {
-        PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
-
-        if (aPBOX_player_in_box(guest, actor) != FALSE) {
-            mPlib_set_request_owner(guest);
-            return 2;
-        }
-    }
-#endif
-
     return res;
+#endif
 }
 
 static int aPBOX_ctrl_light(STRUCTURE_ACTOR* shop) {
@@ -155,7 +161,13 @@ static void aPBOX_actor_move(ACTOR* actor, GAME* game) {
 
     box->action = target;
 
-    if (mPlib_player_at_door(play, actor) != NULL) {
+    player = mPlib_player_at_door(play, actor);
+    if (player != NULL) {
+#ifdef TARGET_PC
+        /* Name the walker before the scene change. The door demo can end first,
+         * and its talker is cleared then, which spawns the selected resident. */
+        mPlib_set_demo_talker(player);
+#endif
         aPBOX_rewrite_out_data(box, play);
         goto_other_scene(play, &aPBOX_police_box_enter_data, FALSE);
     } else {

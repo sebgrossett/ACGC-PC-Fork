@@ -1246,7 +1246,14 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                 int pad;
 
                 if (owner == NULL) {
-                    owner = mPlib_demo_talker();
+                    PLAYER_ACTOR* talker = mPlib_demo_talker();
+
+                    /* The talker outlives the world it was set in. Taking it
+                     * here would run this talk as a player who is not in this
+                     * play (the other player, indoors). */
+                    if (mPlib_player_in_play((GAME_PLAY*)gamePT, talker) != FALSE) {
+                        owner = talker;
+                    }
                 }
 
                 if (owner != NULL) {
@@ -1259,8 +1266,13 @@ extern int mDemo_Request(int type, ACTOR* actor, mDemo_REQUEST_PROC req_proc) {
                     pad = mPlib_pad_for_player(owner);
                 } else {
                     /* Shop talk names no one. The interior's player_no is the
-                     * resident inside, and their buttons are not pad 0. */
-                    slot = (int)Common_Get(player_no);
+                     * resident inside, and their buttons are not pad 0. When
+                     * that resident is in another world, run it as the player
+                     * who is here. */
+                    PLAYER_ACTOR* here = mPlib_player_here_at((GAME_PLAY*)gamePT, 0);
+                    int here_slot = (here != NULL) ? mPlib_player_slot_of(here) : -1;
+
+                    slot = (here_slot >= 0) ? here_slot : (int)Common_Get(player_no);
                     pad = mPlib_pad_for_player_slot(slot);
                     if (pad < 0) {
                         pad = 0;
@@ -1633,6 +1645,19 @@ extern void mDemo_Init(GAME_PLAY* play) {
 extern int mDemo_CheckDemo() {
     return demo->state != mDemo_STATE_WAIT;
 }
+
+#ifdef TARGET_PC
+/* Resident slot the active demo runs as, or -1 when idle. The message and
+ * choice machines are one global; only the world this player is in may step
+ * them. */
+extern int mDemo_OwnerSlot(void) {
+    if (demo->state == mDemo_STATE_WAIT) {
+        return -1;
+    }
+
+    return demo->current.pc_owner_slot;
+}
+#endif
 
 extern int mDemo_CheckDemo4Event() {
 

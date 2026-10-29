@@ -597,31 +597,40 @@ extern int goto_other_scene(GAME_PLAY* play, Door_data_c* door_data, int update_
 #ifdef TARGET_PC
             {
                 /* The wipe finishes after this demo ends. Remember who is
-                 * walking in so the interior spawns that resident. */
+                 * walking in so the interior spawns that player. A talker or a
+                 * DOOR body from the other world must not be picked: the town
+                 * keeps a player registered after they walk into another
+                 * building, and naming them starts the interior (and its view)
+                 * for a player who is not even in this world. */
                 PLAYER_ACTOR* who = mPlib_demo_talker();
                 int slot = -1;
 
+                if (mPlib_player_in_play(play, who) == FALSE) {
+                    who = NULL;
+                }
+
                 if (who == NULL) {
                     /* A player-request walk-in has no demo talker. Whoever is
-                     * in the DOOR state is the walker; the fall-back below
-                     * would name the selected resident, who may be someone
-                     * else entirely in co-op. */
-                    who = get_player_actor_withoutCheck(play);
-                    if ((who == NULL) || (who->now_main_index != mPlayer_INDEX_DOOR)) {
-                        int i;
-                        int count = mPlib_extra_player_count();
+                     * in the DOOR state here is the walker. */
+                    int count = mPlib_players_here(play);
+                    int i;
 
-                        who = NULL;
-                        for (i = 0; i < count; i++) {
-                            PLAYER_ACTOR* guest = mPlib_extra_player_at(i);
+                    for (i = 0; i < count; i++) {
+                        PLAYER_ACTOR* here = mPlib_player_here_at(play, i);
 
-                            if ((guest != NULL) && (guest->now_main_index == mPlayer_INDEX_DOOR)) {
-                                who = guest;
-                                break;
-                            }
+                        if ((here != NULL) && (here->now_main_index == mPlayer_INDEX_DOOR)) {
+                            who = here;
+                            break;
                         }
                     }
                 }
+
+                if (who == NULL) {
+                    /* A scripted walk-in leaves nobody in the DOOR state. The
+                     * first player of this play is the one leaving. */
+                    who = mPlib_player_here_at(play, 0);
+                }
+
                 if (who != NULL) {
                     slot = mPlib_player_slot_of(who);
                 }
