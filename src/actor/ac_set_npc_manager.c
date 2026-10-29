@@ -31,6 +31,10 @@ ACTOR_PROFILE Set_Npc_Manager_Profile = {
 static int aSNMgr_get_player_pos(xyz_t* pos_p, GAME* game);
 static void aSNMgr_renewal_player_now_block(SET_NPC_MANAGER_ACTOR* manager);
 static void aSNMgr_renewal_set_scope(SET_NPC_MANAGER_ACTOR* manager);
+static void aSNMgr_renewal_extra_players(SET_NPC_MANAGER_ACTOR* manager, GAME* game);
+static int aSNMgr_scope_player(SET_NPC_MANAGER_ACTOR* manager, xyz_t pos);
+static int aSNMgr_player_block_taken(SET_NPC_MANAGER_ACTOR* manager, int bx, int bz);
+static int aSNMgr_check_in_scope(xyz_t chk_pos, aSNMgr_scope_c* scope_p);
 static void aSNMgr_init_winfo_p(SET_NPC_MANAGER_ACTOR* manager);
 static void aSNMgr_set_npc_exist(SET_NPC_MANAGER_ACTOR* manager);
 static void aSNMgr_clear_make_npc(aSNMgr_make_c* make_p, int count);
@@ -49,6 +53,12 @@ static void aSNMgr_actor_ct(ACTOR* actorx, GAME* game) {
     aSNMgr_renewal_player_now_block(manager);
     mFI_Wpos2BlockNum(&manager->player_pos.next_block[0], &manager->player_pos.next_block[1], manager->player_pos.pos);
     aSNMgr_renewal_set_scope(manager);
+    manager->extra_num = 0;
+    manager->extra_moved = FALSE;
+    for (i = 0; i <= aSNMgr_EXTRA_PLAYER_MAX; i++) {
+        manager->extra_last_block[i][0] = -1;
+        manager->extra_last_block[i][1] = -1;
+    }
     manager->npc_info.animal_p = Save_Get(animals);
     manager->npc_info.list_p = Common_Get(npclist);
     manager->npc_info.schedule_p = Common_Get(npc_schedule);
@@ -222,16 +232,12 @@ static void aSNMgr_renewal_player_next_block(SET_NPC_MANAGER_ACTOR* manager) {
     mFI_GetNextBlockNum(&manager->player_pos.next_block[0], &manager->player_pos.next_block[1]);
 }
 
-static void aSNMgr_renewal_set_scope(SET_NPC_MANAGER_ACTOR* manager) {
+static void aSNMgr_set_scope_edges(aSNMgr_scope_c* scope_p, int* next_block_p) {
     static int block_wh[] = { mFI_BK_WORLDSIZE_X, mFI_BK_WORLDSIZE_Z };
     static f32 half_block_wh[] = { mFI_BK_WORLDSIZE_HALF_X_F, mFI_BK_WORLDSIZE_HALF_Z_F };
     static f32 r_add_borderless[] = { -mFI_BK_WORLDSIZE_X_F, mFI_BK_WORLDSIZE_Z_F };
     static f32 r_add_original[] = { -mFI_BK_WORLDSIZE_HALF_X_F, mFI_BK_WORLDSIZE_HALF_Z_F };
-    static f32 gr_add[] = { -mFI_UT_WORLDSIZE_X_F, mFI_UT_WORLDSIZE_Z_F };
     f32* r_add = g_mPlib_wade_disabled ? r_add_borderless : r_add_original;
-    int* next_block_p = manager->player_pos.next_block;
-    aSNMgr_scope_c* scope_p = &manager->scope;
-    aSNMgr_scope_c* guest_scope_p = &manager->guest_scope;
     f32 center;
     int i;
     int j;
@@ -241,9 +247,117 @@ static void aSNMgr_renewal_set_scope(SET_NPC_MANAGER_ACTOR* manager) {
 
         for (j = 0; j < 2; j++) {
             scope_p->edge[i][j] = center + r_add[j];
+        }
+    }
+}
+
+static void aSNMgr_renewal_set_scope(SET_NPC_MANAGER_ACTOR* manager) {
+    static f32 gr_add[] = { -mFI_UT_WORLDSIZE_X_F, mFI_UT_WORLDSIZE_Z_F };
+    aSNMgr_scope_c* scope_p = &manager->scope;
+    aSNMgr_scope_c* guest_scope_p = &manager->guest_scope;
+    int i;
+    int j;
+
+    aSNMgr_set_scope_edges(scope_p, manager->player_pos.next_block);
+
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 2; j++) {
             guest_scope_p->edge[i][j] = scope_p->edge[i][j] + gr_add[j];
         }
     }
+}
+
+/* Co-op: every other player in this play gets their own scope so villagers
+ * appear, walk and go home around them too. The retail player keeps
+ * player_pos/scope untouched. */
+static void aSNMgr_renewal_extra_players(SET_NPC_MANAGER_ACTOR* manager, GAME* game) {
+#ifdef TARGET_PC
+    GAME_PLAY* play = (GAME_PLAY*)game;
+    PLAYER_ACTOR* main_player = get_player_actor_withoutCheck(play);
+    int count = mPlib_players_here(play);
+    int n = 0;
+    int i;
+
+    manager->extra_num = 0;
+    manager->extra_moved = FALSE;
+
+    for (i = 0; i < count && n < aSNMgr_EXTRA_PLAYER_MAX; i++) {
+        PLAYER_ACTOR* player = mPlib_player_here_at(play, i);
+        int slot;
+        int bx;
+        int bz;
+
+        if ((player == NULL) || (player == main_player)) {
+            continue;
+        }
+
+        manager->extra_pos[n].pos = player->actor_class.world.position;
+        mFI_Wpos2BlockNum(&bx, &bz, manager->extra_pos[n].pos);
+        manager->extra_pos[n].now_block[0] = bx;
+        manager->extra_pos[n].now_block[1] = bz;
+        manager->extra_pos[n].next_block[0] = bx;
+        manager->extra_pos[n].next_block[1] = bz;
+        aSNMgr_set_scope_edges(&manager->extra_scope[n], manager->extra_pos[n].next_block);
+
+        /* A block crossing is what re-arms the retail appear pass (its own
+         * wade start). Track it per resident so a guest walking re-arms it
+         * too, not only the selected resident. */
+        slot = mPlib_player_slot_of(player);
+        if ((slot >= 0) && (slot <= aSNMgr_EXTRA_PLAYER_MAX)) {
+            if ((manager->extra_last_block[slot][0] >= 0) &&
+                ((manager->extra_last_block[slot][0] != bx) || (manager->extra_last_block[slot][1] != bz))) {
+                manager->extra_moved = TRUE;
+            }
+
+            manager->extra_last_block[slot][0] = bx;
+            manager->extra_last_block[slot][1] = bz;
+        }
+
+        n++;
+    }
+
+    manager->extra_num = n;
+#else
+    (void)manager;
+    (void)game;
+#endif
+}
+
+/* Player index whose scope holds this position: 0 is the retail player,
+ * 1..extra_num the co-op players, -1 none. */
+static int aSNMgr_scope_player(SET_NPC_MANAGER_ACTOR* manager, xyz_t pos) {
+    int i;
+
+    if (aSNMgr_check_in_scope(pos, &manager->scope) == TRUE) {
+        return 0;
+    }
+
+    for (i = 0; i < manager->extra_num; i++) {
+        if (aSNMgr_check_in_scope(pos, &manager->extra_scope[i]) == TRUE) {
+            return i + 1;
+        }
+    }
+
+    return -1;
+}
+
+/* TRUE when any player is standing in this block. Retail only checks the
+ * selected resident; a villager's go-home target must not land on either
+ * player. */
+static int aSNMgr_player_block_taken(SET_NPC_MANAGER_ACTOR* manager, int bx, int bz) {
+    int i;
+
+    if ((manager->player_pos.now_block[0] == bx) && (manager->player_pos.now_block[1] == bz)) {
+        return TRUE;
+    }
+
+    for (i = 0; i < manager->extra_num; i++) {
+        if ((manager->extra_pos[i].now_block[0] == bx) && (manager->extra_pos[i].now_block[1] == bz)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 static int aSNMgr_check_in(f32 chk_pos, f32* scope_pos_p) {
@@ -303,9 +417,7 @@ static void aSNMgr_get_block_ut_num_set_npc(int* bx, int* bz, int* ux, int* uz, 
     }
 }
 
-static int aSNMgr_set_appear_info_regular(SET_NPC_MANAGER_ACTOR* manager, int bx, int bz, int idx) {
-    int player_bx = manager->player_pos.next_block[0];
-    int player_bz = manager->player_pos.next_block[1];
+static int aSNMgr_set_appear_info_regular(SET_NPC_MANAGER_ACTOR* manager, int bx, int bz, int idx, int player_bx, int player_bz) {
     int ret = FALSE;
 
     int appear_range = g_mPlib_wade_disabled ? 1 : 0;
@@ -724,6 +836,7 @@ static int aSNMgr_set_make_npc(aSNMgr_make_c* make_p, mActor_name_t name, int bx
         sel_make_p->ux = ux;
         sel_make_p->uz = uz;
         sel_make_p->idx = animal_idx;
+
     }
 
     return idx;
@@ -793,7 +906,6 @@ static void aSNMgr_set_to_block(u8* to_block_p, xyz_t pos, u8 goal_bx, u8 goal_b
 }
 
 static void aSNMgr_walk_to_next_block(xyz_t* pos_p, u8* to_block_p, u8* in_block_p, SET_NPC_MANAGER_ACTOR* manager) {
-    aSNMgr_player_pos_c* player_pos_p = &manager->player_pos;
     int block[2];
     int prev_block[2];
     int idx;
@@ -816,7 +928,7 @@ static void aSNMgr_walk_to_next_block(xyz_t* pos_p, u8* to_block_p, u8* in_block
             }
         }
 
-        if (block[0] != player_pos_p->now_block[0] || block[1] != player_pos_p->now_block[1]) {
+        if (aSNMgr_player_block_taken(manager, block[0], block[1]) == FALSE) {
             mFI_BkandUtNum2CenterWpos(pos_p, block[0], block[1], unit[0], unit[1]);
 
             if (change_block == TRUE) {
@@ -992,7 +1104,7 @@ static int aSNMgr_set_go_home_status_sub(SET_NPC_MANAGER_ACTOR* manager, int anm
     return ret;
 }
 
-static int aSNMgr_set_go_home_status(SET_NPC_MANAGER_ACTOR* manager, int anm_idx, int bx, int bz, int player_bx, int player_bz) {
+static int aSNMgr_set_go_home_status(SET_NPC_MANAGER_ACTOR* manager, int anm_idx, int bx, int bz) {
     // clang-format off
     static int add_bx[] = { 0,  0, 0, -1, 1 };
     static int add_bz[] = { 0, -1, 1,  0, 0 };
@@ -1017,7 +1129,7 @@ static int aSNMgr_set_go_home_status(SET_NPC_MANAGER_ACTOR* manager, int anm_idx
         chk_bz = home_bz + add_bz[i];
         
         if (mFI_BlockCheck(chk_bx, chk_bz) == TRUE) {
-            if ((chk_bx != bx || chk_bz != bz) && (chk_bx != player_bx || chk_bz != player_bz)) {
+            if ((chk_bx != bx || chk_bz != bz) && (aSNMgr_player_block_taken(manager, chk_bx, chk_bz) == FALSE)) {
                 if (aSNMgr_set_go_home_status_sub(manager, anm_idx, chk_bx, chk_bz, walk_status[i]) == TRUE) {
                     ret = TRUE;
                     break;
@@ -1047,8 +1159,6 @@ static void aSNMgr_set_stay_home_status(SET_NPC_MANAGER_ACTOR* manager, int anm_
 static void aSNMgr_force_go_home_event_start(SET_NPC_MANAGER_ACTOR* manager) {
     Animal_c* animal_p = manager->npc_info.animal_p;
     mNpc_NpcList_c* list_p = manager->npc_info.list_p;
-    int player_bx = manager->player_pos.now_block[0];
-    int player_bz = manager->player_pos.now_block[1];
     int now_bx;
     int now_bz;
     int goal_bx = 0;
@@ -1072,7 +1182,7 @@ static void aSNMgr_force_go_home_event_start(SET_NPC_MANAGER_ACTOR* manager) {
             if (mFI_Wpos2BlockNum(&now_bx, &now_bz, list_p->position) == TRUE && !animal_p->is_home) {
                 if (now_bx == goal_bx && now_bz == goal_bz) {
                     if (animal_p->home_info.block_x != now_bx || animal_p->home_info.block_z != now_bz) {
-                        if (!aSNMgr_set_go_home_status(manager, i, goal_bx, goal_bz, player_bx, player_bz)) {
+                        if (!aSNMgr_set_go_home_status(manager, i, goal_bx, goal_bz)) {
                             aSNMgr_set_stay_home_status(manager, i);
                         }
                     }
@@ -1091,8 +1201,6 @@ static void aSNMgr_force_go_home(SET_NPC_MANAGER_ACTOR* manager) {
     mNpc_NpcList_c* list_p = manager->npc_info.list_p;
     mNpcW_info_c** winfo_p = manager->npc_info.winfo_p;
     int* timer_p = manager->npc_info.timer;
-    int player_bx = manager->player_pos.now_block[0];
-    int player_bz = manager->player_pos.now_block[1];
     int bx;
     int bz;
     int i;
@@ -1102,8 +1210,8 @@ static void aSNMgr_force_go_home(SET_NPC_MANAGER_ACTOR* manager) {
             if (mFI_Wpos2BlockNum(&bx, &bz, list_p->position) == TRUE) {
                 if (!aSNMgr_check_move_npc_schedule(schedule_p, animal_p) && *timer_p == 0) {
                     if (animal_p->home_info.block_x != bx || animal_p->home_info.block_z != bz) {
-                        aSNMgr_set_go_home_status(manager, i, -1, -1, player_bx, player_bz);
-                    } else if ((bx != player_bx || bz != player_bz) && animal_p->is_home == TRUE && *winfo_p != NULL) {
+                        aSNMgr_set_go_home_status(manager, i, -1, -1);
+                    } else if ((aSNMgr_player_block_taken(manager, bx, bz) == FALSE) && animal_p->is_home == TRUE && *winfo_p != NULL) {
                         aSNMgr_go_back_home_sub(manager->npc_info.walk_p, winfo_p, manager->npc_info.winfo_p);
                     }
                 }
@@ -1156,9 +1264,14 @@ static void aSNMgr_set_npc_regular(SET_NPC_MANAGER_ACTOR* manager) {
 
     for (i = 0; i < ANIMAL_NUM_MAX; i++) {
         int set = TRUE;
+        int scope_player = aSNMgr_scope_player(manager, list_p->position);
+
 
         if (aSNMgr_chk_exist_and_appear(manager, mNpcW_APPEAR_STATUS_REGULAR, i) == TRUE) {
-            if (aSNMgr_check_in_scope(list_p->position, &manager->scope) == TRUE) {
+            if (scope_player >= 0) {
+                aSNMgr_player_pos_c* ppos =
+                    (scope_player == 0) ? &manager->player_pos : &manager->extra_pos[scope_player - 1];
+
                 if (((joint_event >> i) & 1) == 1) {
                     if (info_p->type != mEv_EVENT_KAMAKURA) {
                         aSNMgr_set_npc_event(animal_p, list_p, info_p, i);
@@ -1171,7 +1284,7 @@ static void aSNMgr_set_npc_regular(SET_NPC_MANAGER_ACTOR* manager) {
                     int make_flag;
 
                     aSNMgr_get_block_ut_num_set_npc(&bx, &bz, &ux, &uz, list_p);
-                    make_flag = aSNMgr_set_appear_info_regular(manager, bx, bz, i);
+                    make_flag = aSNMgr_set_appear_info_regular(manager, bx, bz, i, ppos->next_block[0], ppos->next_block[1]);
                     if (make_flag == TRUE) {
                         if (((joint_event >> i) & 1) == 0) {
                             make_flag = aSNMgr_get_safe_utnum(&ux, &uz, bx, bz, *winfo_p);
@@ -1257,6 +1370,7 @@ static void aSNMgr_actor_move(ACTOR* actorx, GAME* game) {
     GAME_PLAY* play = (GAME_PLAY*)game;
 
     aSNMgr_get_player_pos(&manager->player_pos.pos, game);
+    aSNMgr_renewal_extra_players(manager, game);
     switch (mFI_GetPlayerWade()) {
         case mFI_WADE_START:
             aSNMgr_clear_make_npc(manager->npc_info.make, aSNMgr_SET_NPC_MAX);
@@ -1270,7 +1384,10 @@ static void aSNMgr_actor_move(ACTOR* actorx, GAME* game) {
             break;
         case mFI_WADE_NONE:
             if (play->fb_fade_type == FADE_TYPE_NONE) {
-                aSNMgr_clear_make_npc(manager->npc_info.make, aSNMgr_SET_NPC_MAX);
+                /* The make list stays: a villager's spawn is gated on its cloth
+                 * DMA, which the first attempt only registers. Clearing this
+                 * every frame dropped that retry, so the villager appeared only
+                 * after the resident's next wade re-queued it. */
                 if (!aSNMgr_chk_arbeit_and_demo_and_halloween()) {
                     aSNMgr_force_go_home(manager);
                     aSNMgr_walk_npc(manager, game);
@@ -1279,8 +1396,18 @@ static void aSNMgr_actor_move(ACTOR* actorx, GAME* game) {
             break;
     }
 
+    /* The regular appear pass only re-arms on the selected resident's wade
+     * start. A guest crossing a block edge has to re-arm it too, or villagers
+     * never appear around them while the resident stands still. The machine
+     * can also be parked in NONE (a regular pass that landed during a wade),
+     * so promote out of any non-regular mode. */
+    if ((manager->extra_moved != FALSE) && (manager->set_mode != aSNMgr_SET_MODE_REGULAR)) {
+        aSNMgr_setup_set_proc(manager, aSNMgr_SET_MODE_REGULAR);
+    }
+
     aSNMgr_move_event_set(manager);
     (*manager->set_proc)(manager);
     aSNMgr_make_npc(manager, play);
     aSNMgr_reset_npc(manager);
+
 }
