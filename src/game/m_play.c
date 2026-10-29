@@ -2115,31 +2115,6 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     GAME_PLAY* fade_play = play_fading_play(play);
     int clip_fade = play_fade_is_split(play);
     int fade_view = play_fade_view(play);
-
-    /* TEMP: door colour-fade routing trace, on change. */
-    if (fade_play != NULL && fade_play->color_fade.color.a != 0) {
-        static int last_a = -1, last_view = -1, last_count = -1, last_talk = -2;
-        int talk = -2;
-        PLAYER_ACTOR* t = mPlib_demo_talker();
-
-        if (t != NULL) {
-            talk = play_actor_view_index(play, t);
-        }
-        if (fade_play->color_fade.color.a != last_a || fade_view != last_view ||
-            play_player_count() != last_count || talk != last_talk) {
-            FILE* fp = fopen("cfade_probe.txt", "a");
-
-            last_a = fade_play->color_fade.color.a;
-            last_view = fade_view;
-            last_count = play_player_count();
-            last_talk = talk;
-            if (fp != NULL) {
-                fprintf(fp, "CFADE a=%d clip=%d view=%d count=%d talkerview=%d\n", last_a, clip_fade, fade_view,
-                        last_count, talk);
-                fclose(fp);
-            }
-        }
-    }
 #endif
 
     PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
