@@ -340,17 +340,20 @@ extern int Actor_draw_actor_no_culling_check2(ACTOR* actor, xyz_t* camera_pos, f
     return res;
 }
 
-static void Actor_cull_check(ACTOR* actor) {
-    if (Actor_draw_actor_no_culling_check(actor) == TRUE) {
+static int Actor_cull_check(ACTOR* actor) {
+    int visible = Actor_draw_actor_no_culling_check(actor);
+
+    if (visible == TRUE) {
         actor->state_bitfield |= ACTOR_STATE_NO_CULL;
     } else {
-#ifdef TARGET_PC
-        /* Keep visibility from an earlier split view: the actor move pass runs
-         * once for every view, so an actor seen by any player must move. */
-#else
+#ifndef TARGET_PC
         actor->state_bitfield &= ~ACTOR_STATE_NO_CULL;
 #endif
+        /* PC keeps the flag: it is the union over every split view and the
+         * move pass runs once for all of them. */
     }
+
+    return visible;
 }
 
 #ifdef TARGET_PC
@@ -365,6 +368,8 @@ extern void Actor_info_cull_begin(GAME_PLAY* play) {
 
         while (actor != NULL) {
             actor->state_bitfield &= ~ACTOR_STATE_NO_CULL;
+            /* Drawn is a union over the views too: the move pass reads it. */
+            actor->drawn = FALSE;
             actor = actor->next_actor;
         }
 
@@ -987,16 +992,27 @@ extern void Actor_info_draw_actor(GAME_PLAY* play, Actor_info* actor_info) {
         int do_not_draw;
 
         for (actor = list->actor; actor != NULL; actor = actor->next_actor) {
+            int visible_here;
+
             /* Apply projection matrix to actor position */
             Skin_Matrix_PrjMulVector(&play->projection_matrix, &actor->world.position, &actor->camera_position,
                                      &actor->camera_w);
 
-            Actor_cull_check(actor);
+            /* NO_CULL is the union across views (the move pass runs once for
+             * all of them); what this view draws is its own visibility. The
+             * second view used to redraw everything the first view saw. */
+            visible_here = Actor_cull_check(actor);
             do_not_draw = (*draw_chk_proc)(actor, play);
+#ifndef TARGET_PC
             actor->drawn = FALSE;
+#endif
 
             if (do_not_draw == FALSE && actor->ct_proc == NULL && actor->dw_proc != NULL) {
-                if ((actor->state_bitfield & (ACTOR_STATE_NO_DRAW_WHILE_CULLED | ACTOR_STATE_NO_CULL))) {
+                /* NO_DRAW_WHILE_CULLED actors (field draw, event managers) draw
+                 * even when culled; everything else draws only where this view
+                 * sees it. */
+                if (visible_here == TRUE ||
+                    (actor->state_bitfield & ACTOR_STATE_NO_DRAW_WHILE_CULLED) != 0) {
                     if ((actor->state_bitfield & ACTOR_STATE_INVISIBLE) == 0 && actor->cull_while_talking == FALSE &&
                         actor->skip_drawing == FALSE) {
                         Actor_draw(play, actor);
