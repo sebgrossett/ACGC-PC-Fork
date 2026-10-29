@@ -76,6 +76,12 @@ typedef struct set_npc_player_pos_s {
 
 typedef void (*aSNMgr_SET_PROC)(SET_NPC_MANAGER_ACTOR*);
 
+/* Co-op: the wandering-villager scheduler used to see one player. Each extra
+ * player gets their own position and scope so villagers appear, walk and go
+ * home around either player. Single player leaves extra_num at 0 and every
+ * decision is the retail one. */
+#define aSNMgr_EXTRA_PLAYER_MAX 3
+
 struct set_npc_manager_actor_s {
     ACTOR actor_class;
     int set_mode;
@@ -83,6 +89,11 @@ struct set_npc_manager_actor_s {
     aSNMgr_player_pos_c player_pos;
     aSNMgr_scope_c scope;
     aSNMgr_scope_c guest_scope;
+    aSNMgr_player_pos_c extra_pos[aSNMgr_EXTRA_PLAYER_MAX];
+    aSNMgr_scope_c extra_scope[aSNMgr_EXTRA_PLAYER_MAX];
+    int extra_last_block[aSNMgr_EXTRA_PLAYER_MAX + 1][2];
+    int extra_moved;
+    int extra_num;
     aSNMgr_npc_info_c npc_info;
     f32 walk_accum;
 };
