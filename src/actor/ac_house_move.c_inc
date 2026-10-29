@@ -438,7 +438,7 @@ static void aHUS_wait(HOUSE_ACTOR* house, GAME_PLAY* play) {
 static void aHUS_open_door_wait(HOUSE_ACTOR* house, GAME_PLAY* play) {
     ACTOR* actorx = (ACTOR*)house;
 
-    if (actorx == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    if (mPlib_player_at_door(play, actorx) != NULL) {
         mBGMPsComp_make_ps_wipe(0x249);
         house->request_type = 3;
         aHUS_setup_animation(house, 0.5f);

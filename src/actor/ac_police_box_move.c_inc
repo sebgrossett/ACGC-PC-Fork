@@ -66,19 +66,14 @@ static void aPBOX_rewrite_out_data(STRUCTURE_ACTOR* shop, GAME_PLAY* play) {
     }
 }
 
-static int aPBOX_check_player(ACTOR* actor, GAME_PLAY* play) {
+static int aPBOX_player_in_box(PLAYER_ACTOR* player, ACTOR* actor) {
     u16 y;
     f32 xOffs;
     f32 zOffs;
     f32 t;
-    int res;
-    PLAYER_ACTOR* player;
-
-    player = GET_PLAYER_ACTOR(play);
-    res = 1;
 
     if (player == NULL) {
-        return 0;
+        return FALSE;
     }
 
     y = player->actor_class.shape_info.rotation.y;
@@ -89,11 +84,57 @@ static int aPBOX_check_player(ACTOR* actor, GAME_PLAY* play) {
 
     t = (xOffs) + (zOffs);
 
-    if ((y > 0x8000) && (y < 0xC000) && (t < 1100.0f)) {
-        res = 2;
+    return (y > 0x8000) && (y < 0xC000) && (t < 1100.0f);
+}
+
+static PLAYER_ACTOR* aPBOX_request_player(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    PLAYER_ACTOR* owner = mPlib_request_owner();
+
+    if (mPlib_player_in_play(play, owner) != FALSE) {
+        return owner;
+    }
+
+    /* The slot table still names the resident after they walk indoors. */
+    return mPlib_player_here_at(play, 0);
+#else
+    return GET_PLAYER_ACTOR(play);
+#endif
+}
+
+static int aPBOX_check_player(ACTOR* actor, GAME_PLAY* play) {
+    PLAYER_ACTOR* player;
+    int res;
+
+    player = GET_PLAYER_ACTOR(play);
+    res = (player != NULL) ? 1 : 0;
+
+#ifdef TARGET_PC
+    {
+        /* The resident may be indoors while the guest is out here. Ask every
+         * player this world really has, and record which one asked so the
+         * request runs for them. */
+        int count = mPlib_players_here(play);
+        int i;
+
+        for (i = 0; i < count; i++) {
+            PLAYER_ACTOR* here = mPlib_player_here_at(play, i);
+
+            if (aPBOX_player_in_box(here, actor) != FALSE) {
+                mPlib_set_request_owner(here);
+                return 2;
+            }
+        }
     }
 
     return res;
+#else
+    if (aPBOX_player_in_box(player, actor) != FALSE) {
+        return 2;
+    }
+
+    return res;
+#endif
 }
 
 static int aPBOX_ctrl_light(STRUCTURE_ACTOR* shop) {
@@ -104,6 +145,7 @@ static int aPBOX_ctrl_light(STRUCTURE_ACTOR* shop) {
 static void aPBOX_actor_move(ACTOR* actor, GAME* game) {
     STRUCTURE_ACTOR* box;
     GAME_PLAY* play;
+    PLAYER_ACTOR* player;
     s16 target;
     xyz_t pos;
 
@@ -119,15 +161,30 @@ static void aPBOX_actor_move(ACTOR* actor, GAME* game) {
 
     box->action = target;
 
-    if (box == (*GET_PLAYER_ACTOR_NOW()->get_door_label_proc)(gamePT)) {
+    player = mPlib_player_at_door(play, actor);
+    if (player != NULL) {
+#ifdef TARGET_PC
+        /* Name the walker before the scene change. The door demo can end first,
+         * and its talker is cleared then, which spawns the selected resident. */
+        mPlib_set_demo_talker(player);
+#endif
         aPBOX_rewrite_out_data(box, play);
         goto_other_scene(play, &aPBOX_police_box_enter_data, FALSE);
     } else {
         if (aPBOX_check_player(actor, play) == 2) {
-            pos.x = actor->world.position.x + 50.0f;
-            pos.y = GET_PLAYER_ACTOR(play)->actor_class.world.position.y;
-            pos.z = actor->world.position.z + 50.0f;
-            mPlib_request_main_door_type1(game, &pos, -DEG2SHORT_ANGLE(135.0f), TRUE, actor); //-0x6000
+            player = aPBOX_request_player(play);
+
+            if (player != NULL) {
+                pos.x = actor->world.position.x + 50.0f;
+                pos.y = player->actor_class.world.position.y;
+                pos.z = actor->world.position.z + 50.0f;
+                mPlib_request_main_door_type1(game, &pos, -DEG2SHORT_ANGLE(135.0f), TRUE, actor); //-0x6000
+#ifdef TARGET_PC
+                /* A refused request leaves the owner set; it would ride into the
+                 * next building's door. A consumed one already cleared it. */
+                mPlib_clear_request_owner();
+#endif
+            }
         }
     }
 }

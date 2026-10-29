@@ -5,14 +5,16 @@
 #include "m_common_data.h"
 #include "ac_structure.h"
 
+typedef struct player_actor_s PLAYER_ACTOR;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef void (*COTTAGE_REWRITE_DOOR_PROC)(ACTOR*, GAME_PLAY*);
 typedef void (*COTTAGE_SET_BG_OFFSET_PROC)(STRUCTURE_ACTOR*, int);
-typedef int (*COTTAGE_CHECK_DOOR_IN_PROC)(STRUCTURE_ACTOR*, GAME_PLAY*);
-typedef int (*COTTAGE_CHECK_DOOR_OUT_PROC)(STRUCTURE_ACTOR*, GAME_PLAY*);
+typedef int (*COTTAGE_CHECK_DOOR_IN_PROC)(STRUCTURE_ACTOR*, GAME_PLAY*, PLAYER_ACTOR*);
+typedef int (*COTTAGE_CHECK_DOOR_OUT_PROC)(STRUCTURE_ACTOR*, GAME_PLAY*, PLAYER_ACTOR*);
 typedef void (*COTTAGE_DEMO_DOOR_OPEN_PROC)(ACTOR*);
 typedef f32 (*COTTAGE_LIGHT_AIM_PROC)(STRUCTURE_ACTOR*);
 typedef void (*COTTAGE_LIGHT_CONTROL_PROC)(STRUCTURE_ACTOR*);

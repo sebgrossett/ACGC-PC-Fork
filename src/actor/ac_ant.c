@@ -64,13 +64,23 @@ static void aANT_wait(ANT_ACTOR* ant, GAME* game) {
         if ((u32)ant == catch_label) {
             aANT_setupAction(ant, aANT_ACT_CAUGHT);
         } else {
-            f32 catch_swing_timer = GET_PLAYER_ACTOR_NOW()->Get_Item_net_catch_swing_timer_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT);
+            PLAYER_ACTOR* catcher = mPlib_player_near((GAME_PLAY*)gamePT, &ant->actor_class.world.position);
             xyz_t stop_net_pos;
 
-            if ((catch_swing_timer > 0.0f || mPlib_Check_StopNet(&stop_net_pos)) && ant->actor_class.player_distance_xz < mFI_UNIT_BASE_SIZE_F) {
-                GET_PLAYER_ACTOR_NOW()->Set_Item_net_catch_request_force_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT, (u32)ant, mPlayer_NET_CATCH_TYPE_ANT);
-            } else {
-                GET_PLAYER_ACTOR_NOW()->Set_Item_net_catch_request_table_proc(GET_PLAYER_ACTOR_NOW_ACTOR(), gamePT, (u32)ant, mPlayer_NET_CATCH_TYPE_ANT, &ant->actor_class.world.position, 24.0f);
+            /* The net belongs to whoever is nearest the ant, not to the
+             * selected resident. */
+            if (catcher != NULL) {
+                f32 catch_swing_timer = catcher->Get_Item_net_catch_swing_timer_proc((ACTOR*)catcher, gamePT);
+
+                if ((catch_swing_timer > 0.0f || mPlib_Check_StopNet(&stop_net_pos)) &&
+                    ant->actor_class.player_distance_xz < mFI_UNIT_BASE_SIZE_F) {
+                    catcher->Set_Item_net_catch_request_force_proc((ACTOR*)catcher, gamePT, (u32)ant,
+                                                                  mPlayer_NET_CATCH_TYPE_ANT);
+                } else {
+                    catcher->Set_Item_net_catch_request_table_proc((ACTOR*)catcher, gamePT, (u32)ant,
+                                                                  mPlayer_NET_CATCH_TYPE_ANT,
+                                                                  &ant->actor_class.world.position, 24.0f);
+                }
             }
         }
     }

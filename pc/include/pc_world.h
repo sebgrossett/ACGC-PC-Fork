@@ -35,6 +35,11 @@ int pc_world_session_count(void);
 int pc_world_town_stays(void);
 int pc_world_entering_slot(void);
 int pc_world_slot_view(int slot);
+int pc_world_slot_world(int slot);
+/* The player actor for a resident, whichever world they are in. */
+struct player_actor_s* pc_world_slot_player(int slot);
+/* Drop the world a leaving resident is in (their interior). */
+void pc_world_leave_slot(int slot);
 int pc_world_play_slot(struct game_play_s* play);
 
 /* Step every world but the primary. `move` is Game_play_move for one play.

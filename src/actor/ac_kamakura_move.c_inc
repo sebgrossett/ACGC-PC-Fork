@@ -119,15 +119,13 @@ static void aKKR_rewrite_out_data(ACTOR* actor, GAME_PLAY* play) {
     }
 }
 
-static int aKKR_check_player(ACTOR* actor, GAME_PLAY* play) {
+static int aKKR_player_at_door(ACTOR* actor, PLAYER_ACTOR* player) {
     u16 y;
     f32 xOffs;
     f32 zOffs;
     f32 t;
     int res;
-    PLAYER_ACTOR* player;
 
-    player = GET_PLAYER_ACTOR(play);
     res = 0;
 
     if (player == NULL) {
@@ -149,25 +147,56 @@ static int aKKR_check_player(ACTOR* actor, GAME_PLAY* play) {
 static void aKKR_wait(STRUCTURE_ACTOR* kamakura, GAME_PLAY* play) {
     ACTOR* actor;
     GAME* game;
+    PLAYER_ACTOR* who;
     xyz_t pos;
+    int count;
+    int i;
 
     actor = &kamakura->actor_class;
     game = &play->game;
 
-    if (kamakura == GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    who = mPlib_player_at_door(play, actor);
+    if (who != NULL) {
+        /* The interior spawns the player named here, not the selected resident. */
+        mPlib_set_demo_talker(who);
         aKKR_rewrite_out_data(actor, play);
         goto_other_scene(play, &aKKR_kamakura_enter_data, TRUE);
         return;
     }
 
-    if (aKKR_check_player(actor, play) == 0) {
+    count = mPlib_players_here(play);
+    who = NULL;
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = mPlib_player_here_at(play, i);
+
+        if (aKKR_player_at_door(actor, player) != 0) {
+            who = player;
+            break;
+        }
+    }
+
+    if (who == NULL) {
         return;
     }
 
-    pos.x = actor->world.position.x;
-    pos.y = GET_PLAYER_ACTOR(play)->actor_class.world.position.y;
-    pos.z = actor->world.position.z + 68.0f;
-    mPlib_request_main_door_type1(game, &pos, -DEG2SHORT_ANGLE(180.0f), TRUE, actor); // 0x8000
+    {
+        int slot = mPlib_player_slot_of(who);
+        int pad = mPlib_pad_for_player(who);
+
+        pos.x = actor->world.position.x;
+        pos.y = who->actor_class.world.position.y;
+        pos.z = actor->world.position.z + 68.0f;
+
+        if (pad > 0) {
+            mPlib_slot_context_begin(play, slot, pad);
+        }
+
+        mPlib_request_main_door_type1(game, &pos, -DEG2SHORT_ANGLE(180.0f), TRUE, actor); // 0x8000
+
+        if (pad > 0) {
+            mPlib_slot_context_end(play);
+        }
+    }
 }
 
 static void aKKR_setup_action(STRUCTURE_ACTOR* kamakura, int action) {
@@ -196,7 +225,13 @@ static void aKKR_actor_move(ACTOR* actor, GAME* game) {
 
     play = (GAME_PLAY*)game;
     kamakura = (STRUCTURE_ACTOR*)actor;
-    player = GET_PLAYER_ACTOR_ACTOR(play);
+    player = (ACTOR*)mPlib_player_near(play, &actor->world.position);
+
+    /* Keep the kamakura only for a player who is actually in this play. */
+    if (player == NULL) {
+        Actor_delete(actor);
+        return;
+    }
 
     mFI_Wpos2BlockNum(&kamakura_bx, &kamakura_bz, actor->world.position);
     mFI_Wpos2BlockNum(&player_bx, &player_bz, player->world.position);

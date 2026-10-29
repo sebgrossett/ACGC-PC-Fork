@@ -58,6 +58,22 @@ extern int mPlib_any_player_actor(void);
 /* Extra players in pad order (Controls rows 1-3), excluding the selected resident. */
 extern int mPlib_extra_player_count(void);
 extern PLAYER_ACTOR* mPlib_extra_player_at(int index);
+/* The player walking into this building's door, whoever that is: the demo
+ * talker first (a door walk records the label on its owner), then the selected
+ * resident, then every extra player. NULL when nobody is in the door. */
+extern PLAYER_ACTOR* mPlib_player_at_door(GAME_PLAY* play, ACTOR* door);
+/* TRUE when this actor is really in that play's player list. The slot table
+ * keeps a player after their body has left the world, so never trust a slot
+ * pointer without this. */
+extern int mPlib_player_in_play(GAME_PLAY* play, PLAYER_ACTOR* player);
+/* Every player the play really has, selected resident first. A resident who
+ * walked into a building is not in the play until they come back, so this is
+ * the right list for door geometry and walking checks. */
+extern int mPlib_players_here(GAME_PLAY* play);
+extern PLAYER_ACTOR* mPlib_player_here_at(GAME_PLAY* play, int index);
+/* Nearest player in this play to pos_p. Ambient procs follow whoever is near
+ * them, not the selected resident. NULL when nobody is in the play. */
+extern PLAYER_ACTOR* mPlib_player_near(GAME_PLAY* play, const xyz_t* pos_p);
 /* The selected resident, independent of any bound guest context. */
 extern PLAYER_ACTOR* mPlib_host_player_actor(void);
 extern Private_c* mPlib_private_for_slot(int slot);

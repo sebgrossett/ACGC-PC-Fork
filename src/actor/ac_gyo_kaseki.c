@@ -320,18 +320,31 @@ static int aGKK_search_Uki(aGYO_CTRL_ACTOR* gyo, GAME* game) {
 }
 
 static int aGKK_player_near(aGYO_CTRL_ACTOR* gyo, GAME* game) {
-    ACTOR* playerx = GET_PLAYER_ACTOR_GAME_ACTOR(game);
+#ifdef TARGET_PC
+    /* A fish only cares about the player nearest it. The selected resident can
+     * be indoors; the town lookup then has no actor for them. */
+    PLAYER_ACTOR* player = mPlib_player_near((GAME_PLAY*)game, &gyo->tools_class.actor_class.world.position);
+#else
+    PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
+#endif
+    ACTOR* playerx;
     f32 dist;
     s16 target_angle;
     xyz_t pos;
     int ret = FALSE;
+
+    if (player == NULL) {
+        return (gyo->escape_flag != 0);
+    }
+
+    playerx = (ACTOR*)player;
 
     dist = search_position_distance(&gyo->tools_class.actor_class.world.position, &playerx->world.position);
     target_angle = search_position_angleY(&gyo->tools_class.actor_class.world.position, &playerx->world.position);
 
     if (
         // clang-format off
-        ((dist < 110.0f && mPlib_get_player_actor_main_index(game) == mPlayer_INDEX_DASH) ||
+        ((dist < 110.0f && player->now_main_index == mPlayer_INDEX_DASH) ||
         (dist < 150.0f && (
             mPlib_Check_HitAxe(&pos) ||
             mPlib_Check_StopNet(&pos) ||

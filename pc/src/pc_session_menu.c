@@ -16,6 +16,7 @@
 #include "m_player_lib.h"
 #include "m_play.h"
 #include "m_rcp.h"
+#include "pc_world.h"
 
 #include <stdio.h>
 
@@ -28,9 +29,32 @@ typedef struct {
 static PCSessionMenu s_menu[PC_PLAYER_COUNT];
 static int s_leave_request[PC_PLAYER_COUNT];
 
+/* The play world this Controls row's guest is in (their interior included).
+ * NULL when the row has no live resident. */
+static GAME_PLAY* session_guest_world(int pad) {
+    int slot;
+    GAME_PLAY* world;
+
+    if ((pad <= 0) || (pad >= PC_PLAYER_COUNT)) {
+        return NULL;
+    }
+
+    slot = g_pc_coop_guest_slot[pad];
+    if ((slot < 0) || (slot >= PLAYER_NUM)) {
+        return NULL;
+    }
+
+    world = pc_world_at(pc_world_slot_world(slot));
+    if ((world == NULL) || (world->game.exec != play_main)) {
+        return NULL;
+    }
+
+    return world;
+}
+
 static int guest_row_active(int pad) {
     if (g_pc_coop_session == 0 || pad <= 0 || pad >= PC_PLAYER_COUNT) return 0;
-    if (Save_Get(scene_no) != SCENE_FG) return 0;
+    if (Save_Get(scene_no) != SCENE_FG && session_guest_world(pad) == NULL) return 0;
     return mPlib_pad_in_use(pad);
 }
 
@@ -51,6 +75,12 @@ static PLAYER_ACTOR* session_menu_pad_player(int pad) {
         }
     }
 
+    /* This world's table drops a guest who went indoors. The session still
+     * knows their slot, and their own world still holds the actor. */
+    if ((pad > 0) && (pad < PC_PLAYER_COUNT)) {
+        return (PLAYER_ACTOR*)pc_world_slot_player(g_pc_coop_guest_slot[pad]);
+    }
+
     return NULL;
 }
 
@@ -60,18 +90,23 @@ static int session_menu_can_open(int pad) {
     PLAYER_ACTOR* talker;
     ACTOR* side_talker;
     Submenu* side;
+    int slot;
 
     if (g_pc_paused || gamePT == NULL || gamePT->exec != play_main) return 0;
 
     me = session_menu_pad_player(pad);
     if (me == NULL) return 0;
 
+    /* The slot comes from the session, not from this world's table: an indoor
+     * guest is off it. */
+    slot = ((pad > 0) && (pad < PC_PLAYER_COUNT)) ? g_pc_coop_guest_slot[pad] : -1;
+
     /* Only this player's own game menu blocks their session menu: their
      * primary-menu open or their own side-slot inventory (the shared helper),
      * plus the mode tails retail keeps after a close. The primary can be busy
      * because another player opened something; that does not hold this session
      * menu hostage. */
-    if (mSM_player_menu_open_by_slot(play, mPlib_player_slot_of(me)) ||
+    if (mSM_player_menu_open_by_slot(play, slot) ||
         (mPlib_menu_opener_for_slot(0) == me && play->submenu.mode != mSM_MODE_IDLE) ||
         ((side = mSM_side_slot_p(pad)) != NULL && side->mode != mSM_MODE_IDLE)) {
         return 0;

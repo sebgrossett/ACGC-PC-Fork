@@ -41,9 +41,12 @@ static void aSPR_rewrite_out_data(SUPER_ACTOR* super, GAME_PLAY* play) {
     }
 }
 
-static int aSPR_check_player2(GAME_PLAY* play) {
-    ACTOR* player = GET_PLAYER_ACTOR_ACTOR(play);
+static int aSPR_player_walking_in(ACTOR* player) {
     int ret = FALSE;
+
+    if (player == NULL) {
+        return FALSE;
+    }
 
     if ((u16)player->world.angle.y > DEG2SHORT_ANGLE2(90.0f) && (u16)player->world.angle.y < DEG2SHORT_ANGLE2(180.0f) &&
         player->speed > 0.0f) {
@@ -53,8 +56,7 @@ static int aSPR_check_player2(GAME_PLAY* play) {
     return ret;
 }
 
-static int aSPR_check_player(ACTOR* actorx, GAME_PLAY* play) {
-    ACTOR* player = GET_PLAYER_ACTOR_ACTOR(play);
+static int aSPR_player_at_door(ACTOR* player, ACTOR* actorx) {
     int ret = 0;
     f32 dx;
     f32 dz;
@@ -252,42 +254,71 @@ static void aSPR_close_wait(SUPER_ACTOR* super, GAME_PLAY* play) {
     }
 
     if ((mSP_ShopOpen() == mSP_SHOP_STATUS_OPEN) || (mSP_ShopOpen() == mSP_SHOP_STATUS_OPENEVENT)) {
-        if (aSPR_check_player(actorx, play) != 0) {
+        if (aSPR_player_at_door((ACTOR*)get_player_actor_withoutCheck(play), actorx) != 0) {
             aSPR_setup_action(super, aSPR_ACTION_OPEN_DOOR);
         }
         return;
     }
 
-    if (aSPR_check_player(actorx, play) == 2) {
+    if (aSPR_player_at_door((ACTOR*)get_player_actor_withoutCheck(play), actorx) == 2) {
         mDemo_Request(mDemo_TYPE_TALK, actorx, &aSPR_set_talk_info_close_wait);
     }
 }
 
 static void aSPR_open_wait(SUPER_ACTOR* super, GAME_PLAY* play) {
     ACTOR* actorx;
+    PLAYER_ACTOR* who = NULL;
     xyz_t pos;
+    int at = 0;
+    int count;
+    int i;
 
     actorx = (ACTOR*)super;
-#ifdef TARGET_PC
-    if (get_player_actor_withoutCheck(play) == NULL) {
+
+    count = mPlib_players_here(play);
+    if (count == 0) {
         return;
     }
-#endif
+
+    for (i = 0; i < count; i++) {
+        PLAYER_ACTOR* player = mPlib_player_here_at(play, i);
+        int status = aSPR_player_at_door((ACTOR*)player, actorx);
+
+        if (status > at) {
+            at = status;
+        }
+
+        if ((status == 2) && (who == NULL) && (aSPR_player_walking_in((ACTOR*)player) != FALSE)) {
+            who = player;
+        }
+    }
+
     if (!mPlib_check_player_actor_main_index_OutDoorMove((GAME*)play)) {
         if (mSP_ShopOpen() != mSP_SHOP_STATUS_OPEN && mSP_ShopOpen() != mSP_SHOP_STATUS_OPENEVENT) {
             aSPR_setup_action(super, aSPR_ACTION_CLOSE_DOOR);
-        } else if (aSPR_check_player(actorx, play) != 2) {
-            if (aSPR_check_player(actorx, play) == 0) {
+        } else if (at != 2) {
+            if (at == 0) {
                 aSPR_setup_action(super, aSPR_ACTION_CLOSE_DOOR);
             }
-        } else if (aSPR_check_player2(play)) {
-            pos.y = GET_PLAYER_ACTOR_ACTOR(play)->world.position.y;
+        } else if (who != NULL) {
+            int slot = mPlib_player_slot_of(who);
+            int pad = mPlib_pad_for_player(who);
+
+            pos.y = who->actor_class.world.position.y;
             pos.x = actorx->world.position.x - 45.0f;
             pos.z = actorx->world.position.z + 102.5f;
             mSP_SetTanukiShopStatus();
 
+            if (pad > 0) {
+                mPlib_slot_context_begin(play, slot, pad);
+            }
+
             if (mPlib_request_main_door_type1((GAME*)play, &pos, DEG2SHORT_ANGLE(135.0f), TRUE, super)) {
                 aSPR_setup_action(super, aSPR_ACTION_PL_INTO_WAIT);
+            }
+
+            if (pad > 0) {
+                mPlib_slot_context_end(play);
             }
         }
     }
@@ -306,9 +337,14 @@ static void aSPR_open_door(SUPER_ACTOR* super, GAME_PLAY* play) {
 }
 
 static void aSPR_pl_into_wait(SUPER_ACTOR* super, GAME_PLAY* play) {
-    if (super != GET_PLAYER_ACTOR_NOW()->get_door_label_proc(gamePT)) {
+    PLAYER_ACTOR* who = mPlib_player_at_door(play, (ACTOR*)super);
+
+    if (who == NULL) {
         return;
     }
+
+    /* The interior spawns the player named here, not the selected resident. */
+    mPlib_set_demo_talker(who);
 
     aSPR_rewrite_out_data(super, play);
     goto_other_scene(play, &aSPR_super_door_data, FALSE);

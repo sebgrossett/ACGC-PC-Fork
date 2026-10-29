@@ -226,6 +226,10 @@ extern void mDemo_world_store(mDemo_Data_c* dst);
 extern void mDemo_world_load(const mDemo_Data_c* src);
 #endif
 extern int mDemo_CheckDemo();
+#ifdef TARGET_PC
+/* Resident slot the active demo runs as, or -1 when idle. */
+extern int mDemo_OwnerSlot(void);
+#endif
 extern int mDemo_CheckDemo4Event();
 extern void mDemo_Set_SpeakerAble();
 extern void mDemo_Set_ListenAble();
