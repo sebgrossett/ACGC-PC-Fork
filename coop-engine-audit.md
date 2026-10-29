@@ -811,7 +811,7 @@ Counts are co-op-symbol hits per file; the set is the corrected, history-anchore
   when a culled actor is deleted) spawned a second gyroid. The search now covers ITEM and
   BG (not the full ten-part walk, for the wide-rescan frame cost). E22 corrected; operator
   retested the same sequence: confirmed gone.
-- 2026-10-29: **C2 slice committed.** Operator confirmed the gyroid fix and asked to commit
-  and defer K1. The slice is `pc_transition` + A18 (`pc_world_town_stays`) + E22 (haniwa
-  dedupe), committed on `feature/pc-transition`; K1 remains parked as E5 by operator
+- 2026-10-29: **C2 slice committed (`a2441e6`).** Operator confirmed the gyroid fix and asked
+  to commit and defer K1. The slice is `pc_transition` + A18 (`pc_world_town_stays`) + E22
+  (haniwa dedupe), committed on `feature/pc-transition`; K1 remains parked as E5 by operator
   decision. Next slice per the recommended order: C3/E13 (per-world state registry).
