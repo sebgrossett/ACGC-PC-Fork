@@ -66,6 +66,8 @@ typedef struct {
     aINS_Clip_c insect_clip;
     aQMgr_world_c quest;
     mDemo_Clip_c intro_clip;
+    u8 field_pal[mFM_PAL_AREA_BYTES];
+    u8 field_pal_valid;
     int destroy;
 } PcWorld;
 
@@ -215,6 +217,27 @@ void pc_world_bind(int index) {
 
     pc_world_restore(index);
     s_bound = index;
+}
+
+/* The field palette area is one static in the game, so a second live scene
+ * rewrites the first one's palettes (the insect room forces its own term).
+ * Copy the area while a scene's palettes are still its own, and swap the copy
+ * in right before that scene's view is flushed. */
+static void pc_world_store_palette(int index) {
+    if ((index < 0) || (index >= PC_WORLD_MAX)) {
+        return;
+    }
+
+    mFM_field_palette_store(s_world[index].field_pal);
+    s_world[index].field_pal_valid = TRUE;
+}
+
+void pc_world_settle_palette(int index) {
+    if ((index < 0) || (index >= PC_WORLD_MAX) || (s_world[index].field_pal_valid == FALSE)) {
+        return;
+    }
+
+    mFM_field_palette_load(s_world[index].field_pal);
 }
 
 void pc_world_attach_primary(GAME* game) {
@@ -375,6 +398,11 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
 
     pc_world_bind(0);
     pc_world_capture(0);
+    /* The shared palette area still holds whatever the last flushed view left
+     * in it. Put the town's own copy back before copying it, or the town's
+     * copy is captured with the interior's palette. */
+    pc_world_settle_palette(0);
+    pc_world_store_palette(0);
     Common_Set(last_scene_no, Save_Get(scene_no));
     Save_Set(scene_no, scene);
 #ifdef TARGET_PC
@@ -413,8 +441,14 @@ static int pc_world_open_scene(GAME_PLAY* primary, int scene, int resident_slot)
 
     memset(child, 0, sizeof(GAME_PLAY));
     s_child_init = TRUE;
+    /* The slot may be reused; do not let the previous occupant's copy stand in
+     * for this scene's palette. */
+    s_world[index].field_pal_valid = FALSE;
     game_child_ct(child, play_init, primary->game.graph);
     s_child_init = FALSE;
+    /* The child's field make just rewrote the shared palette area with its
+     * own term; that is the child's copy. */
+    pc_world_store_palette(index);
 
 #ifdef TARGET_PC
     /* The town's out-wipe dies with the transition, and the child's in-wipe

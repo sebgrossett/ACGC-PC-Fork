@@ -1907,7 +1907,8 @@ static GAME_PLAY* play_fading_play(GAME_PLAY* town) {
             continue;
         }
 
-        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE)) {
+        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE) ||
+            (world->color_fade.color.a != 0)) {
             return world;
         }
     }
@@ -1922,7 +1923,8 @@ static int play_fade_is_split(GAME_PLAY* play) {
     /* Leaving the house runs the wipe on the house play. The town play stays
      * idle, so a check of this play never sees it. */
     return (split != FALSE) &&
-           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE));
+           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE) ||
+            (fading->color_fade.color.a != 0));
 }
 
 static int play_fade_every_view(GAME_PLAY* fading) {
@@ -1941,6 +1943,17 @@ static int play_fade_view(GAME_PLAY* play) {
         view = play_actor_view_index(play, (PLAYER_ACTOR*)s_fade_player);
         if (view > 0) {
             return view;
+        }
+    }
+
+    /* A door demo names its walker. The town is the primary play, so
+     * pc_world_play_slot() has no slot for it and the fallback below would put
+     * the fade on the selected resident's half - the other player's. */
+    {
+        PLAYER_ACTOR* talker = mPlib_demo_talker();
+
+        if (talker != NULL) {
+            return play_actor_view_index(play, talker);
         }
     }
 
@@ -2026,13 +2039,20 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
         play_view_rect(view, count, &rect);
     }
 
-    if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
-        View wipe_view;
+    if (full == FALSE) {
+        View overlay_view;
 
-        initView(&wipe_view, graph);
-        wipe_view.flag = VIEW_UPDATE_ORTHOGRAPHIC | VIEW_UPDATE_SCISSOR;
-        setScissorView(&wipe_view, &rect);
-        showView1(&wipe_view, VIEW_UPDATE_ALL, &polydisp);
+        /* The fade card is replayed at the view's flush, long after the spot
+         * scissor was set, so it must carry its own. A plain fade used to skip
+         * this and cover whatever scissor was current (both halves for the last
+         * view), which washed the other player's half out for the transition. */
+        initView(&overlay_view, graph);
+        overlay_view.flag = VIEW_UPDATE_ORTHOGRAPHIC | VIEW_UPDATE_SCISSOR;
+        setScissorView(&overlay_view, &rect);
+        showView1(&overlay_view, VIEW_UPDATE_ALL, &polydisp);
+    }
+
+    if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
         play->fbdemo_wipe.wipe_procs.draw_proc(&play->fbdemo_wipe.wipe_data, &polydisp);
     }
 
@@ -2115,6 +2135,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                     fade_drawn = TRUE;
                 }
             }
+            pc_world_settle_palette(play_view_world(i));
             pc_graph_flush_world(graph1);
             play_restart_disp(play, graph1);
         }
@@ -2319,10 +2340,12 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 } else {
                     play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
                 }
+                pc_world_settle_palette(play_view_world(last));
                 setLookAtView(&play->view, &eye, &center, &up);
                 setScissorView(&play->view, &full);
                 setupViewer(play);
             } else {
+                pc_world_settle_palette(0);
                 Actor_info_draw_actor(play, &play->actor_info);
             }
         }

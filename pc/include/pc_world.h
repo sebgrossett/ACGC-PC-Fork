@@ -55,6 +55,10 @@ void pc_world_fill_views(int* view_world, int count);
 struct game_play_s* pc_world_at(int index);
 void pc_world_bind(int index);
 
+/* Swap a world's copy of the shared field palette area back in. Call right
+ * before that world's view is flushed. No-op until the world has a copy. */
+void pc_world_settle_palette(int index);
+
 /* A player actor in any live world, including ones that are not bound. */
 int pc_world_any_player(void);
 
