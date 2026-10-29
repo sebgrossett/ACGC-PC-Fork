@@ -1994,20 +1994,6 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
     Gfx* polydisp;
     rect rect;
     int full;
-#ifdef TARGET_PC
-    /* TEMP A/B switch for the transition-wash hunt: PC_FADE_OFF=1 skips the
-     * split transition overlays so the leftover wash can be attributed. */
-    {
-        static int fade_off = -1;
-
-        if (fade_off < 0) {
-            fade_off = getenv("PC_FADE_OFF") != NULL;
-        }
-        if (fade_off != 0) {
-            return;
-        }
-    }
-#endif
 
     if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
         return;
@@ -2093,36 +2079,6 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
     GAME_PLAY* fade_play = play_fading_play(play);
     int clip_fade = play_fade_is_split(play);
     int fade_view = play_fade_view(play);
-
-    /* TEMP transition-wash probe: which view a fade is clipped to, on change. */
-    {
-        static int last[6] = { -1, -1, -1, -1, -1, -1 };
-        int now[6];
-        int i;
-        int changed = FALSE;
-
-        now[0] = clip_fade;
-        now[1] = fade_view;
-        now[2] = play_player_count();
-        now[3] = fade_play != NULL ? fade_play->fb_wipe_mode : -1;
-        now[4] = fade_play != NULL ? fade_play->fb_fade_type : -1;
-        now[5] = (fade_play == play);
-        for (i = 0; i < 6; i++) {
-            if (now[i] != last[i]) {
-                changed = TRUE;
-                last[i] = now[i];
-            }
-        }
-        if (changed) {
-            FILE* fp = fopen("fade_probe.txt", "a");
-
-            if (fp != NULL) {
-                fprintf(fp, "FADE clip=%d view=%d count=%d wipe=%d ftype=%d self=%d\n", now[0], now[1], now[2],
-                        now[3], now[4], now[5]);
-                fclose(fp);
-            }
-        }
-    }
 #endif
 
     PC_DIAG(3, "makeBumpTexture: enter fb_mode=%d fb_wipe_mode=%d submenu.mode=%d\n",
