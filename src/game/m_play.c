@@ -1994,6 +1994,20 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
     Gfx* polydisp;
     rect rect;
     int full;
+#ifdef TARGET_PC
+    /* TEMP A/B switch for the transition-wash hunt: PC_FADE_OFF=1 skips the
+     * split transition overlays so the leftover wash can be attributed. */
+    {
+        static int fade_off = -1;
+
+        if (fade_off < 0) {
+            fade_off = getenv("PC_FADE_OFF") != NULL;
+        }
+        if (fade_off != 0) {
+            return;
+        }
+    }
+#endif
 
     if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
         return;
