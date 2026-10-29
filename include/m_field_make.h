@@ -349,7 +349,7 @@ extern void mFM_SetIslandNpcRoomData(GAME* game, int malloc_flag);
 /* The field palette is one static area shared by every world in the game, so a
  * second live scene rewrites the first one's palettes. Each world keeps a copy
  * and swaps it in before its view is flushed. */
-#define mFM_PAL_AREA_BYTES (11 * 16 * sizeof(u16))
+#define mFM_PAL_AREA_BYTES ((11 * 16 + 5 * 16) * sizeof(u16))
 extern void mFM_field_palette_store(void* out);
 extern void mFM_field_palette_load(const void* in);
 #ifdef TARGET_PC

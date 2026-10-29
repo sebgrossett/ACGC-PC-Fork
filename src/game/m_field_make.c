@@ -80,13 +80,35 @@ static u8 l_block_type[BLOCK_TOTAL_NUM];
 static int l_block_kind[BLOCK_TOTAL_NUM];
 
 /* One static palette area serves every world (and the insect room forces its
- * own term into it), so the port keeps a per-world copy. */
+ * own term into it), so the port keeps a per-world copy. The BG common texture
+ * palettes are static buffers too (mFM_LoadBGCommonMonthlyPal forces term 4 for
+ * the insect room), and the town's grass/tree colours come from them. */
+#define mFM_BG_PAL_NUM 5
+
+static mBGTex_obj_c l_bg_pal_common_dummy[5];
+
 extern void mFM_field_palette_store(void* out) {
-    bcopy(mFM_pal_area, out, sizeof(mFM_pal_area));
+    u8* p = (u8*)out;
+    int i;
+
+    bcopy(mFM_pal_area, p, sizeof(mFM_pal_area));
+    p += sizeof(mFM_pal_area);
+    for (i = 0; i < mFM_BG_PAL_NUM; i++) {
+        bcopy(l_bg_pal_common_dummy[i].data, p, l_bg_pal_common_dummy[i].size);
+        p += l_bg_pal_common_dummy[i].size;
+    }
 }
 
 extern void mFM_field_palette_load(const void* in) {
-    bcopy(in, mFM_pal_area, sizeof(mFM_pal_area));
+    const u8* p = (const u8*)in;
+    int i;
+
+    bcopy(p, mFM_pal_area, sizeof(mFM_pal_area));
+    p += sizeof(mFM_pal_area);
+    for (i = 0; i < mFM_BG_PAL_NUM; i++) {
+        bcopy(p, l_bg_pal_common_dummy[i].data, l_bg_pal_common_dummy[i].size);
+        p += l_bg_pal_common_dummy[i].size;
+    }
 }
 
 static void mFM_SortBGData(mFM_bg_data_c** sorted_data_p, mFM_bg_data_c* data, int count) {
