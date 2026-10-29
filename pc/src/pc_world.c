@@ -235,6 +235,10 @@ static void pc_world_store_palette(int index) {
 }
 
 void pc_world_settle_palette(int index) {
+    static int prev = -1;
+
+    pc_pal_probe("SEQ", prev, index);
+    prev = index;
     if ((index < 0) || (index >= PC_WORLD_MAX) || (s_world[index].field_pal_valid == FALSE)) {
         pc_pal_probe("SETTLE-skip", index, mFM_field_palette_first());
         return;
