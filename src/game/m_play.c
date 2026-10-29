@@ -2026,13 +2026,20 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
         play_view_rect(view, count, &rect);
     }
 
-    if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
-        View wipe_view;
+    if (full == FALSE) {
+        View overlay_view;
 
-        initView(&wipe_view, graph);
-        wipe_view.flag = VIEW_UPDATE_ORTHOGRAPHIC | VIEW_UPDATE_SCISSOR;
-        setScissorView(&wipe_view, &rect);
-        showView1(&wipe_view, VIEW_UPDATE_ALL, &polydisp);
+        /* The fade card is replayed at the view's flush, long after the spot
+         * scissor was set, so it must carry its own. A plain fade used to skip
+         * this and cover whatever scissor was current (both halves for the last
+         * view), which washed the other player's half out for the transition. */
+        initView(&overlay_view, graph);
+        overlay_view.flag = VIEW_UPDATE_ORTHOGRAPHIC | VIEW_UPDATE_SCISSOR;
+        setScissorView(&overlay_view, &rect);
+        showView1(&overlay_view, VIEW_UPDATE_ALL, &polydisp);
+    }
+
+    if (play->fb_wipe_mode == WIPE_MODE_MOVE) {
         play->fbdemo_wipe.wipe_procs.draw_proc(&play->fbdemo_wipe.wipe_data, &polydisp);
     }
 
