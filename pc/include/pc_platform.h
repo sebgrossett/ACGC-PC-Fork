@@ -134,6 +134,10 @@ extern int pc_emu64_frame_cull_visible;
 extern int pc_emu64_frame_cull_rejected;
 extern int pc_gx_draw_call_count;
 
+/* TEMP insect-room tint probe: palette store/settle/load trace. Remove with
+ * the probe in pc_gx_texture.c. */
+void pc_pal_probe(const char* tag, int a, int b);
+
 /* --- Audio --- */
 extern int pc_save_loaded;
 /* Write the current save to the GCI file (co-op join/leave, reset codes). */

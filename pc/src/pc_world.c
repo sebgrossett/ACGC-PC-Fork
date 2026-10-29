@@ -24,6 +24,7 @@
 #include "ac_quest_manager.h"
 #include "ac_intro_demo.h"
 #include "pc_settings.h"
+#include "pc_platform.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -230,14 +231,18 @@ static void pc_world_store_palette(int index) {
 
     mFM_field_palette_store(s_world[index].field_pal);
     s_world[index].field_pal_valid = TRUE;
+    pc_pal_probe("STORE", index, mFM_field_palette_first());
 }
 
 void pc_world_settle_palette(int index) {
     if ((index < 0) || (index >= PC_WORLD_MAX) || (s_world[index].field_pal_valid == FALSE)) {
+        pc_pal_probe("SETTLE-skip", index, mFM_field_palette_first());
         return;
     }
 
+    pc_pal_probe("SETTLE-before", index, mFM_field_palette_first());
     mFM_field_palette_load(s_world[index].field_pal);
+    pc_pal_probe("SETTLE-after", index, mFM_field_palette_first());
 }
 
 void pc_world_attach_primary(GAME* game) {

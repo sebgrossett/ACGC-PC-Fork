@@ -18,6 +18,20 @@ static u32 tlut_content_hash(const void* data, int tlut_fmt, int n_entries, int 
  * each TLUT slot to detect content changes and force reloads. */
 u16 s_tlut_first_word[16];
 
+/* TEMP insect-room tint probe: palette store/settle/load trace. */
+static int s_pal_probe_lines = 0;
+
+void pc_pal_probe(const char* tag, int a, int b) {
+    FILE* f;
+
+    if (s_pal_probe_lines >= 2000) return;
+    f = fopen("pal_probe.txt", "a");
+    if (f == NULL) return;
+    fprintf(f, "%s a=%d b=%04x\n", tag, a, (unsigned)b & 0xFFFF);
+    fclose(f);
+    s_pal_probe_lines++;
+}
+
 /* --- texture cache --- */
 #define TEX_CACHE_SIZE 2048
 
@@ -864,6 +878,10 @@ void GXLoadTlut(void* obj, u32 idx) {
     g_gx.tlut[idx].format = (int)o[TLUTOBJ_FORMAT];
     g_gx.tlut[idx].n_entries = (int)o[TLUTOBJ_N_ENTRIES];
     g_gx.tlut[idx].is_be = 1; /* default to BE (ROM/JSystem data) */
+    /* TEMP insect-room tint probe */
+    if (idx == 15) {
+        pc_pal_probe("LOAD", (int)idx, g_gx.tlut[idx].data != NULL ? *(const u16*)g_gx.tlut[idx].data : 0);
+    }
 }
 
 /* PC_GX_TLUT_MODE env var: "be" forces BE decode for diagnostics */
