@@ -18,16 +18,44 @@ static u32 tlut_content_hash(const void* data, int tlut_fmt, int n_entries, int 
  * each TLUT slot to detect content changes and force reloads. */
 u16 s_tlut_first_word[16];
 
-/* TEMP insect-room tint probe: palette store/settle/load trace. */
+/* TEMP insect-room tint probe: palette store/settle/load trace. Only value
+ * changes are logged, so the file survives a long walk to the room. */
 static int s_pal_probe_lines = 0;
+static struct {
+    const char* tag;
+    int a;
+    int b;
+} s_pal_last[8];
+static int s_pal_last_num = 0;
+static int s_pal_settled = -1;
+
+void pc_pal_probe_settled(int first) {
+    s_pal_settled = first & 0xFFFF;
+}
 
 void pc_pal_probe(const char* tag, int a, int b) {
     FILE* f;
+    int i;
 
-    if (s_pal_probe_lines >= 2000) return;
+    b &= 0xFFFF;
+    for (i = 0; i < s_pal_last_num; i++) {
+        if (s_pal_last[i].tag == tag && s_pal_last[i].a == a) {
+            if (s_pal_last[i].b == b) return;
+            s_pal_last[i].b = b;
+            break;
+        }
+    }
+    if (i == s_pal_last_num && s_pal_last_num < 8) {
+        s_pal_last[s_pal_last_num].tag = tag;
+        s_pal_last[s_pal_last_num].a = a;
+        s_pal_last[s_pal_last_num].b = b;
+        s_pal_last_num++;
+    }
+
+    if (s_pal_probe_lines >= 4000) return;
     f = fopen("pal_probe.txt", "a");
     if (f == NULL) return;
-    fprintf(f, "%s a=%d b=%04x\n", tag, a, (unsigned)b & 0xFFFF);
+    fprintf(f, "%s a=%d b=%04x\n", tag, a, (unsigned)b);
     fclose(f);
     s_pal_probe_lines++;
 }
@@ -878,9 +906,14 @@ void GXLoadTlut(void* obj, u32 idx) {
     g_gx.tlut[idx].format = (int)o[TLUTOBJ_FORMAT];
     g_gx.tlut[idx].n_entries = (int)o[TLUTOBJ_N_ENTRIES];
     g_gx.tlut[idx].is_be = 1; /* default to BE (ROM/JSystem data) */
-    /* TEMP insect-room tint probe */
+    /* TEMP insect-room tint probe: a load that does not match what the current
+     * view settled means the DL read a different palette. */
     if (idx == 15) {
-        pc_pal_probe("LOAD", (int)idx, g_gx.tlut[idx].data != NULL ? *(const u16*)g_gx.tlut[idx].data : 0);
+        int first = g_gx.tlut[idx].data != NULL ? *(const u16*)g_gx.tlut[idx].data : 0;
+
+        if (first != s_pal_settled) {
+            pc_pal_probe("LOAD-mismatch", (int)idx, first);
+        }
     }
 }
 
