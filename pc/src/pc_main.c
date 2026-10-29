@@ -158,6 +158,7 @@ void pc_platform_update_window_size(void) {
 
 void pc_platform_swap_buffers(void) {
     pc_gx_draw_pending();
+    pc_gx_dump_if_requested();
     SDL_GL_SwapWindow(g_pc_window);
 }
 
@@ -185,6 +186,10 @@ int pc_platform_poll_events(void) {
                 }
                 if (event.key.keysym.sym == SDLK_F3 && !event.key.repeat) {
                     pc_speedhack_toggle();
+                    break;
+                }
+                if (event.key.keysym.sym == SDLK_F12 && !event.key.repeat) {
+                    pc_gx_request_dump();
                     break;
                 }
                 if (g_pc_paused) {

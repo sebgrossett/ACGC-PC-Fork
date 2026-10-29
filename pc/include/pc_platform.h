@@ -134,6 +134,11 @@ extern int pc_emu64_frame_cull_visible;
 extern int pc_emu64_frame_cull_rejected;
 extern int pc_gx_draw_call_count;
 
+/* F12 frame dump: set a request during the event poll, the dump runs just
+ * before the buffer swap so it captures the finished frame. */
+void pc_gx_request_dump(void);
+void pc_gx_dump_if_requested(void);
+
 /* --- Audio --- */
 extern int pc_save_loaded;
 /* Write the current save to the GCI file (co-op join/leave, reset codes). */

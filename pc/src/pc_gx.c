@@ -732,6 +732,77 @@ static unsigned int pc_gx_variant_stale_groups(const PCGXShaderVariant* v) {
 /* --- Vertex Flush --- */
 int pc_gx_draw_call_count = 0;
 
+/* --- F12 frame dump (bug reports) --- */
+static int s_dump_requested = 0;
+
+void pc_gx_request_dump(void) {
+    s_dump_requested = 1;
+}
+
+static void pc_gx_write_bmp(const char* path, const unsigned char* rgb, int w, int h) {
+    int row = (w * 3 + 3) & ~3;
+    unsigned char hdr[54];
+    unsigned char* line;
+    FILE* f;
+    int x;
+    int y;
+
+    memset(hdr, 0, sizeof(hdr));
+    hdr[0] = 'B';
+    hdr[1] = 'M';
+    *(int*)&hdr[2] = 54 + row * h;
+    *(int*)&hdr[10] = 54;
+    *(int*)&hdr[14] = 40;
+    *(int*)&hdr[18] = w;
+    *(int*)&hdr[22] = h;
+    *(short*)&hdr[26] = 1;
+    *(short*)&hdr[28] = 24;
+    *(int*)&hdr[34] = row * h;
+
+    f = fopen(path, "wb");
+    if (f == NULL) return;
+    fwrite(hdr, 1, sizeof(hdr), f);
+    line = (unsigned char*)calloc(1, (size_t)row);
+    if (line != NULL) {
+        for (y = 0; y < h; y++) {
+            for (x = 0; x < w; x++) {
+                const unsigned char* p = rgb + ((size_t)y * w + x) * 3;
+
+                line[x * 3 + 0] = p[2];
+                line[x * 3 + 1] = p[1];
+                line[x * 3 + 2] = p[0];
+            }
+            fwrite(line, 1, (size_t)row, f);
+        }
+        free(line);
+    }
+    fclose(f);
+}
+
+void pc_gx_dump_if_requested(void) {
+    static int seq = 0;
+    int w;
+    int h;
+    unsigned char* rgb;
+    char path[64];
+
+    if (s_dump_requested == 0) return;
+    s_dump_requested = 0;
+
+    w = g_pc_window_w;
+    h = g_pc_window_h;
+    if (w <= 0 || h <= 0) return;
+    rgb = (unsigned char*)malloc((size_t)w * h * 3);
+    if (rgb == NULL) return;
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadBuffer(GL_BACK);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    snprintf(path, sizeof(path), "frame_%03d.bmp", seq++);
+    pc_gx_write_bmp(path, rgb, w, h);
+    free(rgb);
+}
+
 /* Draws the deferred run. Must run before any GL call that bypasses the
  * dirty system (viewport, scissor, readpixels, raw texture binds, swap)
  * so the run renders with the state it was built under. */
@@ -769,8 +840,7 @@ void pc_gx_draw_pending(void) {
     g_gx.pending_verts = 0;
 }
 
-void pc_gx_flush_vertices(void) {
-    int count = g_gx.current_vertex_idx - g_gx.pending_verts;
+void pc_gx_flush_vertices(void) {    int count = g_gx.current_vertex_idx - g_gx.pending_verts;
     if (count <= 0) return;
 
     Uint64 flush_start = pc_profiler_begin_timer();
