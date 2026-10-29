@@ -1930,7 +1930,8 @@ static GAME_PLAY* play_fading_play(GAME_PLAY* town) {
             continue;
         }
 
-        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE)) {
+        if ((world->fb_wipe_mode != WIPE_MODE_NONE) || (world->fb_fade_type != FADE_TYPE_NONE) ||
+            (world->color_fade.color.a != 0)) {
             return world;
         }
     }
@@ -1945,7 +1946,8 @@ static int play_fade_is_split(GAME_PLAY* play) {
     /* Leaving the house runs the wipe on the house play. The town play stays
      * idle, so a check of this play never sees it. */
     return (split != FALSE) &&
-           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE));
+           ((fading->fb_wipe_mode != WIPE_MODE_NONE) || (fading->fb_fade_type != FADE_TYPE_NONE) ||
+            (fading->color_fade.color.a != 0));
 }
 
 static int play_fade_every_view(GAME_PLAY* fading) {
@@ -2017,17 +2019,6 @@ static void play_draw_fade_overlay(GAME_PLAY* play, GRAPH* graph, int view, int 
     Gfx* polydisp;
     rect rect;
     int full;
-#ifdef TARGET_PC
-    /* TEMP build-level A/B: the env-var switch could not be confirmed to reach
-     * the process. Set to 0 to restore the overlays. */
-    {
-        static const int split_fade_off = 1;
-
-        if (split_fade_off != 0) {
-            return;
-        }
-    }
-#endif
 
     if ((GETREG(HREG, 80) == 10) && (GETREG(HREG, 92) == 0)) {
         return;
