@@ -103,7 +103,7 @@ static void aMJN2_wait(NPC_MAJIN2_ACTOR* actor, GAME_PLAY* play) {
     if (reset_type == 0) {
         if (aMJN2_check_submenu(play) == TRUE) {
             reset_type = 3;
-        } else if (GET_PLAYER_ACTOR_NOW()->excute_cancel_wade) {
+        } else if (mPlib_check_excute_cancel_wade() != FALSE) {
             reset_type = 2;
         }
     }

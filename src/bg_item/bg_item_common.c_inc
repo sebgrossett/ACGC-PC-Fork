@@ -827,8 +827,8 @@ static int fruit_set(mActor_name_t fg_item, int ut_x, int ut_z, s16 num, int dro
 
     flag = FALSE;
     if (fg_item != ITM_PRESENT && num == 1) {
-        PLAYER_ACTOR* player = GET_PLAYER_ACTOR_NOW();
-        if (target_wpos.x > player->actor_class.world.position.x) {
+        PLAYER_ACTOR* player = mPlib_now_player_or_town();
+        if ((player != NULL) && (target_wpos.x > player->actor_class.world.position.x)) {
             flag = TRUE;
         }
     }

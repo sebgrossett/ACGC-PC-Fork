@@ -1047,7 +1047,7 @@ static void aNSC_set_player_angle() {
     angle.y = atans_table(wpos.z - player_actor->actor_class.world.position.z,
                           wpos.x - player_actor->actor_class.world.position.x);
 
-    GET_PLAYER_ACTOR_NOW()->Set_force_position_angle_proc(gamePT, &player_actor->actor_class.world.position, &angle,
+    mPlib_Set_force_position_angle(gamePT, &player_actor->actor_class.world.position, &angle,
                                                           mPlayer_FORCE_POSITION_ANGLE_ROTY);
 }
 
