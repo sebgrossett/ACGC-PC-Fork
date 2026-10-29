@@ -45,9 +45,9 @@
 
 ## Player-actor audit (opened 2026-10-28)
 - [ ] A12 (P0): one door lookup for every building — demo talker walker → selected resident → extras — and the request/demo runs for the requesting player. 12 buildings: needlework, police box, cottage, Redd, buggy, conveni, depart, gyroid/haniwa, house door, kamakura, super, shop. Unblocks the building backlog; each conversion is playtested as its building row.
-- [ ] A13 (P0): ambient player procs use the acting player (demo talker → request owner → nearest), not the selected resident.
+- [x] A13 (P0): ambient player procs use the acting player (demo talker -> request owner -> nearest), not the selected resident. Code fixed centrally 2026-10-28; **verification is folded into A16** - tool sites (fish, axe, scoop, net, dig, vib-unit, bee/ant) plus the tool-free sites (sign fallback, boat passenger, NPC shop angle, wade-cancel, turkey talk end).
 - [x] A14 (P1): `mPlib_request_main_*` wrappers take the requesting player instead of `GET_PLAYER_ACTOR_GAME`. The door pair now binds the requester around the proc (the proc re-reads the resident); the police-box playtest decided it (held 2026-10-29).
-- [ ] A16 (P1): smoke-test the NULL-safe accessor `mPlib_now_player_or_town()` and the `mPlib_Set_force_position_angle` / `mPlib_player_door_label_is` / `mPlib_check_excute_cancel_wade` conversions. Merged 2026-10-29 (`1b7780e`); deferred because the playtest save has no held tools. This is the run that closes A12/A13's non-door half.
+- [ ] A16 (P1): deferred player-actor verification - the NULL-safe accessor smoke test plus A13's ambient-proc pass. Accessor: `mPlib_now_player_or_town()` and the `mPlib_Set_force_position_angle` / `mPlib_player_door_label_is` / `mPlib_check_excute_cancel_wade` conversions (merged `1b7780e`). Both halves need a save with held tools: P1 indoors while P2 exercises each ambient proc (axe, net, shovel, rod, bee/ant) and the tool-free sites (sign, boat, NPC shop angle, wade-cancel, turkey), then the same in single player. This run closes A12/A13's non-door half.
 
 ## Milestones
 - [x] Phase 0: player list, frame order, camera/viewport
