@@ -134,6 +134,10 @@ extern int pc_emu64_frame_cull_visible;
 extern int pc_emu64_frame_cull_rejected;
 extern int pc_gx_draw_call_count;
 
+/* TEMP insect-room tint probe: the world whose view is being flushed. Remove
+ * with the probe in pc_gx_texture.c. */
+void pc_gx_tlut_probe_set_world(int world);
+
 /* --- Audio --- */
 extern int pc_save_loaded;
 /* Write the current save to the GCI file (co-op join/leave, reset codes). */

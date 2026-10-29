@@ -217,12 +217,6 @@ void pc_world_bind(int index) {
     s_bound = index;
 }
 
-/* TEMP insect-room tint probe: which world a piece of global GX state was
- * last set by. Remove with the probe in pc_gx_texture.c. */
-int pc_world_bound_index(void) {
-    return s_bound;
-}
-
 void pc_world_attach_primary(GAME* game) {
     int i;
 

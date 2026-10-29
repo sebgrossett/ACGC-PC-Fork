@@ -2115,6 +2115,7 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                     fade_drawn = TRUE;
                 }
             }
+            pc_gx_tlut_probe_set_world(play_view_world(i));
             pc_graph_flush_world(graph1);
             play_restart_disp(play, graph1);
         }
@@ -2319,10 +2320,12 @@ static int makeBumpTexture(GAME_PLAY* play, GRAPH* graph1, GRAPH* graph2) {
                 } else {
                     play_draw_split_side(play, graph1, last, count, &guest_eye, &guest_center);
                 }
+                pc_gx_tlut_probe_set_world(play_view_world(last));
                 setLookAtView(&play->view, &eye, &center, &up);
                 setScissorView(&play->view, &full);
                 setupViewer(play);
             } else {
+                pc_gx_tlut_probe_set_world(0);
                 Actor_info_draw_actor(play, &play->actor_info);
             }
         }

@@ -19,15 +19,19 @@ static u32 tlut_content_hash(const void* data, int tlut_fmt, int n_entries, int 
  * each TLUT slot to detect content changes and force reloads. */
 u16 s_tlut_first_word[16];
 
-/* --- TEMP insect-room tint probe (remove with the fix) ---
- * The GX TLUT slots are global. A palette loaded by the interior world stays
- * in the slot while the town half draws, so a CI texture can be decoded with
- * the room's palette. Log every cross-world slot use to confirm it. */
-#include "pc_world.h"
+/* TEMP insect-room tint probe (remove with the fix) ---
+ * The GX TLUT slots are global, and the palette loads only run during DL
+ * replay in pc_graph_flush_world, where the bound world is the town again.
+ * The probe world therefore comes from the view being flushed, not the bind. */
 static int s_tlut_src_world[16];
 static int s_tlut_src_set[16];
+static int s_tlut_probe_world = -1;
 static int s_tlut_probe_lines = 0;
 #define TLUT_PROBE_MAX_LINES 4000
+
+void pc_gx_tlut_probe_set_world(int world) {
+    s_tlut_probe_world = world;
+}
 
 static void tlut_probe_log(const char* fmt, ...) {
     va_list ap;
@@ -44,6 +48,13 @@ static void tlut_probe_log(const char* fmt, ...) {
 }
 
 static void tlut_probe_load(int slot, int world, const void* addr) {
+    static int seen = 0;
+
+    if (seen < 8) {
+        tlut_probe_log("LOADANY slot=%d world=%d addr=%08x first=%04x\n", slot, world,
+                       (unsigned)(uintptr_t)addr, addr != NULL ? *(const u16*)addr : 0);
+        seen++;
+    }
     if (s_tlut_src_set[slot] && s_tlut_src_world[slot] != world) {
         tlut_probe_log("LOAD slot=%d world=%d prev_world=%d addr=%08x first=%04x\n", slot, world,
                        s_tlut_src_world[slot], (unsigned)(uintptr_t)addr,
@@ -54,6 +65,13 @@ static void tlut_probe_load(int slot, int world, const void* addr) {
 }
 
 static void tlut_probe_bind(int slot, int world, const void* img, u32 fmt) {
+    static int seen = 0;
+
+    if (seen < 8) {
+        tlut_probe_log("BINDANY slot=%d world=%d img=%08x fmt=%u src_set=%d src_world=%d\n", slot, world,
+                       (unsigned)(uintptr_t)img, (unsigned)fmt, s_tlut_src_set[slot], s_tlut_src_world[slot]);
+        seen++;
+    }
     if (!s_tlut_src_set[slot] || s_tlut_src_world[slot] == world) return;
     tlut_probe_log("BIND slot=%d world=%d src_world=%d img=%08x fmt=%u entries=%d is_be=%d first=%04x\n",
                    slot, world, s_tlut_src_world[slot], (unsigned)(uintptr_t)img, (unsigned)fmt,
@@ -668,7 +686,7 @@ static void pc_gx_load_tex_obj_impl(void* obj, u32 id) {
         /* TEMP insect-room tint probe: is this palette slot last set by the
          * other world? */
         if (tlut_name >= 0 && tlut_name < 16) {
-            tlut_probe_bind(tlut_name, pc_world_bound_index(), image_ptr, format);
+            tlut_probe_bind(tlut_name, s_tlut_probe_world, image_ptr, format);
         }
     }
 
@@ -913,7 +931,7 @@ void GXLoadTlut(void* obj, u32 idx) {
     g_gx.tlut[idx].n_entries = (int)o[TLUTOBJ_N_ENTRIES];
     g_gx.tlut[idx].is_be = 1; /* default to BE (ROM/JSystem data) */
     /* TEMP insect-room tint probe */
-    tlut_probe_load((int)idx, pc_world_bound_index(), g_gx.tlut[idx].data);
+    tlut_probe_load((int)idx, s_tlut_probe_world, g_gx.tlut[idx].data);
 }
 
 /* PC_GX_TLUT_MODE env var: "be" forces BE decode for diagnostics */

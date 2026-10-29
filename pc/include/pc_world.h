@@ -55,10 +55,6 @@ void pc_world_fill_views(int* view_world, int count);
 struct game_play_s* pc_world_at(int index);
 void pc_world_bind(int index);
 
-/* TEMP insect-room tint probe: the currently bound world index (-1 before the
- * first bind). Remove with the probe in pc_gx_texture.c. */
-int pc_world_bound_index(void);
-
 /* A player actor in any live world, including ones that are not bound. */
 int pc_world_any_player(void);
 
