@@ -79,6 +79,16 @@ mFM_fdinfo_c* g_fdinfo;
 static u8 l_block_type[BLOCK_TOTAL_NUM];
 static int l_block_kind[BLOCK_TOTAL_NUM];
 
+/* One static palette area serves every world (and the insect room forces its
+ * own term into it), so the port keeps a per-world copy. */
+extern void mFM_field_palette_store(void* out) {
+    bcopy(mFM_pal_area, out, sizeof(mFM_pal_area));
+}
+
+extern void mFM_field_palette_load(const void* in) {
+    bcopy(in, mFM_pal_area, sizeof(mFM_pal_area));
+}
+
 static void mFM_SortBGData(mFM_bg_data_c** sorted_data_p, mFM_bg_data_c* data, int count) {
     int i;
     mFM_bg_data_c** sorted_data_p_copy = sorted_data_p;
@@ -578,8 +588,7 @@ static int mFM_SetBlockInfo(mFM_fdinfo_c* field_info, mFM_combination_c* combi_t
     return 0;
 }
 
-static void mFM_set_pal_p(mFM_field_pal_c* pal) {
-    if (pal != NULL) {
+static void mFM_set_pal_p(mFM_field_pal_c* pal) {    if (pal != NULL) {
         bzero(mFM_pal_area, sizeof(mFM_pal_area));
 
         pal->earth_pal = mFM_pal_area[0];
