@@ -193,7 +193,7 @@ int pc_platform_poll_events(void) {
                     break;
                 }
                 if (event.key.keysym.sym == SDLK_F11 && !event.key.repeat) {
-                    pc_gx_request_color_trace(300);
+                    pc_gx_request_color_trace(900);
                     break;
                 }
                 if (g_pc_paused) {

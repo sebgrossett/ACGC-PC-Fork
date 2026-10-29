@@ -813,24 +813,41 @@ void pc_gx_dump_if_requested(void) {
     glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
 
     if (trace_left > 0) {
-        /* Colour trace: right half mean + top/bottom bands + HUD, in bottom-up
-         * GL order scaled to the BMP convention (y grows upward here). */
+        /* Colour trace: right half mean + top/bottom bands + HUD + a 4x4 grid,
+         * so a texture-pattern change shows up even when the average does not. */
         FILE* f = fopen("color_trace.txt", "a");
         long sr = 0, sg = 0, sb = 0, n = 0;
         long tr = 0, tg = 0, tb = 0, tn = 0;
         long br = 0, bg = 0, bb = 0, bn = 0;
         long hr = 0, hg = 0, hb = 0, hn = 0;
+        long gr[4][4], gg[4][4], gb[4][4], gn[4][4];
+        int right_w = w - w / 2;
+        int cx;
+        int cy;
         int x;
         int y;
+
+        memset(gr, 0, sizeof(gr));
+        memset(gg, 0, sizeof(gg));
+        memset(gb, 0, sizeof(gb));
+        memset(gn, 0, sizeof(gn));
 
         for (y = 0; y < h; y++) {
             for (x = w / 2; x < w; x++) {
                 const unsigned char* p = rgb + ((size_t)y * w + x) * 3;
+                int gx = ((x - w / 2) * 4) / right_w;
+                int gy = ((h - 1 - y) * 4) / h;
 
+                if (gx > 3) gx = 3;
+                if (gy > 3) gy = 3;
                 sr += p[0];
                 sg += p[1];
                 sb += p[2];
                 n++;
+                gr[gy][gx] += p[0];
+                gg[gy][gx] += p[1];
+                gb[gy][gx] += p[2];
+                gn[gy][gx]++;
                 if (y > h * 7 / 10) {
                     tr += p[0];
                     tg += p[1];
@@ -853,11 +870,18 @@ void pc_gx_dump_if_requested(void) {
         }
 
         if (f != NULL && n > 0) {
-            fprintf(f, "T n=%d right=%ld,%ld,%ld top=%ld,%ld,%ld bot=%ld,%ld,%ld hud=%ld,%ld,%ld\n", trace_tick, sr / n,
+            fprintf(f, "T n=%d right=%ld,%ld,%ld top=%ld,%ld,%ld bot=%ld,%ld,%ld hud=%ld,%ld,%ld", trace_tick, sr / n,
                     sg / n, sb / n, tn ? tr / tn : 0, tn ? tg / tn : 0, tn ? tb / tn : 0, bn ? br / bn : 0,
-                    bn ? bg / bn : 0, bn ? bb / bn : 0, hn ? hr / hn : 0, hg / hn, hn ? hb / hn : 0);
+                    bn ? bg / bn : 0, bn ? bb / bn : 0, hn ? hr / hn : 0, hn ? hg / hn : 0, hn ? hb / hn : 0);
+            for (cy = 0; cy < 4; cy++) {
+                for (cx = 0; cx < 4; cx++) {
+                    fprintf(f, " g%d=%ld,%ld,%ld", cy * 4 + cx, gn[cy][cx] ? gr[cy][cx] / gn[cy][cx] : 0,
+                            gn[cy][cx] ? gg[cy][cx] / gn[cy][cx] : 0, gn[cy][cx] ? gb[cy][cx] / gn[cy][cx] : 0);
+                }
+            }
+            fprintf(f, "\n");
+            fclose(f);
         }
-        if (f != NULL) fclose(f);
         trace_tick++;
         trace_left--;
     } else {
