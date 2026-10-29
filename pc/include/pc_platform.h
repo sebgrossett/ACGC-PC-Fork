@@ -138,6 +138,9 @@ extern int pc_gx_draw_call_count;
  * before the buffer swap so it captures the finished frame. */
 void pc_gx_request_dump(void);
 void pc_gx_dump_if_requested(void);
+/* F11: sample the right half's colours every frame for N frames into
+ * color_trace.txt (transition bug hunting). */
+void pc_gx_request_color_trace(int frames);
 
 /* --- Audio --- */
 extern int pc_save_loaded;

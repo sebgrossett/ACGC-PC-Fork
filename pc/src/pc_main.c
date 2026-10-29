@@ -192,6 +192,10 @@ int pc_platform_poll_events(void) {
                     pc_gx_request_dump();
                     break;
                 }
+                if (event.key.keysym.sym == SDLK_F11 && !event.key.repeat) {
+                    pc_gx_request_color_trace(300);
+                    break;
+                }
                 if (g_pc_paused) {
                     pc_pause_menu_handle_event(&event);
                     break; /* swallow all keys while paused */

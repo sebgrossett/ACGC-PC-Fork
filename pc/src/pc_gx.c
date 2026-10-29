@@ -734,9 +734,14 @@ int pc_gx_draw_call_count = 0;
 
 /* --- F12 frame dump (bug reports) --- */
 static int s_dump_requested = 0;
+static int s_trace_request = 0;
 
 void pc_gx_request_dump(void) {
     s_dump_requested = 1;
+}
+
+void pc_gx_request_color_trace(int frames) {
+    s_trace_request = (frames > 0) ? frames : 240;
 }
 
 static void pc_gx_write_bmp(const char* path, const unsigned char* rgb, int w, int h) {
@@ -781,12 +786,20 @@ static void pc_gx_write_bmp(const char* path, const unsigned char* rgb, int w, i
 
 void pc_gx_dump_if_requested(void) {
     static int seq = 0;
+    static int trace_left = 0;
+    static int trace_tick = 0;
     int w;
     int h;
     unsigned char* rgb;
     char path[64];
 
-    if (s_dump_requested == 0) return;
+    if (s_trace_request > 0) {
+        trace_left = s_trace_request;
+        s_trace_request = 0;
+        trace_tick = 0;
+    }
+
+    if (s_dump_requested == 0 && trace_left <= 0) return;
     s_dump_requested = 0;
 
     w = g_pc_window_w;
@@ -798,8 +811,59 @@ void pc_gx_dump_if_requested(void) {
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadBuffer(GL_BACK);
     glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, rgb);
-    snprintf(path, sizeof(path), "frame_%03d.bmp", seq++);
-    pc_gx_write_bmp(path, rgb, w, h);
+
+    if (trace_left > 0) {
+        /* Colour trace: right half mean + top/bottom bands + HUD, in bottom-up
+         * GL order scaled to the BMP convention (y grows upward here). */
+        FILE* f = fopen("color_trace.txt", "a");
+        long sr = 0, sg = 0, sb = 0, n = 0;
+        long tr = 0, tg = 0, tb = 0, tn = 0;
+        long br = 0, bg = 0, bb = 0, bn = 0;
+        long hr = 0, hg = 0, hb = 0, hn = 0;
+        int x;
+        int y;
+
+        for (y = 0; y < h; y++) {
+            for (x = w / 2; x < w; x++) {
+                const unsigned char* p = rgb + ((size_t)y * w + x) * 3;
+
+                sr += p[0];
+                sg += p[1];
+                sb += p[2];
+                n++;
+                if (y > h * 7 / 10) {
+                    tr += p[0];
+                    tg += p[1];
+                    tb += p[2];
+                    tn++;
+                }
+                if (y < h * 3 / 10) {
+                    br += p[0];
+                    bg += p[1];
+                    bb += p[2];
+                    bn++;
+                }
+                if (y < h / 5 && x > w * 11 / 16 && x < w * 7 / 8) {
+                    hr += p[0];
+                    hg += p[1];
+                    hb += p[2];
+                    hn++;
+                }
+            }
+        }
+
+        if (f != NULL && n > 0) {
+            fprintf(f, "T n=%d right=%ld,%ld,%ld top=%ld,%ld,%ld bot=%ld,%ld,%ld hud=%ld,%ld,%ld\n", trace_tick, sr / n,
+                    sg / n, sb / n, tn ? tr / tn : 0, tn ? tg / tn : 0, tn ? tb / tn : 0, bn ? br / bn : 0,
+                    bn ? bg / bn : 0, bn ? bb / bn : 0, hn ? hr / hn : 0, hg / hn, hn ? hb / hn : 0);
+        }
+        if (f != NULL) fclose(f);
+        trace_tick++;
+        trace_left--;
+    } else {
+        snprintf(path, sizeof(path), "frame_%03d.bmp", seq++);
+        pc_gx_write_bmp(path, rgb, w, h);
+    }
     free(rgb);
 }
 
