@@ -1681,6 +1681,35 @@ static void play_draw_bound_view(GAME_PLAY* play, GRAPH* graph, int index, int c
 
     play_draw_split_side(view_play, graph, index, count, foreign ? NULL : eye, foreign ? NULL : center);
 
+    /* TEMP draw-time fog/light probe: what this view is actually drawn with. */
+    {
+        static int last_world = -1, last_scene = -1, last_amb = -1, last_fog = -1, last_near = -9999, last_far = -9999;
+        int scene = Save_Get(scene_no);
+        int amb = (view_play->global_light.ambientColor[0] << 16) | (view_play->global_light.ambientColor[1] << 8) |
+                  view_play->global_light.ambientColor[2];
+        int fog = (view_play->global_light.fogColor[0] << 16) | (view_play->global_light.fogColor[1] << 8) |
+                  view_play->global_light.fogColor[2];
+        int near = view_play->global_light.fogNear;
+        int far = view_play->global_light.fogFar;
+
+        if (index != last_world || scene != last_scene || amb != last_amb || fog != last_fog || near != last_near ||
+            far != last_far) {
+            FILE* fp = fopen("draw_light_probe.txt", "a");
+
+            last_world = index;
+            last_scene = scene;
+            last_amb = amb;
+            last_fog = fog;
+            last_near = near;
+            last_far = far;
+            if (fp != NULL) {
+                fprintf(fp, "DRAW view=%d scene=%d amb=%06x fog=%06x near=%d far=%d\n", index, scene, amb, fog, near,
+                        far);
+                fclose(fp);
+            }
+        }
+    }
+
     if (foreign) {
         pc_world_bind(0);
     }
