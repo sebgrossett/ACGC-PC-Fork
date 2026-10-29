@@ -3851,9 +3851,11 @@ void emu64::dl_G_LOADTLUT() {
                 EMU64_INFO("### 同じTLUTアドレスです\n");
 #ifdef TARGET_PC
                 /* On PC, the game reuses memory buffers — same address can hold
-                 * different TLUT data (e.g., different NPC clothing palettes).
-                 * GC hardware always re-DMA'd, so the skip was harmless there.
-                 * On PC we must detect content changes and force a reload. */
+                 * different TLUT data (e.g., different NPC clothing palettes, or
+                 * two co-op views sharing the field palette area). GC hardware
+                 * always re-DMA'd, so the skip was harmless there. Invalidating
+                 * alone would defer the reload to the next load, which is often
+                 * the other view: reload now, below. */
                 if (tlut_addr != nullptr) {
                     u16 first = *(u16*)tlut_addr;
                     if (s_tlut_first_word[tlut_name] != first) {
@@ -3862,7 +3864,8 @@ void emu64::dl_G_LOADTLUT() {
                     }
                 }
 #endif
-            } else { /* tlut_addr != this->tlut_addresses[tlut_name] */
+            }
+            if (tlut_addr != this->tlut_addresses[tlut_name]) {
                 aligned_addr = tlut_addr;
 
                 this->tlut_addresses[tlut_name] = tlut_addr;
@@ -3908,9 +3911,10 @@ void emu64::dl_G_LOADTLUT() {
                 /* Translation: ### Same TLUT address %08x %d */
                 EMU64_INFOF("### 同じTLUTアドレスです %08x %d\n", addr, tlut_name);
 #ifdef TARGET_PC
-                /* Same fix as type-2 path: detect content change at reused address.
-                 * Note: addr here is already a direct pointer (not a segment address),
-                 * so do NOT call seg2k0() — just cast directly. */
+                /* Same fix as type-2 path: detect content change at reused address
+                 * and fall through to the reload. Note: addr here is already a
+                 * direct pointer (not a segment address), so do NOT call seg2k0()
+                 * — just cast directly. */
                 if (addr != 0) {
                     u16 first = *(u16*)(uintptr_t)addr;
                     if (s_tlut_first_word[tlut_name] != first) {
@@ -3919,7 +3923,8 @@ void emu64::dl_G_LOADTLUT() {
                     }
                 }
 #endif
-            } else {
+            }
+            if (addr != (u32)this->tlut_addresses[tlut_name]) {
                 /* Convert TLUT */
                 if (this->now_setimg.setimg2.isDolphin) {
                     tlut = (void*)addr;
