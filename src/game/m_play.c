@@ -1649,33 +1649,6 @@ static void play_draw_split_side(GAME_PLAY* play, GRAPH* graph, int index, int c
     /* Field draw follows the view's own player instead of the selected resident. */
     mPlib_set_view_player_actor(play_view_player(play, index));
     mPlib_set_view_player_index(index);
-    /* TEMP lighting probe: the diffuse colours this view draws with. */
-    {
-        static int last_view = -1, last_sun = -1, last_moon = -1, last_add = -1;
-        int sun = (play->kankyo.sun_light.lights.diffuse.color[0] << 16) |
-                  (play->kankyo.sun_light.lights.diffuse.color[1] << 8) |
-                  play->kankyo.sun_light.lights.diffuse.color[2];
-        int moon = (play->kankyo.moon_light.lights.diffuse.color[0] << 16) |
-                   (play->kankyo.moon_light.lights.diffuse.color[1] << 8) |
-                   play->kankyo.moon_light.lights.diffuse.color[2];
-        int add = (play->kankyo.add_light_info.diffuse_color[0] << 16) |
-                  (play->kankyo.add_light_info.diffuse_color[1] << 8) |
-                  play->kankyo.add_light_info.diffuse_color[2];
-
-        if (index != last_view || sun != last_sun || moon != last_moon || add != last_add) {
-            FILE* fp = fopen("light_probe.txt", "a");
-
-            last_view = index;
-            last_sun = sun;
-            last_moon = moon;
-            last_add = add;
-            if (fp != NULL) {
-                fprintf(fp, "L view=%d scene=%d sun=%06x moon=%06x add=%06x\n", index, Save_Get(scene_no), sun, moon,
-                        add);
-                fclose(fp);
-            }
-        }
-    }
     Actor_info_draw_actor(play, &play->actor_info);
     mPlib_set_view_player_actor(NULL);
 }
